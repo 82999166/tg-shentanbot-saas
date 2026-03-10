@@ -317,3 +317,98 @@ export const blacklist = mysqlTable("blacklist", {
 ]);
 
 export type Blacklist = typeof blacklist.$inferSelect;
+
+// ============================================================
+// 系统设置表（管理员可配置）
+// ============================================================
+export const systemSettings = mysqlTable("system_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  key: varchar("key", { length: 128 }).notNull().unique(),
+  value: text("value"),
+  description: text("description"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SystemSetting = typeof systemSettings.$inferSelect;
+
+// ============================================================
+// 支付订单表（USDT 支付）
+// ============================================================
+export const paymentOrders = mysqlTable("payment_orders", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  // 套餐信息
+  planId: mysqlEnum("planId", ["basic", "pro", "enterprise"]).notNull(),
+  durationMonths: int("durationMonths").default(1).notNull(),
+  // 支付信息
+  usdtAmount: decimal("usdtAmount", { precision: 18, scale: 6 }).notNull(), // 精确金额（含唯一小数）
+  usdtAddress: varchar("usdtAddress", { length: 128 }).notNull(),            // 收款地址
+  network: mysqlEnum("network", ["trc20", "erc20", "bep20"]).default("trc20").notNull(),
+  // 链上信息
+  txHash: varchar("txHash", { length: 128 }),                                // 交易哈希
+  confirmedAt: timestamp("confirmedAt"),
+  // 订单状态
+  status: mysqlEnum("status", ["pending", "confirming", "completed", "expired", "failed"]).default("pending").notNull(),
+  expiredAt: timestamp("expiredAt").notNull(),                               // 订单过期时间（30分钟）
+  // 卡密（支付成功后生成）
+  redeemCode: varchar("redeemCode", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("idx_payment_orders_userId").on(t.userId),
+  index("idx_payment_orders_status").on(t.status),
+  index("idx_payment_orders_usdtAmount").on(t.usdtAmount),
+]);
+
+export type PaymentOrder = typeof paymentOrders.$inferSelect;
+export type InsertPaymentOrder = typeof paymentOrders.$inferInsert;
+
+// ============================================================
+// 卡密表
+// ============================================================
+export const redeemCodes = mysqlTable("redeem_codes", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 64 }).notNull().unique(),                 // 卡密，如 TGPRO-XXXX-XXXX-XXXX
+  planId: mysqlEnum("planId", ["basic", "pro", "enterprise"]).notNull(),
+  durationMonths: int("durationMonths").default(1).notNull(),
+  // 状态
+  status: mysqlEnum("status", ["unused", "used", "expired"]).default("unused").notNull(),
+  // 使用信息
+  usedByUserId: int("usedByUserId"),
+  usedAt: timestamp("usedAt"),
+  // 来源
+  orderId: int("orderId"),                                                   // 关联订单
+  batchId: varchar("batchId", { length: 64 }),                              // 批量生成批次号
+  // 有效期
+  expiresAt: timestamp("expiresAt"),                                         // 卡密本身的有效期
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("idx_redeem_codes_code").on(t.code),
+  index("idx_redeem_codes_status").on(t.status),
+  index("idx_redeem_codes_orderId").on(t.orderId),
+]);
+
+export type RedeemCode = typeof redeemCodes.$inferSelect;
+export type InsertRedeemCode = typeof redeemCodes.$inferInsert;
+
+// ============================================================
+// Telegram Bot 配置表
+// ============================================================
+export const botConfigs = mysqlTable("bot_configs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  botToken: varchar("botToken", { length: 256 }),                           // Bot Token
+  botUsername: varchar("botUsername", { length: 128 }),
+  // 通知配置
+  notifyEnabled: boolean("notifyEnabled").default(true).notNull(),
+  notifyTargetChatId: varchar("notifyTargetChatId", { length: 64 }),       // 接收通知的 Chat ID
+  notifyFormat: mysqlEnum("notifyFormat", ["simple", "standard", "detailed"]).default("standard").notNull(),
+  // Bot 状态
+  isActive: boolean("isActive").default(false).notNull(),
+  lastActiveAt: timestamp("lastActiveAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [index("idx_bot_configs_userId").on(t.userId)]);
+
+export type BotConfig = typeof botConfigs.$inferSelect;
+export type InsertBotConfig = typeof botConfigs.$inferInsert;

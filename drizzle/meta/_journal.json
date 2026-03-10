@@ -15,6 +15,13 @@
       "when": 1773101589653,
       "tag": "0001_faithful_johnny_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1773114156910,
+      "tag": "0002_curved_tarot",
+      "breakpoints": true
     }
   ]
 }

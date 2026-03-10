@@ -8,6 +8,8 @@ import { keywordsRouter } from "./routers/keywords";
 import { monitorGroupsRouter } from "./routers/monitorGroups";
 import { templatesRouter } from "./routers/templates";
 import { hitRecordsRouter, dmQueueRouter, antibanRouter, blacklistRouter, dashboardRouter, adminRouter } from "./routers/hitRecords";
+import { paymentRouter, systemSettingsRouter } from "./routers/payment";
+import { engineRouter } from "./routers/engine";
 
 export const appRouter = router({
   system: systemRouter,
@@ -32,6 +34,9 @@ export const appRouter = router({
   blacklist: blacklistRouter,
   dashboard: dashboardRouter,
   admin: adminRouter,
+  payment: paymentRouter,
+  settings: systemSettingsRouter,
+  engine: engineRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -15,6 +15,9 @@ import Antiban from "./pages/Antiban";
 import Plans from "./pages/Plans";
 import AdminPanel from "./pages/AdminPanel";
 import Landing from "./pages/Landing";
+import Payment from "./pages/Payment";
+import SystemSettings from "./pages/SystemSettings";
+import BotConfig from "./pages/BotConfig";
 
 function Router() {
   return (
@@ -30,6 +33,9 @@ function Router() {
       <Route path={"/antiban"} component={Antiban} />
       <Route path={"/plans"} component={Plans} />
       <Route path={"/admin"} component={AdminPanel} />
+      <Route path={"/payment"} component={Payment} />
+      <Route path={"/system-settings"} component={SystemSettings} />
+      <Route path={"/bot-config"} component={BotConfig} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

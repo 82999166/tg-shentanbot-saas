@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Crown,
+  CreditCard,
   Hash,
   Inbox,
   Key,
@@ -19,6 +20,7 @@ import {
   Settings,
   Shield,
   Users,
+  Wrench,
   Zap,
 } from "lucide-react";
 import { useState } from "react";
@@ -39,11 +41,14 @@ const NAV_ITEMS = [
   { icon: Activity, label: "命中记录", path: "/records" },
   { icon: Bot, label: "TG 账号", path: "/accounts" },
   { icon: Shield, label: "防封策略", path: "/antiban" },
+  { icon: Bell, label: "Bot 配置", path: "/bot-config" },
   { icon: Crown, label: "套餐管理", path: "/plans" },
+  { icon: CreditCard, label: "购买升级", path: "/payment" },
 ];
 
 const ADMIN_ITEMS = [
   { icon: Users, label: "用户管理", path: "/admin" },
+  { icon: Wrench, label: "系统设置", path: "/system-settings" },
 ];
 
 interface AppLayoutProps {

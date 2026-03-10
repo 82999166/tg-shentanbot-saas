@@ -53,3 +53,61 @@
 - [x] 前端：TG 账号页面 - 手机号+验证码+二步验证完整流程 UI（多步骤 Dialog）
 - [x] 前端：TG 账号页面 - 批量导入 Session 文件 UI（拖拽上传/文本粘贴）
 - [x] 前端：管理后台 - 新增监控账号管理 Tab（账号列表、套餐分配、健康度总览）
+
+## 三大核心功能开发
+
+### Stripe 支付接入
+- [ ] 安装 Stripe SDK，配置 Webhook 密钥
+- [ ] 数据库新增 orders、redeemCodes 表
+- [ ] 后端：创建 Checkout Session API（套餐升级）
+- [ ] 后端：Stripe Webhook 处理（payment_intent.succeeded → 自动升级套餐）
+- [ ] 后端：卡密生成与激活 API
+- [ ] 前端：套餐页面接入 Stripe Checkout 跳转
+- [ ] 前端：卡密激活输入框与状态反馈
+- [ ] 前端：支付成功回调页面
+
+### Pyrogram 监控引擎
+- [ ] 编写 Python 监控服务（monitor_engine/）
+- [ ] Session 管理模块（加载/保存/健康检查）
+- [ ] 关键词匹配引擎（精确/正则/AND/OR/NOT）
+- [ ] 消息监听与命中记录写入
+- [ ] 自动私信发送队列执行器
+- [ ] 防封策略执行（随机延迟/频率限制/账号轮换）
+- [ ] 引擎状态 REST API（供 Web 管理台调用）
+- [ ] 后端：Web 管理台与 Python 引擎的 API 桥接
+- [ ] 前端：引擎状态实时显示（运行中/停止/错误）
+
+### Telegram Bot 命令界面
+- [ ] 数据库新增 botConfigs 表
+- [ ] 后端：Bot 配置 API（token 管理、命令绑定）
+- [ ] Python Bot 服务（bot_service/）
+- [ ] 命令菜单（/start、/add_keyword、/dm_on、/dm_template 等 26 条）
+- [ ] Inline Keyboard 主菜单
+- [ ] 命中通知推送（含快捷操作按钮）
+- [ ] 前端：Bot 配置管理页面
+
+## USDT 自动发卡支付系统
+- [ ] 数据库：新增 paymentOrders、redeemCodes、systemSettings 表
+- [ ] 后端：系统设置 API（USDT 地址、套餐价格、TronGrid API Key 等）
+- [ ] 后端：创建支付订单 API（生成唯一金额、监控地址）
+- [ ] 后端：TronGrid 链上监控定时任务（每 30 秒检查到账）
+- [ ] 后端：到账自动生成卡密并发送给用户
+- [ ] 后端：卡密激活 API（验证卡密 → 升级套餐）
+- [ ] 后端：管理后台价格配置 API
+- [ ] 前端：套餐购买页面（选择套餐 → 生成订单 → 显示收款地址+金额）
+- [ ] 前端：支付等待页（倒计时、链上确认状态轮询）
+- [ ] 前端：卡密激活输入框
+- [ ] 前端：管理后台系统设置页（USDT 地址、套餐价格配置）
+- [ ] 前端：订单历史记录页
+
+## v1.2 三大核心功能完成状态
+- [x] USDT TRC20 支付系统 - 数据库设计（支付订单/卡密/系统设置表）
+- [x] TronGrid 链上监控 API - 自动检测 USDT 到账
+- [x] 自动发卡逻辑 - 到账后自动生成卡密并通知用户
+- [x] 支付前端页面 - 套餐选择/支付等待/卡密激活完整流程
+- [x] 系统设置管理页 - USDT 地址/套餐价格/卡密管理/订单管理（管理员专用）
+- [x] Pyrogram 监控引擎 - main.py 核心监控服务
+- [x] 引擎 API 桥接路由 - Web 服务端与 Python 引擎通信接口
+- [x] Telegram Bot 服务 - bot.py 命令交互服务（14条命令 + Inline Keyboard）
+- [x] Bot 配置管理页 - Web 端 Bot Token 配置/部署说明/命令列表
+- [x] 侧边栏导航更新 - 新增购买升级/Bot配置/系统设置入口
