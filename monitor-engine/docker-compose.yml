@@ -1,0 +1,51 @@
+version: "3.9"
+
+# ============================================================
+# TG Monitor Pro - Docker Compose 部署配置
+# 使用方法：
+#   1. 复制 .env.example 为 .env 并填写配置
+#   2. docker compose up -d
+# ============================================================
+
+services:
+  # ── 监控引擎（核心服务）────────────────────────────────────
+  monitor-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tgmonitor-engine
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./sessions:/app/sessions       # Telegram Session 文件持久化
+      - ./logs:/app/logs               # 日志持久化
+    command: python3 main.py
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - tgmonitor
+
+  # ── Telegram Bot（命令交互服务）────────────────────────────
+  monitor-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tgmonitor-bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./sessions:/app/sessions
+      - ./logs:/app/logs
+    command: python3 bot.py
+    depends_on:
+      - monitor-engine
+    networks:
+      - tgmonitor
+
+networks:
+  tgmonitor:
+    driver: bridge

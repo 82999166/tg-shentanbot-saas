@@ -18,6 +18,7 @@ import Landing from "./pages/Landing";
 import Payment from "./pages/Payment";
 import SystemSettings from "./pages/SystemSettings";
 import BotConfig from "./pages/BotConfig";
+import Invite from "./pages/Invite";
 
 function Router() {
   return (
@@ -36,6 +37,7 @@ function Router() {
       <Route path={"/payment"} component={Payment} />
       <Route path={"/system-settings"} component={SystemSettings} />
       <Route path={"/bot-config"} component={BotConfig} />
+      <Route path={"/invite"} component={Invite} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

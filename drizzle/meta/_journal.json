@@ -22,6 +22,13 @@
       "when": 1773114156910,
       "tag": "0002_curved_tarot",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1773141910579,
+      "tag": "0003_pale_tusk",
+      "breakpoints": true
     }
   ]
 }

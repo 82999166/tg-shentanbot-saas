@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Crown,
   CreditCard,
+  Gift,
   Hash,
   Inbox,
   Key,
@@ -44,6 +45,7 @@ const NAV_ITEMS = [
   { icon: Bell, label: "Bot 配置", path: "/bot-config" },
   { icon: Crown, label: "套餐管理", path: "/plans" },
   { icon: CreditCard, label: "购买升级", path: "/payment" },
+  { icon: Gift, label: "邀请裂变", path: "/invite" },
 ];
 
 const ADMIN_ITEMS = [

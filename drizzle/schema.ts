@@ -412,3 +412,43 @@ export const botConfigs = mysqlTable("bot_configs", {
 
 export type BotConfig = typeof botConfigs.$inferSelect;
 export type InsertBotConfig = typeof botConfigs.$inferInsert;
+
+// ============================================================
+// 邀请裂变系统
+// ============================================================
+export const inviteCodes = mysqlTable("invite_codes", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),                                  // 邀请人
+  code: varchar("code", { length: 32 }).notNull().unique(),                 // 邀请码，如 TGM-ABC123
+  totalInvited: int("totalInvited").default(0).notNull(),                   // 累计邀请注册人数
+  totalPaidInvited: int("totalPaidInvited").default(0).notNull(),           // 累计邀请付费人数
+  totalRewardDays: int("totalRewardDays").default(0).notNull(),             // 累计获得奖励天数
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("idx_invite_codes_userId").on(t.userId),
+  index("idx_invite_codes_code").on(t.code),
+]);
+export type InviteCode = typeof inviteCodes.$inferSelect;
+export type InsertInviteCode = typeof inviteCodes.$inferInsert;
+
+// 邀请记录表
+export const inviteRecords = mysqlTable("invite_records", {
+  id: int("id").autoincrement().primaryKey(),
+  inviterId: int("inviterId").notNull(),                                    // 邀请人 userId
+  inviteeId: int("inviteeId").notNull().unique(),                           // 被邀请人 userId（一人只能被邀请一次）
+  inviteCode: varchar("inviteCode", { length: 32 }).notNull(),
+  // 奖励状态
+  registrationRewarded: boolean("registrationRewarded").default(false).notNull(),  // 注册奖励已发放
+  paymentRewarded: boolean("paymentRewarded").default(false).notNull(),            // 付费奖励已发放
+  rewardDaysGranted: int("rewardDaysGranted").default(0).notNull(),                // 已发放奖励天数
+  // 时间
+  registeredAt: timestamp("registeredAt").defaultNow().notNull(),
+  paidAt: timestamp("paidAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("idx_invite_records_inviterId").on(t.inviterId),
+  index("idx_invite_records_inviteeId").on(t.inviteeId),
+]);
+export type InviteRecord = typeof inviteRecords.$inferSelect;
+export type InsertInviteRecord = typeof inviteRecords.$inferInsert;

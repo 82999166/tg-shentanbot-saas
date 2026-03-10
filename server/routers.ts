@@ -10,6 +10,7 @@ import { templatesRouter } from "./routers/templates";
 import { hitRecordsRouter, dmQueueRouter, antibanRouter, blacklistRouter, dashboardRouter, adminRouter } from "./routers/hitRecords";
 import { paymentRouter, systemSettingsRouter } from "./routers/payment";
 import { engineRouter } from "./routers/engine";
+import { inviteRouter } from "./routers/invite";
 
 export const appRouter = router({
   system: systemRouter,
@@ -37,6 +38,7 @@ export const appRouter = router({
   payment: paymentRouter,
   settings: systemSettingsRouter,
   engine: engineRouter,
+  invite: inviteRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -111,3 +111,40 @@
 - [x] Telegram Bot 服务 - bot.py 命令交互服务（14条命令 + Inline Keyboard）
 - [x] Bot 配置管理页 - Web 端 Bot Token 配置/部署说明/命令列表
 - [x] 侧边栏导航更新 - 新增购买升级/Bot配置/系统设置入口
+
+## v1.3 三项功能开发
+
+### TronGrid API Key 配置与支付闭环
+- [ ] 系统设置页面新增 TronGrid API Key 输入框
+- [ ] 支付路由 checkPayment 使用数据库中的 API Key
+- [ ] 链上监控轮询任务完善（定时检查待支付订单）
+- [ ] 支付成功后 Telegram Bot 自动推送卡密通知
+
+### Python 引擎部署优化
+- [ ] 一键启动脚本 start.sh（自动安装依赖+启动服务）
+- [ ] 健康检查接口 /health
+- [ ] 环境变量模板 .env.example 完善
+- [ ] Docker Compose 部署配置
+- [ ] README.md 更新（完整部署步骤）
+
+### 邀请裂变系统
+- [ ] 数据库：邀请记录表（invitations）
+- [ ] 后端 API：生成邀请链接、查询邀请记录、奖励发放
+- [ ] 前端：邀请页面（专属链接、邀请记录、奖励明细）
+- [ ] 侧边栏：新增邀请好友入口
+- [ ] 注册流程：识别邀请码并记录关系
+- [ ] 奖励逻辑：被邀请用户付费后自动给邀请人加天数
+
+## v1.3 完成状态 (2026-03-10)
+- [x] TronGrid API Key 配置集成到系统设置
+- [x] 卡密激活后自动触发邀请付费奖励
+- [x] Python 引擎 Docker Compose 部署配置
+- [x] Python 引擎 Dockerfile 和一键启动脚本 start.sh
+- [x] 完善引擎环境变量模板
+- [x] 更新 README.md 完整部署说明（含 Docker/手动两种方式）
+- [x] 邀请裂变数据库表（inviteCodes、inviteRecords）
+- [x] 邀请裂变后端 API（生成邀请码/链接、记录注册、奖励发放）
+- [x] 邀请裂变前端页面（邀请链接、统计、排行榜、奖励记录）
+- [x] 侧边栏增加「邀请裂变」入口
+- [x] App.tsx 注册 /invite 路由
+- [x] 注册邀请链接落地处理（URL 参数自动绑定邀请关系）

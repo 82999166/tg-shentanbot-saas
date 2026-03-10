@@ -9,8 +9,11 @@ import {
   systemSettings,
   users,
   plans,
+  inviteRecords,
+  inviteCodes,
 } from "../../drizzle/schema";
 import { nanoid } from "nanoid";
+import { sql } from "drizzle-orm";
 
 // ============================================================
 // 工具函数
@@ -407,6 +410,64 @@ export const paymentRouter = router({
         usedByUserId: ctx.user.id,
         usedAt: now,
       }).where(eq(redeemCodes.id, codeRecord.id));
+
+      // 触发邀请付费奖励（异步，不阻塞响应）
+      try {
+        const inviteRec = await db
+          .select()
+          .from(inviteRecords)
+          .where(eq(inviteRecords.inviteeId, ctx.user.id))
+          .limit(1);
+        if (inviteRec[0] && !inviteRec[0].paymentRewarded) {
+          const rewardRow = await db
+            .select()
+            .from(systemSettings)
+            .where(eq(systemSettings.key, "invite_payment_reward_days"))
+            .limit(1);
+          const rewardDays = parseInt(rewardRow[0]?.value ?? "15");
+          if (rewardDays > 0) {
+            const inviterRows = await db
+              .select()
+              .from(users)
+              .where(eq(users.id, inviteRec[0].inviterId))
+              .limit(1);
+            if (inviterRows[0]) {
+              const inviterNow = new Date();
+              const inviterBase =
+                inviterRows[0].planExpiresAt && inviterRows[0].planExpiresAt > inviterNow
+                  ? inviterRows[0].planExpiresAt
+                  : inviterNow;
+              const inviterNewExpiry = new Date(
+                inviterBase.getTime() + rewardDays * 24 * 60 * 60 * 1000
+              );
+              const inviterNewPlan =
+                inviterRows[0].planId === "free" ? "basic" : inviterRows[0].planId;
+              await db
+                .update(users)
+                .set({ planId: inviterNewPlan, planExpiresAt: inviterNewExpiry })
+                .where(eq(users.id, inviteRec[0].inviterId));
+              await db
+                .update(inviteRecords)
+                .set({
+                  paymentRewarded: true,
+                  rewardDaysGranted: inviteRec[0].rewardDaysGranted + rewardDays,
+                  paidAt: inviterNow,
+                })
+                .where(eq(inviteRecords.id, inviteRec[0].id));
+              await db
+                .update(inviteCodes)
+                .set({
+                  totalPaidInvited: sql`${inviteCodes.totalPaidInvited} + 1`,
+                  totalRewardDays: sql`${inviteCodes.totalRewardDays} + ${rewardDays}`,
+                  updatedAt: inviterNow,
+                })
+                .where(eq(inviteCodes.userId, inviteRec[0].inviterId));
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[Invite] Failed to grant payment reward:", e);
+      }
 
       return {
         success: true,
