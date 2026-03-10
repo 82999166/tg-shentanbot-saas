@@ -1,22 +1,33 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import {
+  bigint,
+  boolean,
+  int,
+  json,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  varchar,
+  decimal,
+  index,
+} from "drizzle-orm/mysql-core";
 
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
+// ============================================================
+// 用户表（基础）
+// ============================================================
 export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  // 套餐
+  planId: mysqlEnum("planId", ["free", "basic", "pro", "enterprise"]).default("free").notNull(),
+  planExpiresAt: timestamp("planExpiresAt"),
+  // 配额缓存（每日重置）
+  dailyDmSent: int("dailyDmSent").default(0).notNull(),
+  dailyDmResetAt: timestamp("dailyDmResetAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -25,4 +36,284 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+// ============================================================
+// 套餐配置表
+// ============================================================
+export const plans = mysqlTable("plans", {
+  id: mysqlEnum("id", ["free", "basic", "pro", "enterprise"]).primaryKey(),
+  name: varchar("name", { length: 64 }).notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  maxMonitorGroups: int("maxMonitorGroups").notNull(),   // 最大监控群组数
+  maxKeywords: int("maxKeywords").notNull(),              // 最大关键词数
+  maxDailyDm: int("maxDailyDm").notNull(),               // 每日最大私信数
+  maxTgAccounts: int("maxTgAccounts").notNull(),          // 最大TG账号数
+  maxTemplates: int("maxTemplates").notNull(),            // 最大消息模板数
+  features: json("features"),                             // 额外功能列表
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Plan = typeof plans.$inferSelect;
+
+// ============================================================
+// Telegram 账号表
+// ============================================================
+export const tgAccounts = mysqlTable("tg_accounts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  // TG 账号信息
+  phone: varchar("phone", { length: 32 }),
+  tgUserId: varchar("tgUserId", { length: 32 }),         // TG 用户 ID
+  tgUsername: varchar("tgUsername", { length: 128 }),    // TG 用户名
+  tgFirstName: varchar("tgFirstName", { length: 128 }),
+  tgLastName: varchar("tgLastName", { length: 128 }),
+  // Session 管理
+  sessionString: text("sessionString"),                   // 加密存储的 Session
+  sessionStatus: mysqlEnum("sessionStatus", ["pending", "active", "expired", "banned"]).default("pending").notNull(),
+  // 账号角色
+  accountRole: mysqlEnum("accountRole", ["monitor", "sender", "both"]).default("both").notNull(),
+  // 健康度评分 (0-100)
+  healthScore: int("healthScore").default(100).notNull(),
+  healthStatus: mysqlEnum("healthStatus", ["healthy", "warning", "degraded", "suspended"]).default("healthy").notNull(),
+  // 统计
+  totalMonitored: int("totalMonitored").default(0).notNull(),
+  totalDmSent: int("totalDmSent").default(0).notNull(),
+  dailyDmSent: int("dailyDmSent").default(0).notNull(),
+  dailyDmResetAt: timestamp("dailyDmResetAt"),
+  lastActiveAt: timestamp("lastActiveAt"),
+  // 代理配置
+  proxyHost: varchar("proxyHost", { length: 256 }),
+  proxyPort: int("proxyPort"),
+  proxyType: mysqlEnum("proxyType", ["socks5", "http", "mtproto"]),
+  proxyUsername: varchar("proxyUsername", { length: 128 }),
+  proxyPassword: varchar("proxyPassword", { length: 256 }),
+  // 备注
+  notes: text("notes"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [index("idx_tg_accounts_userId").on(t.userId)]);
+
+export type TgAccount = typeof tgAccounts.$inferSelect;
+export type InsertTgAccount = typeof tgAccounts.$inferInsert;
+
+// ============================================================
+// 关键词分组表
+// ============================================================
+export const keywordGroups = mysqlTable("keyword_groups", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 128 }).notNull(),
+  description: text("description"),
+  color: varchar("color", { length: 16 }).default("#3B82F6"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [index("idx_keyword_groups_userId").on(t.userId)]);
+
+export type KeywordGroup = typeof keywordGroups.$inferSelect;
+
+// ============================================================
+// 关键词规则表
+// ============================================================
+export const keywords = mysqlTable("keywords", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  groupId: int("groupId"),
+  // 规则配置
+  keyword: varchar("keyword", { length: 512 }).notNull(),
+  matchType: mysqlEnum("matchType", ["exact", "contains", "regex", "and", "or", "not"]).default("contains").notNull(),
+  // AND/OR/NOT 逻辑时的子关键词列表
+  subKeywords: json("subKeywords"),
+  // 大小写敏感
+  caseSensitive: boolean("caseSensitive").default(false).notNull(),
+  // 统计
+  hitCount: int("hitCount").default(0).notNull(),
+  lastHitAt: timestamp("lastHitAt"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("idx_keywords_userId").on(t.userId),
+  index("idx_keywords_groupId").on(t.groupId),
+]);
+
+export type Keyword = typeof keywords.$inferSelect;
+export type InsertKeyword = typeof keywords.$inferInsert;
+
+// ============================================================
+// 监控群组表
+// ============================================================
+export const monitorGroups = mysqlTable("monitor_groups", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  tgAccountId: int("tgAccountId").notNull(),             // 使用哪个TG账号监控
+  // 群组信息
+  groupId: varchar("groupId", { length: 64 }).notNull(), // TG 群组 ID
+  groupTitle: varchar("groupTitle", { length: 256 }),
+  groupUsername: varchar("groupUsername", { length: 128 }),
+  groupType: mysqlEnum("groupType", ["group", "supergroup", "channel"]).default("supergroup"),
+  memberCount: int("memberCount"),
+  // 关联的关键词分组（JSON数组存储关键词ID列表）
+  keywordIds: json("keywordIds"),
+  // 监控状态
+  monitorStatus: mysqlEnum("monitorStatus", ["active", "paused", "error"]).default("active").notNull(),
+  lastMessageAt: timestamp("lastMessageAt"),
+  totalHits: int("totalHits").default(0).notNull(),
+  errorMessage: text("errorMessage"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("idx_monitor_groups_userId").on(t.userId),
+  index("idx_monitor_groups_tgAccountId").on(t.tgAccountId),
+]);
+
+export type MonitorGroup = typeof monitorGroups.$inferSelect;
+export type InsertMonitorGroup = typeof monitorGroups.$inferInsert;
+
+// ============================================================
+// 消息模板表
+// ============================================================
+export const messageTemplates = mysqlTable("message_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 128 }).notNull(),
+  // 模板内容（支持变量：{username}, {keyword}, {group_name}, {message}, {date}）
+  content: text("content").notNull(),
+  // 轮换权重（越高越常用）
+  weight: int("weight").default(1).notNull(),
+  // 统计
+  usedCount: int("usedCount").default(0).notNull(),
+  lastUsedAt: timestamp("lastUsedAt"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [index("idx_message_templates_userId").on(t.userId)]);
+
+export type MessageTemplate = typeof messageTemplates.$inferSelect;
+export type InsertMessageTemplate = typeof messageTemplates.$inferInsert;
+
+// ============================================================
+// 命中记录表
+// ============================================================
+export const hitRecords = mysqlTable("hit_records", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  // 来源信息
+  monitorGroupId: int("monitorGroupId").notNull(),
+  keywordId: int("keywordId").notNull(),
+  tgAccountId: int("tgAccountId").notNull(),
+  // 消息信息
+  messageId: varchar("messageId", { length: 64 }),
+  messageContent: text("messageContent"),
+  messageDate: timestamp("messageDate"),
+  // 发送者信息
+  senderTgId: varchar("senderTgId", { length: 64 }),
+  senderUsername: varchar("senderUsername", { length: 128 }),
+  senderFirstName: varchar("senderFirstName", { length: 128 }),
+  senderLastName: varchar("senderLastName", { length: 128 }),
+  // 命中的关键词
+  matchedKeyword: varchar("matchedKeyword", { length: 512 }),
+  // 私信状态
+  dmStatus: mysqlEnum("dmStatus", ["pending", "queued", "sent", "failed", "skipped", "duplicate"]).default("pending").notNull(),
+  dmSentAt: timestamp("dmSentAt"),
+  dmTemplateId: int("dmTemplateId"),
+  dmContent: text("dmContent"),
+  dmError: text("dmError"),
+  // 是否已处理（人工标记）
+  isProcessed: boolean("isProcessed").default(false).notNull(),
+  processedAt: timestamp("processedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("idx_hit_records_userId").on(t.userId),
+  index("idx_hit_records_monitorGroupId").on(t.monitorGroupId),
+  index("idx_hit_records_keywordId").on(t.keywordId),
+  index("idx_hit_records_senderTgId").on(t.senderTgId),
+  index("idx_hit_records_createdAt").on(t.createdAt),
+]);
+
+export type HitRecord = typeof hitRecords.$inferSelect;
+export type InsertHitRecord = typeof hitRecords.$inferInsert;
+
+// ============================================================
+// 私信发送队列表
+// ============================================================
+export const dmQueue = mysqlTable("dm_queue", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  hitRecordId: bigint("hitRecordId", { mode: "number" }),
+  // 发送配置
+  senderAccountId: int("senderAccountId").notNull(),     // 使用哪个账号发送
+  targetTgId: varchar("targetTgId", { length: 64 }).notNull(),
+  targetUsername: varchar("targetUsername", { length: 128 }),
+  templateId: int("templateId"),
+  content: text("content").notNull(),
+  // 调度
+  scheduledAt: timestamp("scheduledAt").notNull(),
+  status: mysqlEnum("status", ["pending", "processing", "sent", "failed", "cancelled"]).default("pending").notNull(),
+  retryCount: int("retryCount").default(0).notNull(),
+  maxRetries: int("maxRetries").default(3).notNull(),
+  // 结果
+  sentAt: timestamp("sentAt"),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("idx_dm_queue_userId").on(t.userId),
+  index("idx_dm_queue_status").on(t.status),
+  index("idx_dm_queue_scheduledAt").on(t.scheduledAt),
+]);
+
+export type DmQueue = typeof dmQueue.$inferSelect;
+export type InsertDmQueue = typeof dmQueue.$inferInsert;
+
+// ============================================================
+// 防封策略配置表
+// ============================================================
+export const antibanSettings = mysqlTable("antiban_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  // 发信频率控制
+  dailyDmLimit: int("dailyDmLimit").default(30).notNull(),
+  minIntervalSeconds: int("minIntervalSeconds").default(60).notNull(),
+  maxIntervalSeconds: int("maxIntervalSeconds").default(180).notNull(),
+  // 活跃时间窗口（24小时制）
+  activeHourStart: int("activeHourStart").default(9).notNull(),
+  activeHourEnd: int("activeHourEnd").default(22).notNull(),
+  // 去重策略
+  deduplicateEnabled: boolean("deduplicateEnabled").default(true).notNull(),
+  deduplicateWindowHours: int("deduplicateWindowHours").default(24).notNull(),
+  // 账号健康度阈值
+  warningThreshold: int("warningThreshold").default(70).notNull(),
+  degradedThreshold: int("degradedThreshold").default(40).notNull(),
+  suspendThreshold: int("suspendThreshold").default(20).notNull(),
+  // 自动降级
+  autoDegrade: boolean("autoDegrade").default(true).notNull(),
+  // 模板轮换
+  templateRotation: boolean("templateRotation").default(true).notNull(),
+  // DM 功能总开关
+  dmEnabled: boolean("dmEnabled").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [index("idx_antiban_settings_userId").on(t.userId)]);
+
+export type AntibanSettings = typeof antibanSettings.$inferSelect;
+export type InsertAntibanSettings = typeof antibanSettings.$inferInsert;
+
+// ============================================================
+// 黑名单表（屏蔽特定用户）
+// ============================================================
+export const blacklist = mysqlTable("blacklist", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  targetTgId: varchar("targetTgId", { length: 64 }),
+  targetUsername: varchar("targetUsername", { length: 128 }),
+  reason: text("reason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("idx_blacklist_userId").on(t.userId),
+  index("idx_blacklist_targetTgId").on(t.targetTgId),
+]);
+
+export type Blacklist = typeof blacklist.$inferSelect;
