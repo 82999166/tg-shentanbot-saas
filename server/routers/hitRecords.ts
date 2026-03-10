@@ -22,7 +22,7 @@ import {
 } from "../db";
 import { protectedProcedure, router, adminProcedure } from "../_core/trpc";
 import { getAllUsers, getDb } from "../db";
-import { users } from "../../drizzle/schema";
+import { users, tgAccounts } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 
 // ============================================================
@@ -244,15 +244,27 @@ export const adminRouter = router({
     }),
 
   stats: adminProcedure.query(async () => {
-    const users = await getAllUsers(1000, 0);
-    const planCounts = users.reduce((acc, u) => {
+    const allUsers = await getAllUsers(1000, 0);
+    const planCounts = allUsers.reduce((acc, u) => {
       acc[u.planId] = (acc[u.planId] ?? 0) + 1;
       return acc;
     }, {} as Record<string, number>);
     return {
-      totalUsers: users.length,
+      totalUsers: allUsers.length,
       planCounts,
-      recentUsers: users.slice(0, 10),
+      recentUsers: allUsers.slice(0, 10),
     };
+  }),
+
+  allTgAccounts: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const allUsers = await getAllUsers(1000, 0);
+    const userMap = new Map(allUsers.map((u) => [u.id, u.name ?? u.email ?? `#${u.id}`]));
+    const accounts = await db.select().from(tgAccounts);
+    return accounts.map((a) => ({
+      ...a,
+      userName: userMap.get(a.userId) ?? `用户 #${a.userId}`,
+    }));
   }),
 });

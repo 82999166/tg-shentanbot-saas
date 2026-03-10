@@ -44,3 +44,12 @@
 - [x] TypeScript 编译 0 错误
 - [x] 保存检查点
 - [x] 交付用户
+
+## 新需求：TG 账号接入方式增强 & 管理后台修复
+- [x] 后端：手机号登录 API - 发送验证码（sendCode）
+- [x] 后端：手机号登录 API - 验证码确认（verifyCode）
+- [x] 后端：手机号登录 API - 二步验证密码（verify2FA）
+- [x] 后端： Session 批量导入 API（importSessions）
+- [x] 前端：TG 账号页面 - 手机号+验证码+二步验证完整流程 UI（多步骤 Dialog）
+- [x] 前端：TG 账号页面 - 批量导入 Session 文件 UI（拖拽上传/文本粘贴）
+- [x] 前端：管理后台 - 新增监控账号管理 Tab（账号列表、套餐分配、健康度总览）
