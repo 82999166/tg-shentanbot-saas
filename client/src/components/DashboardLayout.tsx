@@ -21,15 +21,37 @@ import {
 } from "@/components/ui/sidebar";
 // import { getLoginUrl } from "@/const"; // 已替换为邮箱登录
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
+import {
+  LayoutDashboard, LogOut, PanelLeft, Users, Key, Radio, MessageSquare,
+  ListOrdered, FileText, Shield, CreditCard, Settings, Bot, Gift,
+  MessageCircle, BarChart2, Send, FolderPlus, Bell
+} from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Page 1", path: "/" },
-  { icon: Users, label: "Page 2", path: "/some-path" },
+  // 核心监控
+  { icon: LayoutDashboard, label: "仪表盘", path: "/dashboard", group: "监控" },
+  { icon: Radio, label: "群组监控", path: "/monitor", group: "监控" },
+  { icon: Key, label: "关键词规则", path: "/keywords", group: "监控" },
+  { icon: MessageCircle, label: "命中消息", path: "/hit-messages", group: "监控" },
+  { icon: BarChart2, label: "关键词统计", path: "/keyword-stats", group: "监控" },
+  // 推送管理
+  { icon: Send, label: "推送设置", path: "/push-settings", group: "推送" },
+  { icon: MessageSquare, label: "消息模板", path: "/templates", group: "推送" },
+  { icon: ListOrdered, label: "发送队列", path: "/queue", group: "推送" },
+  // 账号管理
+  { icon: Users, label: "TG 账号", path: "/accounts", group: "账号" },
+  { icon: Bot, label: "Bot 配置", path: "/bot-config", group: "账号" },
+  { icon: Shield, label: "防封设置", path: "/antiban", group: "账号" },
+  // 其他
+  { icon: FolderPlus, label: "群组提交", path: "/group-submissions", group: "其他" },
+  { icon: FileText, label: "命中记录", path: "/records", group: "其他" },
+  { icon: CreditCard, label: "订阅套餐", path: "/plans", group: "其他" },
+  { icon: Gift, label: "邀请返佣", path: "/invite", group: "其他" },
+  { icon: Settings, label: "系统设置", path: "/system-settings", group: "其他" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

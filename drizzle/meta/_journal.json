@@ -36,6 +36,13 @@
       "when": 1773310841916,
       "tag": "0004_equal_logan",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1773313084238,
+      "tag": "0005_rainy_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

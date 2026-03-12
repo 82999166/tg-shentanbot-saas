@@ -252,6 +252,26 @@ async def process_dm_queue():
         await asyncio.sleep(DM_WORKER_INTERVAL)
 
 
+# ── 广告用户检测 ─────────────────────────────────────────────
+def is_likely_spam(sender, text: str) -> bool:
+    """简单的广告/垃圾用户检测"""
+    spam_patterns = [
+        r"t\.me/\+", r"t\.me/[a-zA-Z0-9_]+",  # TG 链接
+        r"https?://",  # 外部链接
+        r"@[a-zA-Z0-9_]{5,}",  # @ 提及
+        r"\+?\d[\d\s\-\(\)]{8,}",  # 电话号码
+    ]
+    spam_count = sum(1 for p in spam_patterns if re.search(p, text))
+    # 无用户名且有多个垃圾特征，或 bio 为空且消息含大量链接
+    if spam_count >= 2:
+        return True
+    # 账号创建时间很新（无法直接检测，但可以通过 ID 范围粗略判断）
+    # Telegram ID > 7000000000 通常是 2023 年后注册的新账号
+    if sender.id > 7_000_000_000 and spam_count >= 1:
+        return True
+    return False
+
+
 # ── 消息处理器 ───────────────────────────────────────────────
 def create_message_handler(account_id: int, user_id: int):
     """为每个账号创建消息处理器闭包"""
@@ -268,6 +288,7 @@ def create_message_handler(account_id: int, user_id: int):
                 return
 
             chat_id = str(message.chat.id)
+            sender_tg_id = str(sender.id)
             text = message.text or message.caption or ""
             if not text.strip():
                 return
@@ -275,6 +296,22 @@ def create_message_handler(account_id: int, user_id: int):
             # 从配置中查找该群组的监控规则
             config = monitor_config.get(str(user_id), {})
             groups = config.get("groups", [])
+
+            # ── 推送总开关检查 ──────────────────────────────────
+            push_settings = config.get("pushSettings", {})
+            if not push_settings.get("pushEnabled", True):
+                return  # 推送已关闭，直接跳过
+
+            # ── 屏蔽列表检查 ────────────────────────────────────
+            blocked_ids = set(config.get("blockedTgIds", []))
+            if sender_tg_id in blocked_ids:
+                logger.debug(f"[BLOCKED] 跳过屏蔽用户 {sender_tg_id}")
+                return
+
+            # ── 广告用户过滤 ────────────────────────────────────
+            if push_settings.get("filterAds", False) and is_likely_spam(sender, text):
+                logger.debug(f"[SPAM] 过滤疑似广告用户 {sender_tg_id}: {text[:50]}")
+                return
 
             for group in groups:
                 if str(group.get("tgGroupId")) != chat_id:
@@ -295,17 +332,31 @@ def create_message_handler(account_id: int, user_id: int):
                 if not matched_keywords:
                     continue
 
+                sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
+
                 logger.info(
                     f"[MATCH] user={user_id} group={message.chat.title} "
                     f"sender={sender.username or sender.id} "
                     f"keywords={[k['pattern'] for k in matched_keywords]}"
                 )
 
+                # ── 发送者历史记录写入 ──────────────────────────
+                await api.post("/engine/sender-history", {
+                    "userId": user_id,
+                    "senderTgId": sender_tg_id,
+                    "senderUsername": sender.username,
+                    "senderName": sender_name,
+                    "tgGroupId": chat_id,
+                    "groupName": message.chat.title,
+                    "messageContent": text[:500],
+                    "matchedKeywords": [k["pattern"] for k in matched_keywords],
+                })
+
                 # 构建变量
                 variables = {
                     "sender_username": sender.username or "",
-                    "sender_id": str(sender.id),
-                    "sender_name": f"{sender.first_name or ''} {sender.last_name or ''}".strip(),
+                    "sender_id": sender_tg_id,
+                    "sender_name": sender_name,
                     "group_name": message.chat.title or "",
                     "group_id": str(message.chat.id),
                     "message_text": text[:200],
@@ -320,14 +371,45 @@ def create_message_handler(account_id: int, user_id: int):
                     "monitorAccountId": account_id,
                     "tgGroupId": chat_id,
                     "groupName": message.chat.title,
-                    "senderTgId": str(sender.id),
+                    "senderTgId": sender_tg_id,
                     "senderUsername": sender.username,
-                    "senderName": variables["sender_name"],
+                    "senderName": sender_name,
                     "messageText": text[:1000],
                     "matchedKeywords": [k["pattern"] for k in matched_keywords],
                     "messageId": str(message.id),
                 }
-                await api.post("/engine/hit", hit_data)
+                hit_result = await api.post("/engine/hit", hit_data)
+                hit_record_id = hit_result.get("id") if hit_result else None
+
+                # ── 协作群推送通知 ──────────────────────────────
+                collab_chat_id = push_settings.get("collabChatId")
+                if collab_chat_id:
+                    try:
+                        notify_text = (
+                            f"🔔 **关键词命中**\n"
+                            f"👤 用户: {('@' + sender.username) if sender.username else sender_tg_id}\n"
+                            f"💬 群组: {message.chat.title}\n"
+                            f"🔑 关键词: {', '.join(k['pattern'] for k in matched_keywords)}\n"
+                            f"📝 内容: {text[:100]}{'...' if len(text) > 100 else ''}\n"
+                            f"⏰ 时间: {datetime.now().strftime('%H:%M:%S')}"
+                        )
+                        await client.send_message(int(collab_chat_id), notify_text)
+                        logger.info(f"[COLLAB] 已推送到协作群 {collab_chat_id}")
+                    except Exception as e:
+                        logger.warning(f"[COLLAB] 推送协作群失败: {e}")
+
+                # ── 关键词命中统计 ──────────────────────────────
+                for kw in matched_keywords:
+                    await api.post("/engine/keyword-stat", {
+                        "userId": user_id,
+                        "keywordId": kw.get("id"),
+                        "senderTgId": sender_tg_id,
+                        "senderUsername": sender.username,
+                        "senderName": sender_name,
+                        "tgGroupId": chat_id,
+                        "groupName": message.chat.title,
+                        "messageContent": text[:200],
+                    })
 
                 # 如果配置了自动私信，加入发送队列
                 if config.get("dmEnabled") and config.get("dmTemplates"):
@@ -344,12 +426,13 @@ def create_message_handler(account_id: int, user_id: int):
                     dm_data = {
                         "userId": user_id,
                         "senderAccountId": config.get("dmSenderAccountId", account_id),
-                        "targetTgId": str(sender.id),
+                        "targetTgId": sender_tg_id,
                         "targetUsername": sender.username,
                         "content": dm_content,
                         "templateId": template.get("id"),
                         "hitGroupId": chat_id,
                         "matchedKeyword": matched_keywords[0]["pattern"],
+                        "hitRecordId": hit_record_id,
                     }
                     await api.post("/engine/dm-queue/add", dm_data)
 

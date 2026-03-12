@@ -12,6 +12,7 @@ import { paymentRouter, systemSettingsRouter } from "./routers/payment";
 import { engineRouter } from "./routers/engine";
 import { inviteRouter } from "./routers/invite";
 import { emailAuthRouter } from "./routers/emailAuth";
+import { hitMessagesRouter } from "./routers/hitMessages";
 
 export const appRouter = router({
   system: systemRouter,
@@ -41,6 +42,7 @@ export const appRouter = router({
   engine: engineRouter,
   invite: inviteRouter,
   emailAuth: emailAuthRouter,
+  hitMessages: hitMessagesRouter,
 });
 
 export type AppRouter = typeof appRouter;

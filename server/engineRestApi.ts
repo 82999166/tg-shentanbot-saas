@@ -13,6 +13,10 @@ import {
   hitRecords,
   dmQueue,
   messageTemplates,
+  blacklist,
+  senderHistory,
+  keywordDailyStats,
+  pushSettings,
 } from "../drizzle/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 
@@ -101,6 +105,20 @@ export function registerEngineRestRoutes(app: Router) {
         const antibanConfig = antiban[0] || {};
         const senderAccount = senderAccounts[0];
 
+        // 获取屏蔽列表
+        const blockedList = await db
+          .select()
+          .from(blacklist)
+          .where(eq(blacklist.userId, userId));
+
+        // 获取推送设置
+        const pushSettingsRows = await db
+          .select()
+          .from(pushSettings)
+          .where(eq(pushSettings.userId, userId))
+          .limit(1);
+        const pushConfig = pushSettingsRows[0] || {};
+
         userConfigs[String(userId)] = {
           groups: groupsWithKeywords,
           dmTemplates: templates.map((t) => ({
@@ -115,6 +133,12 @@ export function registerEngineRestRoutes(app: Router) {
             maxDelay: antibanConfig.maxIntervalSeconds || 180,
             dailyLimit: antibanConfig.dailyDmLimit || 30,
             cooldownHours: antibanConfig.deduplicateWindowHours || 24,
+          },
+          blockedTgIds: blockedList.map((b) => b.targetTgId).filter(Boolean),
+          pushSettings: {
+            pushEnabled: pushConfig.pushEnabled ?? true,
+            filterAds: pushConfig.filterAds ?? false,
+            collabChatId: pushConfig.collaborationGroupId ?? null,
           },
         };
       }
@@ -318,6 +342,78 @@ export function registerEngineRestRoutes(app: Router) {
       await db.update(tgAccounts).set(updates).where(eq(tgAccounts.id, accountId));
       res.json({ success: true });
     } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/engine/sender-history - 写入发送者历史记录
+  app.post("/api/engine/sender-history", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB unavailable" });
+
+      const input = req.body;
+      await db.insert(senderHistory).values({
+        userId: input.userId,
+        senderTgId: input.senderTgId,
+        senderUsername: input.senderUsername || null,
+        senderFirstName: input.senderName || null,
+        groupId: input.tgGroupId,
+        groupTitle: input.groupName || null,
+        messageContent: input.messageContent || null,
+        messageDate: new Date(),
+      });
+
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("[Engine API] sender-history error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/engine/keyword-stat - 写入关键词命中统计
+  app.post("/api/engine/keyword-stat", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB unavailable" });
+
+      const input = req.body;
+      const today = new Date();
+      const dateStr = today.toISOString().slice(0, 10); // YYYY-MM-DD
+
+      // upsert: 如果当天已有记录则 +1，否则新建
+      const existing = await db
+        .select()
+        .from(keywordDailyStats)
+        .where(
+          and(
+            eq(keywordDailyStats.userId, input.userId),
+            eq(keywordDailyStats.keywordId, input.keywordId),
+            eq(keywordDailyStats.date, dateStr)
+          )
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        await db
+          .update(keywordDailyStats)
+          .set({ hitCount: sql`${keywordDailyStats.hitCount} + 1` })
+          .where(eq(keywordDailyStats.id, existing[0].id));
+      } else {
+        await db.insert(keywordDailyStats).values({
+          userId: input.userId,
+          keywordId: input.keywordId,
+          date: dateStr,
+          hitCount: 1,
+          uniqueSenders: 1,
+        });
+      }
+
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("[Engine API] keyword-stat error:", e);
       res.status(500).json({ error: e.message });
     }
   });

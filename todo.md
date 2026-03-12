@@ -193,3 +193,41 @@
 - [x] 前端：个人设置页（修改密码）
 - [x] 移除 Manus OAuth 登录入口
 - [x] 部署到服务器并测试完整流程
+
+## v1.7 参考 bljtBot 新增全部功能 (2026-03-12)
+
+### 数据库
+- [x] 新增 senderHistory 表（发送者历史消息记录）
+- [x] 新增 groupSubmissions 表（用户提交的群组审核）
+- [x] 新增 pushSettings 表（推送开关/广告过滤/协作群组）
+- [x] 新增 keywordDailyStats 表（关键词每日统计）
+
+### 后端 API
+- [x] 消息处理标记 API（markHandled/unmarkHandled）
+- [x] 屏蔽/取消屏蔽发送者 API
+- [x] 查看发送者历史记录 API（近7天）
+- [x] 删除发送者所有历史推送 API
+- [x] 过滤广告用户开关 API
+- [x] 推送开关 API（savePushSettings）
+- [x] 关键词命中统计 API（近7日每天命中数）
+- [x] 关键词用户列表 API（命中某关键词的所有用户）
+- [x] 用户列表导出 API（CSV 下载）
+- [x] 群组提交审核 API（用户提交 + 管理员审核）
+- [x] 多人协作推送群配置 API（collaborationGroupId）
+- [x] engineRestApi 新增 sender-history、keyword-stat 接口
+
+### 前端页面
+- [x] 新增「命中消息」页面（消息列表、处理标记、屏蔽按钮、历史查看）
+- [x] 新增「关键词统计」页面（7日趋势图、命中用户列表、CSV 导出）
+- [x] 新增「群组审核」页面（管理员审核用户提交的群组）
+- [x] 新增「推送设置」页面（推送开关、协作群、广告过滤、屏蔽列表）
+- [x] 侧边栏导航更新（DashboardLayout.tsx）
+
+### Python 引擎
+- [x] 推送前检查发送者是否在屏蔽列表
+- [x] 推送前检查用户推送开关是否开启
+- [x] 推送前检查广告过滤开关，过滤疑似广告账号
+- [x] 记录发送者历史消息到 senderHistory 表
+- [x] 关键词命中统计写入 keywordDailyStats 表
+- [x] 支持协作群组推送（collabChatId）
+- [x] 部署到服务器（72.167.134.119）

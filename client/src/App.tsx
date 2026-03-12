@@ -24,6 +24,10 @@ import Register from "./pages/Register";
 import VerifyEmail from "./pages/VerifyEmail";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import HitMessages from "./pages/HitMessages";
+import KeywordStats from "./pages/KeywordStats";
+import GroupSubmissions from "./pages/GroupSubmissions";
+import PushSettings from "./pages/PushSettings";
 
 function Router() {
   return (
@@ -43,6 +47,10 @@ function Router() {
       <Route path={"/system-settings"} component={SystemSettings} />
       <Route path={"/bot-config"} component={BotConfig} />
       <Route path={"/invite"} component={Invite} />
+      <Route path={"/hit-messages"} component={HitMessages} />
+      <Route path={"/keyword-stats"} component={KeywordStats} />
+      <Route path={"/group-submissions"} component={GroupSubmissions} />
+      <Route path={"/push-settings"} component={PushSettings} />
       <Route path={"/login"} component={Login} />
       <Route path={"/register"} component={Register} />
       <Route path={"/verify-email"} component={VerifyEmail} />

@@ -484,3 +484,92 @@ export const loginAttempts = mysqlTable("login_attempts", {
 }, (t) => [index("idx_la_email").on(t.email), index("idx_la_ip").on(t.ip)]);
 
 export type LoginAttempt = typeof loginAttempts.$inferSelect;
+
+// ============================================================
+// 发送者历史记录表（查看某用户近期发言）
+// ============================================================
+export const senderHistory = mysqlTable("sender_history", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  userId: int("userId").notNull(),                              // 所属监控用户
+  senderTgId: varchar("senderTgId", { length: 64 }).notNull(), // 发送者 TG ID
+  senderUsername: varchar("senderUsername", { length: 128 }),
+  senderFirstName: varchar("senderFirstName", { length: 128 }),
+  // 消息内容
+  messageContent: text("messageContent"),
+  groupId: varchar("groupId", { length: 64 }),
+  groupTitle: varchar("groupTitle", { length: 256 }),
+  messageDate: timestamp("messageDate").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("idx_sender_history_userId").on(t.userId),
+  index("idx_sender_history_senderTgId").on(t.senderTgId),
+  index("idx_sender_history_messageDate").on(t.messageDate),
+]);
+
+export type SenderHistory = typeof senderHistory.$inferSelect;
+export type InsertSenderHistory = typeof senderHistory.$inferInsert;
+
+// ============================================================
+// 群组提交审核表（用户提交新群组，管理员审核）
+// ============================================================
+export const groupSubmissions = mysqlTable("group_submissions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),                              // 提交人
+  groupLink: varchar("groupLink", { length: 256 }).notNull(),  // 群组链接
+  groupTitle: varchar("groupTitle", { length: 256 }),
+  description: text("description"),                            // 提交说明
+  status: mysqlEnum("status", ["pending", "approved", "rejected"]).default("pending").notNull(),
+  reviewNote: text("reviewNote"),                              // 审核备注
+  reviewedAt: timestamp("reviewedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("idx_group_submissions_userId").on(t.userId),
+  index("idx_group_submissions_status").on(t.status),
+]);
+
+export type GroupSubmission = typeof groupSubmissions.$inferSelect;
+export type InsertGroupSubmission = typeof groupSubmissions.$inferInsert;
+
+// ============================================================
+// 用户推送设置表（推送开关、广告过滤、协作群组等）
+// ============================================================
+export const pushSettings = mysqlTable("push_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  // 推送开关
+  pushEnabled: boolean("pushEnabled").default(true).notNull(),
+  // 过滤广告用户
+  filterAds: boolean("filterAds").default(false).notNull(),
+  // 多人协作推送群（TG 群组 Chat ID）
+  collaborationGroupId: varchar("collaborationGroupId", { length: 64 }),
+  collaborationGroupTitle: varchar("collaborationGroupTitle", { length: 256 }),
+  // 推送格式
+  pushFormat: mysqlEnum("pushFormat", ["simple", "standard", "detailed"]).default("standard").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [index("idx_push_settings_userId").on(t.userId)]);
+
+export type PushSettings = typeof pushSettings.$inferSelect;
+export type InsertPushSettings = typeof pushSettings.$inferInsert;
+
+// ============================================================
+// 关键词每日统计表（近7日命中趋势）
+// ============================================================
+export const keywordDailyStats = mysqlTable("keyword_daily_stats", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  keywordId: int("keywordId").notNull(),
+  date: varchar("date", { length: 10 }).notNull(),             // YYYY-MM-DD
+  hitCount: int("hitCount").default(0).notNull(),
+  uniqueSenders: int("uniqueSenders").default(0).notNull(),    // 唯一发送者数
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("idx_kds_userId").on(t.userId),
+  index("idx_kds_keywordId").on(t.keywordId),
+  index("idx_kds_date").on(t.date),
+]);
+
+export type KeywordDailyStat = typeof keywordDailyStats.$inferSelect;
+export type InsertKeywordDailyStat = typeof keywordDailyStats.$inferInsert;
