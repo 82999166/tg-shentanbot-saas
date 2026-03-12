@@ -1,9 +1,8 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Activity, Bot, MessageSquare, Shield, Zap, ArrowRight, CheckCircle2 } from "lucide-react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 
 const FEATURES = [
   { icon: Bot, title: "多账号监控引擎", desc: "支持多个 Telegram 账号同时监控数十个群组，实时捕获关键词消息" },
@@ -28,7 +27,7 @@ export default function Landing() {
     if (isAuthenticated) {
       navigate("/dashboard");
     } else {
-      window.location.href = getLoginUrl();
+      navigate("/register");
     }
   };
 
@@ -48,9 +47,18 @@ export default function Landing() {
               进入控制台 <ArrowRight className="w-4 h-4 ml-1" />
             </Button>
           ) : (
-            <Button onClick={handleStart} size="sm">
-              免费开始 <ArrowRight className="w-4 h-4 ml-1" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Link href="/login">
+                <Button variant="ghost" size="sm" className="text-gray-300 hover:text-white">
+                  登录
+                </Button>
+              </Link>
+              <Link href="/register">
+                <Button size="sm">
+                  免费注册 <ArrowRight className="w-4 h-4 ml-1" />
+                </Button>
+              </Link>
+            </div>
           )}
         </div>
       </nav>

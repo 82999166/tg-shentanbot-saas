@@ -17,10 +17,15 @@ import {
 // ============================================================
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  openId: varchar("openId", { length: 64 }).unique(),       // 兼容旧 OAuth，新用户可为空
   name: text("name"),
-  email: varchar("email", { length: 320 }),
+  email: varchar("email", { length: 320 }).unique(),
   loginMethod: varchar("loginMethod", { length: 64 }),
+  // 邮箱注册
+  passwordHash: varchar("passwordHash", { length: 256 }),   // bcrypt 哈希
+  emailVerified: boolean("emailVerified").default(false).notNull(),
+  emailVerifyToken: varchar("emailVerifyToken", { length: 128 }),
+  emailVerifyExpiry: timestamp("emailVerifyExpiry"),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   // 套餐
   planId: mysqlEnum("planId", ["free", "basic", "pro", "enterprise"]).default("free").notNull(),
@@ -452,3 +457,30 @@ export const inviteRecords = mysqlTable("invite_records", {
 ]);
 export type InviteRecord = typeof inviteRecords.$inferSelect;
 export type InsertInviteRecord = typeof inviteRecords.$inferInsert;
+
+// ============================================================
+// 密码重置 Token 表
+// ============================================================
+export const passwordResetTokens = mysqlTable("password_reset_tokens", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  token: varchar("token", { length: 128 }).notNull().unique(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  usedAt: timestamp("usedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [index("idx_prt_userId").on(t.userId), index("idx_prt_token").on(t.token)]);
+
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
+// ============================================================
+// 登录失败记录表（防暴力破解）
+// ============================================================
+export const loginAttempts = mysqlTable("login_attempts", {
+  id: int("id").autoincrement().primaryKey(),
+  email: varchar("email", { length: 320 }).notNull(),
+  ip: varchar("ip", { length: 64 }),
+  success: boolean("success").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [index("idx_la_email").on(t.email), index("idx_la_ip").on(t.ip)]);
+
+export type LoginAttempt = typeof loginAttempts.$inferSelect;

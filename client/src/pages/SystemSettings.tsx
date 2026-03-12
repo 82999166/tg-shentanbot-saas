@@ -32,6 +32,7 @@ import {
   Eye,
   EyeOff,
   Zap,
+  Mail,
 } from "lucide-react";
 
 // ── 系统设置 Tab ─────────────────────────────────────────────
@@ -615,7 +616,110 @@ function OrdersTab() {
   );
 }
 
-// ── 主页面 ───────────────────────────────────────────────────
+// ── 主页// ── SMTP 邮件配置 Tab ────────────────────────────────
+function SmtpSettingsTab() {
+  const { data: settings, refetch } = trpc.settings.list.useQuery();
+  const upsertMutation = trpc.settings.upsert.useMutation({
+    onSuccess: () => { toast.success("设置已保存"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const smtpFields = [
+    { key: "smtp_host", label: "SMTP 服务器", placeholder: "smtp.qq.com / smtp.gmail.com / smtp.163.com", type: "text" },
+    { key: "smtp_port", label: "SMTP 端口", placeholder: "465（SSL）或 587（TLS）", type: "number" },
+    { key: "smtp_user", label: "邮箱账号", placeholder: "your@email.com", type: "email" },
+    { key: "smtp_pass", label: "邮箱密码/授权码", placeholder: "QQ邮箱请使用授权码", type: "password" },
+    { key: "smtp_from", label: "发件人显示名称", placeholder: "TG Monitor Pro", type: "text" },
+    { key: "site_url", label: "站点地址（用于生成邮件链接）", placeholder: "http://72.167.134.119", type: "text" },
+  ];
+
+  const getValue = (key: string) => settings?.find((s) => s.key === key)?.value || "";
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const handleChange = (key: string, value: string) => setFormValues((prev) => ({ ...prev, [key]: value }));
+
+  const handleSave = () => {
+    const updates = smtpFields.map((f) => ({
+      key: f.key,
+      value: formValues[f.key] !== undefined ? formValues[f.key] : getValue(f.key),
+      description: f.label,
+    }));
+    upsertMutation.mutate(updates);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium">SMTP 邮件服务配置</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+            配置后，系统将通过此 SMTP 服务器发送注册验证邮件和密码重置邮件。
+            支持 QQ 邮箱、163 邮箱、Gmail 等常见邮件服务商。
+          </div>
+          {smtpFields.map((field) => (
+            <div key={field.key}>
+              <Label className="text-gray-400 text-xs mb-1 block">{field.label}</Label>
+              <Input
+                type={field.type}
+                placeholder={field.placeholder}
+                defaultValue={getValue(field.key)}
+                onChange={(e) => handleChange(field.key, e.target.value)}
+                className="bg-gray-900 border-gray-600 text-white"
+              />
+            </div>
+          ))}
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              type="checkbox"
+              id="smtp_secure"
+              defaultChecked={getValue("smtp_secure") !== "false"}
+              onChange={(e) => handleChange("smtp_secure", e.target.checked ? "true" : "false")}
+              className="w-4 h-4 rounded border-gray-600 bg-gray-800 accent-blue-500"
+            />
+            <label htmlFor="smtp_secure" className="text-sm text-gray-400 cursor-pointer">
+              使用 SSL/TLS 加密连接（端口 465 请勾选）
+            </label>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Button
+        className="w-full bg-blue-600 hover:bg-blue-700"
+        onClick={handleSave}
+        disabled={upsertMutation.isPending}
+      >
+        <Save className="w-4 h-4 mr-2" />
+        {upsertMutation.isPending ? "保存中..." : "保存 SMTP 配置"}
+      </Button>
+
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium">常用邮件服务商配置参考</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-xs text-gray-400">
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { name: "QQ 邮箱", host: "smtp.qq.com", port: "465", note: "需开启 SMTP 服务并获取授权码" },
+              { name: "163 邮箱", host: "smtp.163.com", port: "465", note: "需开启 SMTP 服务并设置客户端授权码" },
+              { name: "Gmail", host: "smtp.gmail.com", port: "587", note: "需开启 2FA 并使用应用密码" },
+              { name: "Outlook", host: "smtp.office365.com", port: "587", note: "使用账号密码登录" },
+            ].map((s) => (
+              <div key={s.name} className="p-2 rounded bg-gray-900 border border-gray-700">
+                <p className="text-gray-200 font-medium mb-1">{s.name}</p>
+                <p>服务器：{s.host}</p>
+                <p>端口：{s.port}</p>
+                <p className="text-gray-500 mt-1">{s.note}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ── 主页面 ───────────────────────────────────────────
 export default function SystemSettings() {
   const { user } = useAuth();
 
@@ -660,6 +764,10 @@ export default function SystemSettings() {
             <ShoppingCart className="w-4 h-4 mr-1.5" />
             订单管理
           </TabsTrigger>
+          <TabsTrigger value="smtp" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
+            <Mail className="w-4 h-4 mr-1.5" />
+            邮件配置
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="tgapi">
@@ -673,6 +781,9 @@ export default function SystemSettings() {
         </TabsContent>
         <TabsContent value="orders">
           <OrdersTab />
+        </TabsContent>
+        <TabsContent value="smtp">
+          <SmtpSettingsTab />
         </TabsContent>
       </Tabs>
     </div>

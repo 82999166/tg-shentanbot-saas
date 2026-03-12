@@ -172,3 +172,24 @@
 - [x] 前端：系统设置页面新增《TG API 凭证》配置区块（API ID + API Hash 输入框）
 - [x] 前端：显示引擎当前状态（运行中/等待凭证/错误）
 - [x] 部署更新到服务器并测试
+
+## v1.6 邮箱注册/登录系统（完全替换 Manus OAuth）(2026-03-12)
+
+- [x] 数据库：users 表新增 passwordHash、emailVerified、emailVerifyToken、emailVerifyExpiry 字段
+- [x] 数据库：新增 passwordResetTokens 表（找回密码 token）
+- [x] 数据库：新增 loginAttempts 表（登录失败次数限制）
+- [x] 后端：注册 API（邮箱+密码，发送验证邮件）
+- [x] 后端：邮箱验证 API（验证 token → 激活账号）
+- [x] 后端：登录 API（邮箱+密码，失败次数限制，JWT session）
+- [x] 后端：找回密码 API（发送重置邮件）
+- [x] 后端：重置密码 API（验证 token → 更新密码）
+- [x] 后端：修改密码 API（需登录，验证旧密码）
+- [x] 后端：集成 SMTP 邮件发送（nodemailer）
+- [x] 前端：注册页面（邮箱+密码+确认密码）
+- [x] 前端：登录页面（邮箱+密码，记住我）
+- [x] 前端：邮箱验证提示页（注册后提示查收邮件）
+- [x] 前端：找回密码页（输入邮箱发送重置链接）
+- [x] 前端：重置密码页（输入新密码）
+- [x] 前端：个人设置页（修改密码）
+- [x] 移除 Manus OAuth 登录入口
+- [x] 部署到服务器并测试完整流程

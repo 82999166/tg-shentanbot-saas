@@ -24,6 +24,13 @@ export type SessionPayload = {
   name: string;
 };
 
+// 邮箱登录的 session payload
+export type EmailSessionPayload = {
+  userId: number;
+  email: string;
+  loginMethod: "email";
+};
+
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
 const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
@@ -256,24 +263,58 @@ class SDKServer {
     } as GetUserInfoWithJwtResponse;
   }
 
+  // 邮箱登录：创建包含 userId 的 session token
+  async createEmailSessionToken(
+    userId: number,
+    email: string,
+    options: { maxAge?: number } = {}
+  ): Promise<string> {
+    const issuedAt = Date.now();
+    const expiresInMs = (options.maxAge ?? 86400) * 1000;
+    const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
+    const secretKey = this.getSessionSecret();
+    return new SignJWT({ userId, email, loginMethod: "email" })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setExpirationTime(expirationSeconds)
+      .sign(secretKey);
+  }
+
   async authenticateRequest(req: Request): Promise<User> {
-    // Regular authentication flow
     const cookies = this.parseCookies(req.headers.cookie);
     const sessionCookie = cookies.get(COOKIE_NAME);
-    const session = await this.verifySession(sessionCookie);
+    if (!sessionCookie) {
+      throw ForbiddenError("Missing session cookie");
+    }
 
+    // 先尝试解析为邮箱登录 token
+    try {
+      const secretKey = this.getSessionSecret();
+      const { payload } = await jwtVerify(sessionCookie, secretKey, { algorithms: ["HS256"] });
+      if ((payload as any).loginMethod === "email" && typeof (payload as any).userId === "number") {
+        const userId = (payload as any).userId as number;
+        const user = await db.getUserById(userId);
+        if (!user) throw ForbiddenError("User not found");
+        return user;
+      }
+    } catch (e: any) {
+      // 如果是邮箱 token 但失败（过期、用户不存在），直接抛出
+      if (e?.code === "ERR_JWT_EXPIRED") throw ForbiddenError("Session expired");
+      if (e?.message === "User not found") throw e;
+      // 否则可能是 OAuth token，继续处理
+    }
+
+    // OAuth 登录流程
+    const session = await this.verifySession(sessionCookie);
     if (!session) {
       throw ForbiddenError("Invalid session cookie");
     }
 
-    const sessionUserId = session.openId;
     const signedInAt = new Date();
-    let user = await db.getUserByOpenId(sessionUserId);
+    let user = await db.getUserByOpenId(session.openId);
 
-    // If user not in DB, sync from OAuth server automatically
     if (!user) {
       try {
-        const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
+        const userInfo = await this.getUserInfoWithJwt(sessionCookie);
         await db.upsertUser({
           openId: userInfo.openId,
           name: userInfo.name || null,
@@ -288,15 +329,8 @@ class SDKServer {
       }
     }
 
-    if (!user) {
-      throw ForbiddenError("User not found");
-    }
-
-    await db.upsertUser({
-      openId: user.openId,
-      lastSignedIn: signedInAt,
-    });
-
+    if (!user) throw ForbiddenError("User not found");
+    await db.upsertUser({ openId: user.openId!, lastSignedIn: signedInAt });
     return user;
   }
 }

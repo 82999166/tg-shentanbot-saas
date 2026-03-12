@@ -11,6 +11,7 @@ import { hitRecordsRouter, dmQueueRouter, antibanRouter, blacklistRouter, dashbo
 import { paymentRouter, systemSettingsRouter } from "./routers/payment";
 import { engineRouter } from "./routers/engine";
 import { inviteRouter } from "./routers/invite";
+import { emailAuthRouter } from "./routers/emailAuth";
 
 export const appRouter = router({
   system: systemRouter,
@@ -39,6 +40,7 @@ export const appRouter = router({
   settings: systemSettingsRouter,
   engine: engineRouter,
   invite: inviteRouter,
+  emailAuth: emailAuthRouter,
 });
 
 export type AppRouter = typeof appRouter;

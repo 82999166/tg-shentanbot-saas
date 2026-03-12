@@ -19,6 +19,11 @@ import Payment from "./pages/Payment";
 import SystemSettings from "./pages/SystemSettings";
 import BotConfig from "./pages/BotConfig";
 import Invite from "./pages/Invite";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import VerifyEmail from "./pages/VerifyEmail";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 function Router() {
   return (
@@ -38,6 +43,11 @@ function Router() {
       <Route path={"/system-settings"} component={SystemSettings} />
       <Route path={"/bot-config"} component={BotConfig} />
       <Route path={"/invite"} component={Invite} />
+      <Route path={"/login"} component={Login} />
+      <Route path={"/register"} component={Register} />
+      <Route path={"/verify-email"} component={VerifyEmail} />
+      <Route path={"/forgot-password"} component={ForgotPassword} />
+      <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
