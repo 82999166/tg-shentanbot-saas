@@ -1,0 +1,8 @@
+{
+  "query": "INSERT INTO users (email, password_hash, role, email_verified, login_attempts, locked_until, created_at, updated_at) VALUES ('admin@tgmonitor.pro', '$2b$10$9jgLXyCg4XK3HOSK0.1Oq.7nAzzT4rVVw1VAfd9YXFhctlF0prvmy', 'admin', 1, 0, NULL, NOW(), NOW());",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user Egqgwtf2w1Dcuzo.bde3d0a5cfff --database 8SLf4cmVRTfEoV2e8JcGKB --execute INSERT INTO users (email, password_hash, role, email_verified, login_attempts, locked_until, created_at, updated_at) VALUES ('admin@tgmonitor.pro', '$2b$10$9jgLXyCg4XK3HOSK0.1Oq.7nAzzT4rVVw1VAfd9YXFhctlF0prvmy', 'admin', 1, 0, NULL, NOW(), NOW());",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'password_hash' in 'field list'"
+  ]
+}

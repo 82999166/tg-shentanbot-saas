@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO users (email, passwordHash, role, emailVerified, loginMethod, name, createdAt, updatedAt) VALUES ('admin@tgmonitor.pro', '$2b$10$9jgLXyCg4XK3HOSK0.1Oq.7nAzzT4rVVw1VAfd9YXFhctlF0prvmy', 'admin', 1, 'email', 'Admin', NOW(), NOW());",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user Egqgwtf2w1Dcuzo.bde3d0a5cfff --database 8SLf4cmVRTfEoV2e8JcGKB --execute INSERT INTO users (email, passwordHash, role, emailVerified, loginMethod, name, createdAt, updatedAt) VALUES ('admin@tgmonitor.pro', '$2b$10$9jgLXyCg4XK3HOSK0.1Oq.7nAzzT4rVVw1VAfd9YXFhctlF0prvmy', 'admin', 1, 'email', 'Admin', NOW(), NOW());",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1571
+}
