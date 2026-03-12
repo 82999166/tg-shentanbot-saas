@@ -2,7 +2,6 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Hash, Plus, Trash2, TestTube2, CheckCircle2, XCircle, Tag, ChevronDown } from "lucide-react";
+import { Hash, Plus, Trash2, TestTube2, CheckCircle2, XCircle, Tag, Pencil } from "lucide-react";
 import { useState } from "react";
 
 const MATCH_TYPES = [
@@ -31,13 +30,33 @@ const matchTypeColors: Record<string, string> = {
   not: "bg-red-900 text-red-300",
 };
 
+type FormState = {
+  keyword: string;
+  matchType: "exact" | "contains" | "regex" | "and" | "or" | "not";
+  subKeywords: string;
+  caseSensitive: boolean;
+  groupId: number | undefined;
+};
+
+const defaultForm: FormState = {
+  keyword: "",
+  matchType: "contains",
+  subKeywords: "",
+  caseSensitive: false,
+  groupId: undefined,
+};
+
 export default function Keywords() {
   const utils = trpc.useUtils();
   const { data: groups } = trpc.keywords.listGroups.useQuery();
   const { data: keywords, isLoading } = trpc.keywords.list.useQuery({ groupId: undefined });
 
   const createMut = trpc.keywords.create.useMutation({
-    onSuccess: () => { utils.keywords.list.invalidate(); toast.success("关键词添加成功"); setOpen(false); resetForm(); },
+    onSuccess: () => { utils.keywords.list.invalidate(); toast.success("关键词添加成功"); setOpen(false); setForm(defaultForm); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateMut = trpc.keywords.update.useMutation({
+    onSuccess: () => { utils.keywords.list.invalidate(); toast.success("关键词已更新"); setEditOpen(false); setEditId(null); setForm(defaultForm); },
     onError: (e) => toast.error(e.message),
   });
   const deleteMut = trpc.keywords.delete.useMutation({
@@ -55,28 +74,50 @@ export default function Keywords() {
   });
 
   const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
   const [groupOpen, setGroupOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [testText, setTestText] = useState("");
   const [testResult, setTestResult] = useState<{ matched: boolean; reason: string } | null>(null);
+  const [form, setForm] = useState<FormState>(defaultForm);
 
-  const [form, setForm] = useState({
-    keyword: "",
-    matchType: "contains" as "exact" | "contains" | "regex" | "and" | "or" | "not",
-    subKeywords: "",
-    caseSensitive: false,
-    groupId: undefined as number | undefined,
-  });
+  const needsSubKeywords = ["and", "or", "not"].includes(form.matchType);
+  const groupMap = Object.fromEntries((groups ?? []).map((g) => [g.id, g]));
 
-  const resetForm = () => setForm({ keyword: "", matchType: "contains", subKeywords: "", caseSensitive: false, groupId: undefined });
+  const openEdit = (kw: any) => {
+    setEditId(kw.id);
+    setForm({
+      keyword: kw.keyword,
+      matchType: kw.matchType,
+      subKeywords: Array.isArray(kw.subKeywords) ? (kw.subKeywords as string[]).join("\n") : "",
+      caseSensitive: kw.caseSensitive ?? false,
+      groupId: kw.groupId ?? undefined,
+    });
+    setTestResult(null);
+    setTestText("");
+    setEditOpen(true);
+  };
 
-  const handleSubmit = () => {
+  const handleCreate = () => {
     createMut.mutate({
       keyword: form.keyword,
       matchType: form.matchType,
       subKeywords: form.subKeywords ? form.subKeywords.split("\n").map((s) => s.trim()).filter(Boolean) : undefined,
       caseSensitive: form.caseSensitive,
       groupId: form.groupId,
+    });
+  };
+
+  const handleUpdate = () => {
+    if (!editId) return;
+    updateMut.mutate({
+      id: editId,
+      keyword: form.keyword,
+      matchType: form.matchType,
+      subKeywords: form.subKeywords ? form.subKeywords.split("\n").map((s) => s.trim()).filter(Boolean) : undefined,
+      caseSensitive: form.caseSensitive,
+      groupId: form.groupId ?? null,
     });
   };
 
@@ -92,8 +133,97 @@ export default function Keywords() {
     setTestResult(result);
   };
 
-  const needsSubKeywords = ["and", "or", "not"].includes(form.matchType);
-  const groupMap = Object.fromEntries((groups ?? []).map((g) => [g.id, g]));
+  const FormFields = () => (
+    <div className="space-y-4 py-2">
+      <div>
+        <Label className="text-xs text-muted-foreground">匹配类型</Label>
+        <Select value={form.matchType} onValueChange={(v) => setForm({ ...form, matchType: v as any })}>
+          <SelectTrigger className="bg-background border-border mt-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-card border-border">
+            {MATCH_TYPES.map((t) => (
+              <SelectItem key={t.value} value={t.value}>
+                <div>
+                  <div className="font-medium text-sm">{t.label}</div>
+                  <div className="text-xs text-muted-foreground">{t.desc}</div>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div>
+        <Label className="text-xs text-muted-foreground">
+          {needsSubKeywords ? "主关键词（描述用）" : "关键词"}
+        </Label>
+        <Input
+          placeholder={form.matchType === "regex" ? "^.*求购.*$" : "输入关键词..."}
+          value={form.keyword}
+          onChange={(e) => setForm({ ...form, keyword: e.target.value })}
+          className="bg-background border-border mt-1 font-mono"
+        />
+      </div>
+
+      {needsSubKeywords && (
+        <div>
+          <Label className="text-xs text-muted-foreground">子关键词（每行一个）</Label>
+          <Textarea
+            placeholder={"关键词1\n关键词2\n关键词3"}
+            value={form.subKeywords}
+            onChange={(e) => setForm({ ...form, subKeywords: e.target.value })}
+            className="bg-background border-border mt-1 font-mono text-sm h-24 resize-none"
+          />
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <Label className="text-xs font-medium">区分大小写</Label>
+          <p className="text-xs text-muted-foreground">开启后大小写需完全匹配</p>
+        </div>
+        <Switch checked={form.caseSensitive} onCheckedChange={(v) => setForm({ ...form, caseSensitive: v })} />
+      </div>
+
+      {groups && groups.length > 0 && (
+        <div>
+          <Label className="text-xs text-muted-foreground">所属分组（可选）</Label>
+          <Select value={form.groupId?.toString() ?? ""} onValueChange={(v) => setForm({ ...form, groupId: v ? parseInt(v) : undefined })}>
+            <SelectTrigger className="bg-background border-border mt-1">
+              <SelectValue placeholder="不分组" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border">
+              <SelectItem value="">不分组</SelectItem>
+              {groups.map((g) => <SelectItem key={g.id} value={g.id.toString()}>{g.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* 测试区域 */}
+      <div className="border border-border rounded-lg p-3 space-y-2">
+        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+          <TestTube2 className="w-3.5 h-3.5" /> 测试匹配效果
+        </p>
+        <Textarea
+          placeholder="输入测试文本，验证关键词是否能正确匹配..."
+          value={testText}
+          onChange={(e) => setTestText(e.target.value)}
+          className="bg-background border-border text-sm h-16 resize-none"
+        />
+        <Button size="sm" variant="outline" onClick={handleTest} disabled={!testText || !form.keyword || testMut.isPending} className="border-border w-full">
+          {testMut.isPending ? "测试中..." : "立即测试"}
+        </Button>
+        {testResult && (
+          <div className={`flex items-center gap-2 text-sm p-2 rounded-lg ${testResult.matched ? "bg-emerald-900/30 text-emerald-300" : "bg-red-900/30 text-red-300"}`}>
+            {testResult.matched ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+            <span>{testResult.reason}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <AppLayout title="关键词管理">
@@ -104,7 +234,7 @@ export default function Keywords() {
             <Button variant="outline" size="sm" onClick={() => setGroupOpen(true)} className="border-border">
               <Tag className="w-4 h-4 mr-2" /> 新建分组
             </Button>
-            <Button size="sm" onClick={() => setOpen(true)}>
+            <Button size="sm" onClick={() => { setForm(defaultForm); setTestResult(null); setTestText(""); setOpen(true); }}>
               <Plus className="w-4 h-4 mr-2" /> 添加关键词
             </Button>
           </div>
@@ -151,12 +281,15 @@ export default function Keywords() {
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   <Switch
                     checked={kw.isActive}
                     onCheckedChange={(v) => toggleMut.mutate({ id: kw.id, isActive: v })}
                     className="scale-90"
                   />
+                  <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-primary w-8 h-8 p-0" onClick={() => openEdit(kw)}>
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
                   <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive w-8 h-8 p-0" onClick={() => deleteMut.mutate({ id: kw.id })}>
                     <Trash2 className="w-4 h-4" />
                   </Button>
@@ -177,104 +310,32 @@ export default function Keywords() {
       </div>
 
       {/* 添加关键词对话框 */}
-      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { resetForm(); setTestResult(null); } }}>
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setForm(defaultForm); setTestResult(null); } }}>
         <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>添加关键词</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label className="text-xs text-muted-foreground">匹配类型</Label>
-              <Select value={form.matchType} onValueChange={(v) => setForm({ ...form, matchType: v as any })}>
-                <SelectTrigger className="bg-background border-border mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border">
-                  {MATCH_TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      <div>
-                        <div className="font-medium text-sm">{t.label}</div>
-                        <div className="text-xs text-muted-foreground">{t.desc}</div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label className="text-xs text-muted-foreground">
-                {needsSubKeywords ? "主关键词（描述用）" : "关键词"}
-              </Label>
-              <Input
-                placeholder={form.matchType === "regex" ? "^.*求购.*$" : "输入关键词..."}
-                value={form.keyword}
-                onChange={(e) => setForm({ ...form, keyword: e.target.value })}
-                className="bg-background border-border mt-1 font-mono"
-              />
-            </div>
-
-            {needsSubKeywords && (
-              <div>
-                <Label className="text-xs text-muted-foreground">子关键词（每行一个）</Label>
-                <Textarea
-                  placeholder={"关键词1\n关键词2\n关键词3"}
-                  value={form.subKeywords}
-                  onChange={(e) => setForm({ ...form, subKeywords: e.target.value })}
-                  className="bg-background border-border mt-1 font-mono text-sm h-24 resize-none"
-                />
-              </div>
-            )}
-
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-xs font-medium">区分大小写</Label>
-                <p className="text-xs text-muted-foreground">开启后大小写需完全匹配</p>
-              </div>
-              <Switch checked={form.caseSensitive} onCheckedChange={(v) => setForm({ ...form, caseSensitive: v })} />
-            </div>
-
-            {groups && groups.length > 0 && (
-              <div>
-                <Label className="text-xs text-muted-foreground">所属分组（可选）</Label>
-                <Select value={form.groupId?.toString() ?? ""} onValueChange={(v) => setForm({ ...form, groupId: v ? parseInt(v) : undefined })}>
-                  <SelectTrigger className="bg-background border-border mt-1">
-                    <SelectValue placeholder="不分组" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-card border-border">
-                    <SelectItem value="">不分组</SelectItem>
-                    {groups.map((g) => <SelectItem key={g.id} value={g.id.toString()}>{g.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* 测试区域 */}
-            <div className="border border-border rounded-lg p-3 space-y-2">
-              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                <TestTube2 className="w-3.5 h-3.5" /> 测试匹配效果
-              </p>
-              <Textarea
-                placeholder="输入测试文本，验证关键词是否能正确匹配..."
-                value={testText}
-                onChange={(e) => setTestText(e.target.value)}
-                className="bg-background border-border text-sm h-16 resize-none"
-              />
-              <Button size="sm" variant="outline" onClick={handleTest} disabled={!form.keyword || !testText || testMut.isPending} className="w-full border-border text-xs">
-                {testMut.isPending ? "测试中..." : "立即测试"}
-              </Button>
-              {testResult && (
-                <div className={`flex items-center gap-2 text-sm p-2 rounded-lg ${testResult.matched ? "bg-emerald-900/30 text-emerald-300" : "bg-red-900/30 text-red-300"}`}>
-                  {testResult.matched ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
-                  <span>{testResult.reason}</span>
-                </div>
-              )}
-            </div>
-          </div>
+          <FormFields />
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} className="border-border">取消</Button>
-            <Button onClick={handleSubmit} disabled={!form.keyword || createMut.isPending}>
+            <Button onClick={handleCreate} disabled={!form.keyword || createMut.isPending}>
               {createMut.isPending ? "添加中..." : "添加关键词"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 编辑关键词对话框 */}
+      <Dialog open={editOpen} onOpenChange={(v) => { setEditOpen(v); if (!v) { setEditId(null); setForm(defaultForm); setTestResult(null); } }}>
+        <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>编辑关键词</DialogTitle>
+          </DialogHeader>
+          <FormFields />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)} className="border-border">取消</Button>
+            <Button onClick={handleUpdate} disabled={!form.keyword || updateMut.isPending}>
+              {updateMut.isPending ? "保存中..." : "保存修改"}
             </Button>
           </DialogFooter>
         </DialogContent>

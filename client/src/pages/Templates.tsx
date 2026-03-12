@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { MessageSquare, Plus, Trash2, Copy, Star, StarOff } from "lucide-react";
+import { MessageSquare, Plus, Trash2, Copy, Star, StarOff, Pencil } from "lucide-react";
 import { useState } from "react";
 
 const VARIABLES = [
@@ -23,12 +23,19 @@ const VARIABLES = [
   { var: "{{time}}", desc: "当前时间" },
 ];
 
+type FormState = { name: string; content: string; isDefault: boolean };
+const defaultForm: FormState = { name: "", content: "", isDefault: false };
+
 export default function Templates() {
   const utils = trpc.useUtils();
   const { data: templates, isLoading } = trpc.templates.list.useQuery();
 
   const createMut = trpc.templates.create.useMutation({
-    onSuccess: () => { utils.templates.list.invalidate(); toast.success("模板创建成功"); setOpen(false); resetForm(); },
+    onSuccess: () => { utils.templates.list.invalidate(); toast.success("模板创建成功"); setOpen(false); setForm(defaultForm); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateMut = trpc.templates.update.useMutation({
+    onSuccess: () => { utils.templates.list.invalidate(); toast.success("模板已更新"); setEditOpen(false); setEditId(null); setForm(defaultForm); },
     onError: (e) => toast.error(e.message),
   });
   const deleteMut = trpc.templates.delete.useMutation({
@@ -41,24 +48,66 @@ export default function Templates() {
   });
 
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", content: "", isDefault: false });
-  const resetForm = () => setForm({ name: "", content: "", isDefault: false });
+  const [editOpen, setEditOpen] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [form, setForm] = useState<FormState>(defaultForm);
 
   const insertVar = (v: string) => setForm((f) => ({ ...f, content: f.content + v }));
+
+  const openEdit = (t: any) => {
+    setEditId(t.id);
+    setForm({ name: t.name, content: t.content, isDefault: t.weight >= 10 });
+    setEditOpen(true);
+  };
+
+  const FormFields = () => (
+    <div className="space-y-4 py-2">
+      <div>
+        <Label className="text-xs text-muted-foreground">模板名称</Label>
+        <Input placeholder="例如：求购客户开场白" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-background border-border mt-1" />
+      </div>
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <Label className="text-xs text-muted-foreground">消息内容</Label>
+          <div className="flex flex-wrap gap-1">
+            {VARIABLES.slice(0, 4).map((v) => (
+              <button key={v.var} onClick={() => insertVar(v.var)} className="text-xs font-mono bg-background border border-border rounded px-1.5 py-0.5 text-primary hover:bg-primary/10 transition-colors">
+                {v.var.replace(/[{}]/g, "")}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Textarea
+          placeholder={"您好 {{sender_name}}，看到您在群里问到了「{{keyword}}」，我们正好有相关资源，欢迎私聊了解详情！"}
+          value={form.content}
+          onChange={(e) => setForm({ ...form, content: e.target.value })}
+          className="bg-background border-border font-mono text-sm h-36 resize-none"
+        />
+        <p className="text-xs text-muted-foreground mt-1">支持变量插值，发送时自动替换为真实内容</p>
+      </div>
+      <div className="flex items-center justify-between">
+        <div>
+          <Label className="text-xs font-medium">设为默认模板</Label>
+          <p className="text-xs text-muted-foreground">未指定模板时自动使用此模板</p>
+        </div>
+        <Switch checked={form.isDefault} onCheckedChange={(v) => setForm({ ...form, isDefault: v })} />
+      </div>
+    </div>
+  );
 
   return (
     <AppLayout title="消息模板">
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <p className="text-sm text-muted-foreground">配置命中关键词后自动发送的私信内容</p>
-          <Button size="sm" onClick={() => setOpen(true)}>
+          <Button size="sm" onClick={() => { setForm(defaultForm); setOpen(true); }}>
             <Plus className="w-4 h-4 mr-2" /> 新建模板
           </Button>
         </div>
 
         {/* 变量说明 */}
         <div className="mb-6 p-4 bg-card border border-border rounded-xl">
-          <p className="text-xs font-medium text-muted-foreground mb-3">可用变量（点击插入）</p>
+          <p className="text-xs font-medium text-muted-foreground mb-3">可用变量（点击插入到编辑框）</p>
           <div className="flex flex-wrap gap-2">
             {VARIABLES.map((v) => (
               <button
@@ -107,6 +156,16 @@ export default function Templates() {
                       size="sm"
                       variant="outline"
                       className="text-xs border-border"
+                      title="编辑模板"
+                      onClick={() => openEdit(t)}
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs border-border"
+                      title={t.weight >= 10 ? "取消默认" : "设为默认"}
                       onClick={() => toggleMut.mutate({ id: t.id, weight: t.weight >= 10 ? 1 : 10 })}
                     >
                       {t.weight >= 10 ? <StarOff className="w-3 h-3" /> : <Star className="w-3 h-3" />}
@@ -131,48 +190,33 @@ export default function Templates() {
         )}
       </div>
 
-      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
+      {/* 新建模板对话框 */}
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setForm(defaultForm); }}>
         <DialogContent className="bg-card border-border max-w-lg">
           <DialogHeader>
             <DialogTitle>新建消息模板</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label className="text-xs text-muted-foreground">模板名称</Label>
-              <Input placeholder="例如：求购客户开场白" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-background border-border mt-1" />
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <Label className="text-xs text-muted-foreground">消息内容</Label>
-                <div className="flex flex-wrap gap-1">
-                  {VARIABLES.slice(0, 4).map((v) => (
-                    <button key={v.var} onClick={() => insertVar(v.var)} className="text-xs font-mono bg-background border border-border rounded px-1.5 py-0.5 text-primary hover:bg-primary/10 transition-colors">
-                      {v.var.replace(/[{}]/g, "")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <Textarea
-                placeholder={"您好 {{sender_name}}，看到您在群里问到了「{{keyword}}」，我们正好有相关资源，欢迎私聊了解详情！"}
-                value={form.content}
-                onChange={(e) => setForm({ ...form, content: e.target.value })}
-                className="bg-background border-border font-mono text-sm h-36 resize-none"
-              />
-              <p className="text-xs text-muted-foreground mt-1">支持变量插值，发送时自动替换为真实内容</p>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-xs font-medium">设为默认模板</Label>
-                <p className="text-xs text-muted-foreground">未指定模板时自动使用此模板</p>
-              </div>
-              <Switch checked={form.isDefault} onCheckedChange={(v) => setForm({ ...form, isDefault: v })} />
-            </div>
-            {/* isDefault maps to weight=10 */}
-          </div>
+          <FormFields />
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} className="border-border">取消</Button>
             <Button onClick={() => createMut.mutate({ name: form.name, content: form.content, weight: form.isDefault ? 10 : 1 })} disabled={!form.name || !form.content || createMut.isPending}>
               {createMut.isPending ? "创建中..." : "创建模板"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 编辑模板对话框 */}
+      <Dialog open={editOpen} onOpenChange={(v) => { setEditOpen(v); if (!v) { setEditId(null); setForm(defaultForm); } }}>
+        <DialogContent className="bg-card border-border max-w-lg">
+          <DialogHeader>
+            <DialogTitle>编辑消息模板</DialogTitle>
+          </DialogHeader>
+          <FormFields />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)} className="border-border">取消</Button>
+            <Button onClick={() => updateMut.mutate({ id: editId!, name: form.name, content: form.content, weight: form.isDefault ? 10 : 1 })} disabled={!form.name || !form.content || updateMut.isPending}>
+              {updateMut.isPending ? "保存中..." : "保存修改"}
             </Button>
           </DialogFooter>
         </DialogContent>
