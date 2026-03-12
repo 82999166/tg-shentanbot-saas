@@ -16,6 +16,14 @@ import os
 import re
 import random
 import time
+
+# 加载 .env 文件
+try:
+    from dotenv import load_dotenv
+    _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    load_dotenv(_env_path, override=True)
+except ImportError:
+    pass  # python-dotenv 未安装时直接从环境变量读取
 from datetime import datetime, timedelta
 from typing import Optional
 import aiohttp
@@ -31,12 +39,14 @@ from pyrogram.errors import (
 )
 
 # ── 日志配置 ─────────────────────────────────────────────────
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_LOG_FILE = os.path.join(_BASE_DIR, "engine.log")
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("monitor-engine/engine.log", encoding="utf-8"),
+        logging.FileHandler(_LOG_FILE, encoding="utf-8"),
     ],
 )
 logger = logging.getLogger("tg-monitor")
@@ -489,8 +499,18 @@ async def main():
     logger.info("=" * 60)
 
     if not TG_API_ID or not TG_API_HASH:
-        logger.error("❌ 请设置 TG_API_ID 和 TG_API_HASH 环境变量")
-        logger.error("   从 https://my.telegram.org/apps 获取")
+        logger.warning("⚠️  TG_API_ID 或 TG_API_HASH 未配置，引擎将每60秒重试检查")
+        logger.warning("   请在 monitor-engine/.env 中填入从 https://my.telegram.org/apps 获取的凭证")
+        # 不退出，每60秒检查一次配置是否已填入
+        while True:
+            await asyncio.sleep(60)
+            new_api_id = int(os.getenv("TG_API_ID", "0"))
+            new_api_hash = os.getenv("TG_API_HASH", "")
+            if new_api_id and new_api_hash:
+                logger.info("✅ 检测到 TG API 凭证已配置，重启引擎...")
+                import sys
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            logger.info("⏳ 等待 TG_API_ID 和 TG_API_HASH 配置...")
         return
 
     # 并发运行所有任务
