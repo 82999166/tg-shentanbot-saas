@@ -14,6 +14,11 @@ import {
 } from "../../drizzle/schema";
 import { nanoid } from "nanoid";
 import { sql } from "drizzle-orm";
+import { exec } from "child_process";
+import { promisify } from "util";
+import * as fs from "fs";
+import * as path from "path";
+const execAsync = promisify(exec);
 
 // ============================================================
 // 工具函数
@@ -165,6 +170,90 @@ export const systemSettingsRouter = router({
       }
       return { success: true };
     }),
+
+  /** 保存 TG API 凭证并重启引擎 */
+  saveTgApiCredentials: protectedProcedure
+    .input(
+      z.object({
+        tgApiId: z.string().min(1),
+        tgApiHash: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      // 保存到数据库
+      for (const [key, value] of [
+        ["tg_api_id", input.tgApiId],
+        ["tg_api_hash", input.tgApiHash],
+      ]) {
+        await db
+          .insert(systemSettings)
+          .values({ key, value, description: "Telegram API 凭证" })
+          .onDuplicateKeyUpdate({ set: { value } });
+      }
+
+      // 尝试写入 .env 并重启引擎
+      try {
+        const engineDir = path.resolve(process.cwd(), "monitor-engine");
+        const envPath = path.join(engineDir, ".env");
+
+        if (fs.existsSync(envPath)) {
+          let envContent = fs.readFileSync(envPath, "utf-8");
+          // 更新或添加 TG_API_ID
+          if (/^TG_API_ID=/m.test(envContent)) {
+            envContent = envContent.replace(/^TG_API_ID=.*/m, `TG_API_ID=${input.tgApiId}`);
+          } else {
+            envContent += `\nTG_API_ID=${input.tgApiId}`;
+          }
+          // 更新或添加 TG_API_HASH
+          if (/^TG_API_HASH=/m.test(envContent)) {
+            envContent = envContent.replace(/^TG_API_HASH=.*/m, `TG_API_HASH=${input.tgApiHash}`);
+          } else {
+            envContent += `\nTG_API_HASH=${input.tgApiHash}`;
+          }
+          fs.writeFileSync(envPath, envContent, "utf-8");
+
+          // 重启 PM2 引擎进程
+          try {
+            await execAsync("pm2 restart ecosystem.engine 2>/dev/null || pm2 restart tg-monitor-engine 2>/dev/null");
+          } catch (_) {
+            // PM2 不在当前环境也没关系
+          }
+        }
+      } catch (e) {
+        console.error("[Settings] 写入 .env 失败:", e);
+        // 即使写入失败，数据库中已保存，不报错
+      }
+
+      return { success: true };
+    }),
+
+  /** 获取 TG API 凭证（仅返回是否已配置） */
+  getTgApiStatus: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.role !== "admin") {
+      throw new TRPCError({ code: "FORBIDDEN" });
+    }
+    const db = await getDb();
+    if (!db) return { configured: false, apiId: "" };
+
+    const rows = await db
+      .select()
+      .from(systemSettings)
+      .where(sql`${systemSettings.key} IN ('tg_api_id', 'tg_api_hash')`);
+
+    const map: Record<string, string> = {};
+    for (const r of rows) map[r.key] = r.value || "";
+
+    return {
+      configured: !!(map["tg_api_id"] && map["tg_api_hash"] && map["tg_api_id"] !== "0"),
+      apiId: map["tg_api_id"] || "",
+    };
+  }),
 
   /** 获取公开配置（套餐价格等，无需登录） */
   publicConfig: publicProcedure.query(async () => {

@@ -28,6 +28,10 @@ import {
   CheckCircle,
   Clock,
   XCircle,
+  Bot,
+  Eye,
+  EyeOff,
+  Zap,
 } from "lucide-react";
 
 // ── 系统设置 Tab ─────────────────────────────────────────────
@@ -145,9 +149,136 @@ function PaymentSettingsTab() {
       )}
     </div>
   );
-}
+}// ── TG API 凭证 Tab ────────────────────────────────────────────────
+function TgApiCredentialsTab() {
+  const [apiId, setApiId] = useState("");
+  const [apiHash, setApiHash] = useState("");
+  const [showHash, setShowHash] = useState(false);
 
-// ── 卡密管理 Tab ─────────────────────────────────────────────
+  const { data: status, refetch } = trpc.settings.getTgApiStatus.useQuery(undefined, {
+    refetchInterval: 10000,
+  });
+
+  const saveMutation = trpc.settings.saveTgApiCredentials.useMutation({
+    onSuccess: () => {
+      toast.success("凭证已保存，监控引擎正在重启...");
+      setApiId("");
+      setApiHash("");
+      setTimeout(() => refetch(), 3000);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* 当前状态 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            <Zap className="w-4 h-4" />
+            引擎当前状态
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {status?.configured ? (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+              <CheckCircle className="w-5 h-5 text-green-400 shrink-0" />
+              <div>
+                <p className="text-green-300 text-sm font-medium">凭证已配置</p>
+                <p className="text-gray-400 text-xs mt-0.5">API ID: {status.apiId} · 监控引擎运行中</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+              <Clock className="w-5 h-5 text-amber-400 shrink-0" />
+              <div>
+                <p className="text-amber-300 text-sm font-medium">等待配置</p>
+                <p className="text-gray-400 text-xs mt-0.5">请填入 TG API 凭证以启动监控引擎</p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 凭证输入 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            <Bot className="w-4 h-4" />
+            Telegram API 凭证
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+            请访问{" "}
+            <a
+              href="https://my.telegram.org/apps"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline font-medium"
+            >
+              my.telegram.org/apps
+            </a>
+            {" "}登录您的 Telegram 账号，创建应用后获取 API ID 和 API Hash。
+          </div>
+
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">API ID</Label>
+            <Input
+              type="number"
+              placeholder="例如：12345678"
+              value={apiId}
+              onChange={(e) => setApiId(e.target.value)}
+              className="bg-gray-900 border-gray-600 text-white"
+            />
+          </div>
+
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">API Hash</Label>
+            <div className="relative">
+              <Input
+                type={showHash ? "text" : "password"}
+                placeholder="例如：0123456789abcdef0123456789abcdef"
+                value={apiHash}
+                onChange={(e) => setApiHash(e.target.value)}
+                className="bg-gray-900 border-gray-600 text-white pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowHash(!showHash)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+              >
+                {showHash ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <Button
+            className="w-full bg-blue-600 hover:bg-blue-700"
+            onClick={() => saveMutation.mutate({ tgApiId: apiId, tgApiHash: apiHash })}
+            disabled={saveMutation.isPending || !apiId || !apiHash}
+          >
+            <Save className="w-4 h-4 mr-2" />
+            {saveMutation.isPending ? "保存并重启引擎..." : "保存凭证并启动引擎"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* 使用说明 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium">使用说明</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-xs text-gray-400">
+          <p>1. 一个 TG API 凭证可供所有监控账号共用，无需每个账号单独配置。</p>
+          <p>2. 保存后监控引擎会自动重启，并开始加载您在《TG 账号管理》中添加的 Session。</p>
+          <p>3. 如果引擎状态不更新，请通过 SSH 登录服务器执行 <code className="bg-gray-700 px-1 rounded">pm2 logs ecosystem.engine</code> 查看日志。</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+// ── 卡密管理 Tab ──────────────────────────────────────────────────────
 function RedeemCodesTab() {
   const [genPlan, setGenPlan] = useState<"basic" | "pro" | "enterprise">("pro");
   const [genMonths, setGenMonths] = useState(1);
@@ -511,8 +642,12 @@ export default function SystemSettings() {
         </div>
       </div>
 
-      <Tabs defaultValue="payment" className="space-y-4">
-        <TabsList className="bg-gray-800 border border-gray-700">
+      <Tabs defaultValue="tgapi" className="space-y-4">
+        <TabsList className="bg-gray-800 border border-gray-700 flex-wrap h-auto gap-1">
+          <TabsTrigger value="tgapi" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
+            <Bot className="w-4 h-4 mr-1.5" />
+            TG API 凭证
+          </TabsTrigger>
           <TabsTrigger value="payment" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
             <DollarSign className="w-4 h-4 mr-1.5" />
             支付配置
@@ -527,6 +662,9 @@ export default function SystemSettings() {
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="tgapi">
+          <TgApiCredentialsTab />
+        </TabsContent>
         <TabsContent value="payment">
           <PaymentSettingsTab />
         </TabsContent>
