@@ -336,12 +336,17 @@ export const systemSettingsRouter = router({
           }
           fs.writeFileSync(envPath, envContent, "utf-8");
           const pm2Paths = ["/usr/bin/pm2", "/www/server/nvm/versions/node/v22.22.0/bin/pm2", "pm2"];
+          // 异步重启 Bot 进程和引擎进程（不阻塞响应）
           (async () => {
             for (const pm2 of pm2Paths) {
               try {
-                await execAsync(`${pm2} restart tg-monitor-engine 2>/dev/null`);
+                // 先重启 Bot 进程让新 Token 生效
+                await execAsync(`${pm2} restart tg-monitor-bot 2>/dev/null || true`);
+                // 再重启引擎进程
+                await execAsync(`${pm2} restart tg-monitor-engine 2>/dev/null || true`);
+                console.log(`[BotConfig] Bot 和引擎已通过 ${pm2} 重启`);
                 break;
-              } catch (_) { /* 继续 */ }
+              } catch (_) { /* 继续下一个路径 */ }
             }
           })();
         }

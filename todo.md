@@ -246,3 +246,20 @@
 - [x] 恢复系统设置 Bot 配置 Tab（Bot Token、推送频道 ID）
 - [x] 后端新增 saveBotConfig / getBotConfig API
 - [x] 构建部署到服务器验证
+
+## v2.0 修复关键词命中和群成员数获取 (2026-03-13)
+- [ ] 查看引擎日志确认 TG API 凭证/账号登录/群组状态
+- [ ] 修复关键词无法命中问题
+- [ ] 修复群成员数无法获取问题
+- [ ] 构建部署验证
+
+## v2.1 Bot 命令菜单 (2026-03-13)
+- [ ] 检查 bot.py 中命令处理逻辑
+- [ ] 确保 /start /status /help 等命令正常响应
+- [ ] 通过 setMyCommands API 自动注册命令菜单
+- [ ] 部署验证
+
+## v2.2 修复保存按钮卡住 (2026-03-13)
+- [ ] 后端所有 saveTgApiCredentials / saveBotConfig 的 PM2 重启改为完全异步（fire-and-forget）
+- [ ] 保存后立即返回成功，前端立即显示 toast 提示
+- [ ] 构建部署并重启 Bot 进程
