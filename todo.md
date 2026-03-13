@@ -231,3 +231,12 @@
 - [x] 关键词命中统计写入 keywordDailyStats 表
 - [x] 支持协作群组推送（collabChatId）
 - [x] 部署到服务器（72.167.134.119）
+
+## v1.8 修复关键词命中问题 (2026-03-13)
+
+- [ ] 修复 ecosystem.engine.cjs 语法错误（ENGINE_SECRET 变量未定义）
+- [ ] 修复 saveTgApiCredentials 写入 .env 路径问题（生产环境路径不对）
+- [ ] 修复 Python 引擎无法启动问题（TG_API_ID/HASH 未配置）
+- [ ] 修复 ENGINE_SECRET 不一致问题（引擎和 Web 服务的 secret 不同步）
+- [ ] 在系统设置 TG API 凭证页面增加「引擎密钥」配置项
+- [ ] 构建并部署到服务器，验证关键词命中功能

@@ -218,11 +218,21 @@ export const systemSettingsRouter = router({
           }
           fs.writeFileSync(envPath, envContent, "utf-8");
 
-          // 重启 PM2 引擎进程
-          try {
-            await execAsync("pm2 restart ecosystem.engine 2>/dev/null || pm2 restart tg-monitor-engine 2>/dev/null");
-          } catch (_) {
-            // PM2 不在当前环境也没关系
+          // 重启 PM2 引擎进程（尝试多种 pm2 路径）
+          const pm2Paths = [
+            "/usr/bin/pm2",
+            "/www/server/nvm/versions/node/v22.22.0/bin/pm2",
+            "/www/server/nodejs/v22.14.0/lib/node_modules/pm2/bin/pm2",
+            "pm2",
+          ];
+          for (const pm2 of pm2Paths) {
+            try {
+              await execAsync(`${pm2} restart tg-monitor-engine 2>/dev/null || ${pm2} restart ecosystem.engine 2>/dev/null`);
+              console.log(`[Settings] 引擎已通过 ${pm2} 重启`);
+              break;
+            } catch (_) {
+              // 继续尝试下一个路径
+            }
           }
         }
       } catch (e) {

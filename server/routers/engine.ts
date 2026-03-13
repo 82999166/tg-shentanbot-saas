@@ -18,7 +18,7 @@ import {
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
-const ENGINE_SECRET = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
+const ENGINE_SECRET = process.env.ENGINE_SECRET || "3d9b664c2005b02dd31955a6a70e2bb206901dbe32c7353c";
 
 // 引擎鉴权中间件
 const engineProcedure = publicProcedure.use(({ ctx, next }) => {
