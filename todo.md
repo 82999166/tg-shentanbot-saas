@@ -263,3 +263,14 @@
 - [ ] 后端所有 saveTgApiCredentials / saveBotConfig 的 PM2 重启改为完全异步（fire-and-forget）
 - [ ] 保存后立即返回成功，前端立即显示 toast 提示
 - [ ] 构建部署并重启 Bot 进程
+
+## v2.3 Bot 自动私信功能 (2026-03-13)
+- [x] bot.py 全面重写：/start 自动注册、关键词管理、私信账号绑定、消息模板设置、监控群组管理
+- [x] bot.py 主菜单 Inline Keyboard（关键词/群组/私信模板/私信账号/统计/套餐/自动私信开关）
+- [x] bot.py 快捷命令：/kw /template /group /stats /activate /help
+- [x] engine.ts：新增 botAutoRegister（/start 自动创建账号，绑定 tgUserId）
+- [x] engine.ts：botGetUserStatus 返回 hasSenderAccount/senderPhone
+- [x] engine.ts：/engine/config 返回 botChatId（用户 tgUserId），供引擎推送命中通知
+- [x] main.py：关键词命中后通过 Bot API 向用户推送命中通知（含发送者/群组/关键词/私信状态）
+- [x] bot.py：WEB_SITE_URL 环境变量替换硬编码 URL
+- [ ] 部署到服务器并测试完整流程

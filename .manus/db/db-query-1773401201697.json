@@ -1,0 +1,88 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tg_accounts' ORDER BY ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user Egqgwtf2w1Dcuzo.bde3d0a5cfff --database 8SLf4cmVRTfEoV2e8JcGKB --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tg_accounts' ORDER BY ORDINAL_POSITION;",
+  "rows": [
+    {
+      "COLUMN_NAME": "id"
+    },
+    {
+      "COLUMN_NAME": "userId"
+    },
+    {
+      "COLUMN_NAME": "phone"
+    },
+    {
+      "COLUMN_NAME": "tgUserId"
+    },
+    {
+      "COLUMN_NAME": "tgUsername"
+    },
+    {
+      "COLUMN_NAME": "tgFirstName"
+    },
+    {
+      "COLUMN_NAME": "tgLastName"
+    },
+    {
+      "COLUMN_NAME": "sessionString"
+    },
+    {
+      "COLUMN_NAME": "sessionStatus"
+    },
+    {
+      "COLUMN_NAME": "accountRole"
+    },
+    {
+      "COLUMN_NAME": "healthScore"
+    },
+    {
+      "COLUMN_NAME": "healthStatus"
+    },
+    {
+      "COLUMN_NAME": "totalMonitored"
+    },
+    {
+      "COLUMN_NAME": "totalDmSent"
+    },
+    {
+      "COLUMN_NAME": "dailyDmSent"
+    },
+    {
+      "COLUMN_NAME": "dailyDmResetAt"
+    },
+    {
+      "COLUMN_NAME": "lastActiveAt"
+    },
+    {
+      "COLUMN_NAME": "proxyHost"
+    },
+    {
+      "COLUMN_NAME": "proxyPort"
+    },
+    {
+      "COLUMN_NAME": "proxyType"
+    },
+    {
+      "COLUMN_NAME": "proxyUsername"
+    },
+    {
+      "COLUMN_NAME": "proxyPassword"
+    },
+    {
+      "COLUMN_NAME": "notes"
+    },
+    {
+      "COLUMN_NAME": "isActive"
+    },
+    {
+      "COLUMN_NAME": "createdAt"
+    },
+    {
+      "COLUMN_NAME": "updatedAt"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\nid\nuserId\nphone\ntgUserId\ntgUsername\ntgFirstName\ntgLastName\nsessionString\nsessionStatus\naccountRole\nhealthScore\nhealthStatus\ntotalMonitored\ntotalDmSent\ndailyDmSent\ndailyDmResetAt\nlastActiveAt\nproxyHost\nproxyPort\nproxyType\nproxyUsername\nproxyPassword\nnotes\nisActive\ncreatedAt\nupdatedAt\n",
+  "stderr": "",
+  "execution_time_ms": 1555
+}

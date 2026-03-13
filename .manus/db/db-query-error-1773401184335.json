@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, phone, status, LENGTH(session_string) as session_len, created_at FROM tg_accounts;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user Egqgwtf2w1Dcuzo.bde3d0a5cfff --database 8SLf4cmVRTfEoV2e8JcGKB --execute SELECT id, phone, status, LENGTH(session_string) as session_len, created_at FROM tg_accounts;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'status' in 'field list'"
+  ]
+}

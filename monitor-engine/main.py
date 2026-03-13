@@ -65,6 +65,7 @@ TG_API_HASH = os.getenv("TG_API_HASH", "")
 active_clients: dict[int, Client] = {}   # account_id -> Client
 monitor_config: dict = {}                 # 从 API 拉取的完整配置
 sent_dm_cache: dict[str, float] = {}      # "account_id:target_id" -> timestamp（去重）
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")   # Bot Token，用于向用户推送命中通知
 
 
 # ── API 客户端 ───────────────────────────────────────────────
@@ -95,6 +96,50 @@ class ApiClient:
 
 
 api = ApiClient(API_BASE, ENGINE_SECRET)
+
+
+# ── Bot 通知推送 ───────────────────────────────────────────
+async def send_bot_notification(
+    bot_chat_id: str,
+    sender_username: Optional[str],
+    sender_tg_id: str,
+    matched_keyword: str,
+    group_name: str,
+    message_text: str,
+    dm_status: str = "disabled",
+):
+    """通过 Telegram Bot API 向用户推送关键词命中通知"""
+    if not BOT_TOKEN:
+        return
+    try:
+        sender_display = f"@{sender_username}" if sender_username else f"ID:{sender_tg_id}"
+        dm_icon = "📨" if dm_status == "queued" else "⏸️"
+        dm_text = "自动私信已入队" if dm_status == "queued" else "自动私信未开启"
+        text = (
+            f"🔔 **关键词命中**\n"
+            f"————————————————————\n"
+            f"🔑 关键词: `{matched_keyword}`\n"
+            f"👤 发送者: {sender_display}\n"
+            f"💬 群组: {group_name}\n"
+            f"📝 内容: {message_text[:150]}{'...' if len(message_text) > 150 else ''}\n"
+            f"⏰ 时间: {datetime.now().strftime('%H:%M:%S')}\n"
+            f"{dm_icon} {dm_text}"
+        )
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": bot_chat_id,
+            "text": text,
+            "parse_mode": "Markdown",
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                if r.status != 200:
+                    resp = await r.text()
+                    logger.warning(f"[BotNotify] 推送失败 {r.status}: {resp[:100]}")
+                else:
+                    logger.info(f"[BotNotify] 已推送命中通知到 {bot_chat_id}")
+    except Exception as e:
+        logger.warning(f"[BotNotify] 推送异常: {e}")
 
 
 # ── 关键词匹配引擎 ───────────────────────────────────────────
@@ -380,6 +425,20 @@ def create_message_handler(account_id: int, user_id: int):
                 }
                 hit_result = await api.post("/engine/hit", hit_data)
                 hit_record_id = hit_result.get("id") if hit_result else None
+
+                # ── Bot 推送命中通知给用户 ──────────────────────
+                bot_chat_id = config.get("botChatId")
+                if bot_chat_id and BOT_TOKEN:
+                    dm_will_send = bool(config.get("dmEnabled") and config.get("dmTemplates"))
+                    await send_bot_notification(
+                        bot_chat_id=bot_chat_id,
+                        sender_username=sender.username,
+                        sender_tg_id=sender_tg_id,
+                        matched_keyword=matched_keywords[0]["pattern"],
+                        group_name=message.chat.title or chat_id,
+                        message_text=text,
+                        dm_status="queued" if dm_will_send else "disabled",
+                    )
 
                 # ── 协作群推送通知 ──────────────────────────────
                 collab_chat_id = push_settings.get("collabChatId")

@@ -1,58 +1,92 @@
 """
-TG Monitor Pro - Telegram Bot 命令界面
+TG Monitor Pro - Telegram Bot 主服务
 功能：
-- 用户通过 Bot 命令管理关键词、群组、私信模板
-- 实时命中通知推送
-- 账号状态查询
-- 套餐信息查询
+- /start 自动注册账号（无需跳转网站）
+- 关键词管理（套餐限制）
+- 私信账号绑定
+- 消息模板设置
+- 监控群组管理
+- 命中通知推送（带操作按钮）
+- 统计数据查看
+使用 python-telegram-bot (PTB) HTTP polling 模式
 """
 import asyncio
 import logging
 import os
+import json
 import aiohttp
-from pyrogram import Client, filters
-from pyrogram.types import (
-    Message, CallbackQuery,
-    InlineKeyboardMarkup, InlineKeyboardButton,
-    BotCommand
+from telegram import (
+    Update, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand,
 )
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler,
+    MessageHandler, ContextTypes, filters,
+)
+from telegram.constants import ParseMode
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 WEB_API_BASE = os.getenv("WEB_API_BASE", "http://localhost:3000/api")
 ENGINE_SECRET = os.getenv("ENGINE_SECRET", "tg-monitor-engine-secret")
-API_ID = int(os.getenv("TG_API_ID", "0"))
-API_HASH = os.getenv("TG_API_HASH", "")
+WEB_SITE_URL = os.getenv("WEB_SITE_URL", "")  # 网站地址，用于 Bot 中的跳转链接
 
-# ─── API 辅助函数 ─────────────────────────────────────────────────────────────
+# 套餐名称
+PLAN_NAMES = {"free": "免费版", "basic": "基础版", "pro": "专业版", "enterprise": "企业版"}
+
+# 对话状态 key
+STATE_KEY = "input_state"
+STATE_KEYWORD = "wait_keyword"
+STATE_TEMPLATE = "wait_template"
+STATE_GROUP = "wait_group"
+
+# ─── API 辅助 ─────────────────────────────────────────────────────────────────
 
 async def api_get(path: str, params: dict = None):
-    """调用 Web API GET 接口"""
     headers = {"x-engine-secret": ENGINE_SECRET}
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{WEB_API_BASE}/trpc/{path}", headers=headers, params=params) as resp:
-            return await resp.json()
-
-async def api_post(path: str, data: dict = None):
-    """调用 Web API POST 接口"""
-    headers = {"x-engine-secret": ENGINE_SECRET, "Content-Type": "application/json"}
-    import json
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f"{WEB_API_BASE}/trpc/{path}", headers=headers, json={"json": data or {}}) as resp:
-            return await resp.json()
-
-async def get_user_by_tg_id(tg_user_id: int):
-    """通过 Telegram 用户 ID 查找系统用户"""
+    input_json = json.dumps({"json": params or {}})
+    url = f"{WEB_API_BASE}/trpc/{path}"
     try:
-        result = await api_get("engine.getUserByTgId", {"input": f'{{"json":{{"tgUserId":"{tg_user_id}"}}}}'})
-        return result.get("result", {}).get("data", {}).get("json")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, params={"input": input_json}) as resp:
+                data = await resp.json()
+                return data.get("result", {}).get("data", {}).get("json")
     except Exception as e:
-        logger.error(f"get_user_by_tg_id error: {e}")
+        logger.error(f"api_get {path} error: {e}")
         return None
 
-# ─── 主菜单 Keyboard ──────────────────────────────────────────────────────────
+async def api_post(path: str, data: dict = None):
+    headers = {"x-engine-secret": ENGINE_SECRET, "Content-Type": "application/json"}
+    url = f"{WEB_API_BASE}/trpc/{path}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json={"json": data or {}}) as resp:
+                result = await resp.json()
+                return result.get("result", {}).get("data", {}).get("json")
+    except Exception as e:
+        logger.error(f"api_post {path} error: {e}")
+        return None
+
+async def ensure_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
+    if context.user_data.get("user_id"):
+        return context.user_data["user_id"]
+    tg = update.effective_user
+    result = await api_post("engine.botAutoRegister", {
+        "tgUserId": str(tg.id),
+        "tgUsername": tg.username,
+        "tgFirstName": tg.first_name,
+        "tgLastName": tg.last_name,
+    })
+    if result:
+        context.user_data["user_id"] = result["id"]
+        return result["id"]
+    return None
+
+# ─── 主菜单 ───────────────────────────────────────────────────────────────────
 
 def main_menu_keyboard():
     return InlineKeyboardMarkup([
@@ -61,378 +95,579 @@ def main_menu_keyboard():
             InlineKeyboardButton("👥 监控群组", callback_data="menu_groups"),
         ],
         [
-            InlineKeyboardButton("💬 消息模板", callback_data="menu_templates"),
+            InlineKeyboardButton("💬 私信模板", callback_data="menu_template"),
+            InlineKeyboardButton("📱 私信账号", callback_data="menu_sender"),
+        ],
+        [
             InlineKeyboardButton("📊 今日统计", callback_data="menu_stats"),
-        ],
-        [
-            InlineKeyboardButton("📱 我的账号", callback_data="menu_accounts"),
-            InlineKeyboardButton("🛡️ 防封设置", callback_data="menu_antiban"),
-        ],
-        [
             InlineKeyboardButton("💎 我的套餐", callback_data="menu_plan"),
-            InlineKeyboardButton("🔔 通知设置", callback_data="menu_notify"),
         ],
         [
-            InlineKeyboardButton("🌐 打开管理后台", url="https://tgmonitor.manus.space"),
+            InlineKeyboardButton("🔔 自动私信开关", callback_data="menu_dm_toggle"),
         ],
     ])
 
-# ─── Bot 命令处理 ─────────────────────────────────────────────────────────────
-
-app = Client(
-    "tg_monitor_bot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
-)
-
-@app.on_message(filters.command("start") & filters.private)
-async def cmd_start(client: Client, message: Message):
-    """欢迎消息 + 主菜单"""
-    user = message.from_user
-    welcome_text = (
-        f"👋 你好，**{user.first_name}**！\n\n"
-        "🤖 **TG Monitor Pro** - 专业的 Telegram 关键词监控工具\n\n"
-        "**核心功能：**\n"
-        "• 📡 实时监控群组关键词\n"
-        "• 🎯 命中后自动发送私信\n"
-        "• 📊 数据统计与分析\n"
-        "• 🛡️ 智能防封保护\n\n"
-        "请选择操作："
-    )
-    await message.reply_text(welcome_text, reply_markup=main_menu_keyboard())
-
-@app.on_message(filters.command("help") & filters.private)
-async def cmd_help(client: Client, message: Message):
-    """帮助信息"""
-    help_text = (
-        "📖 **命令列表**\n\n"
-        "**基础命令：**\n"
-        "`/start` - 主菜单\n"
-        "`/status` - 系统状态\n"
-        "`/stats` - 今日统计\n\n"
-        "**关键词管理：**\n"
-        "`/add_keyword <词>` - 添加关键词\n"
-        "`/list_keywords` - 查看关键词列表\n"
-        "`/del_keyword <ID>` - 删除关键词\n\n"
-        "**群组管理：**\n"
-        "`/add_group <群组链接>` - 添加监控群组\n"
-        "`/list_groups` - 查看监控群组\n"
-        "`/del_group <ID>` - 删除监控群组\n\n"
-        "**私信功能：**\n"
-        "`/dm_on` - 开启自动私信\n"
-        "`/dm_off` - 关闭自动私信\n"
-        "`/dm_template <内容>` - 设置私信模板\n"
-        "`/dm_status` - 查看私信队列\n\n"
-        "**套餐：**\n"
-        "`/plan` - 查看当前套餐\n"
-        "`/activate <卡密>` - 激活卡密\n"
-    )
-    await message.reply_text(help_text)
-
-@app.on_message(filters.command("status") & filters.private)
-async def cmd_status(client: Client, message: Message):
-    """系统状态"""
-    await message.reply_text(
-        "✅ **系统状态**\n\n"
-        "• 监控引擎：🟢 运行中\n"
-        "• 数据库：🟢 正常\n"
-        "• API 服务：🟢 正常\n\n"
-        "如需查看详细统计，请使用 /stats"
+def main_menu_text(s: dict) -> str:
+    plan = PLAN_NAMES.get(s.get("planId", "free"), "免费版")
+    kw = s.get("keywordCount", 0)
+    kw_max = s.get("limits", {}).get("maxKeywords", 10)
+    grp = s.get("groupCount", 0)
+    dm = "✅ 已开启" if s.get("dmEnabled") else "❌ 已关闭"
+    sender = f"📱 {s.get('senderPhone')}" if s.get("hasSenderAccount") else "⚠️ 未绑定私信账号"
+    return (
+        f"🤖 **TG Monitor Pro**\n\n"
+        f"👤 套餐：**{plan}**\n"
+        f"🔑 关键词：**{kw}/{kw_max}**\n"
+        f"👥 监控群组：**{grp}** 个\n"
+        f"📬 自动私信：{dm}\n"
+        f"📱 私信账号：{sender}\n\n"
+        f"请选择操作："
     )
 
-@app.on_message(filters.command("stats") & filters.private)
-async def cmd_stats(client: Client, message: Message):
-    """今日统计"""
-    await message.reply_text(
-        "📊 **今日统计**\n\n"
-        "请登录 Web 管理后台查看完整统计数据：\n"
-        "🌐 https://tgmonitor.manus.space/dashboard",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📊 查看仪表盘", url="https://tgmonitor.manus.space/dashboard")
-        ]])
+# ─── /start ───────────────────────────────────────────────────────────────────
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tg = update.effective_user
+    msg = await update.message.reply_text("⏳ 正在初始化...")
+    result = await api_post("engine.botAutoRegister", {
+        "tgUserId": str(tg.id),
+        "tgUsername": tg.username,
+        "tgFirstName": tg.first_name,
+        "tgLastName": tg.last_name,
+    })
+    if not result:
+        await msg.edit_text("❌ 服务暂时不可用，请稍后重试。")
+        return
+    uid = result["id"]
+    context.user_data["user_id"] = uid
+    is_new = result.get("isNew", False)
+    status = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+    welcome = "🎉 欢迎加入 TG Monitor Pro！\n\n" if is_new else ""
+    await msg.edit_text(
+        welcome + main_menu_text(status),
+        reply_markup=main_menu_keyboard(),
+        parse_mode=ParseMode.MARKDOWN,
     )
 
-@app.on_message(filters.command("add_keyword") & filters.private)
-async def cmd_add_keyword(client: Client, message: Message):
-    """添加关键词"""
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        await message.reply_text(
-            "❌ 请提供关键词\n\n"
-            "用法：`/add_keyword 关键词`\n"
-            "示例：`/add_keyword 求购 BTC`"
+# ─── /help ────────────────────────────────────────────────────────────────────
+
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📖 **使用指南**\n\n"
+        "**快捷命令：**\n"
+        "`/kw 词1 词2` — 批量添加关键词\n"
+        "`/template 内容` — 设置私信模板\n"
+        "`/group 群组链接` — 添加监控群组\n"
+        "`/stats` — 今日统计\n"
+        "`/activate 卡密` — 激活套餐\n\n"
+        "**模板变量：**\n"
+        "`{username}` `{first_name}` `{keyword}` `{group}` `{message}`\n\n"
+        "**自动私信流程：**\n"
+        "1️⃣ 绑定私信账号（📱 私信账号）\n"
+        "2️⃣ 设置私信模板（💬 私信模板）\n"
+        "3️⃣ 添加关键词（📋 关键词管理）\n"
+        "4️⃣ 添加监控群组（👥 监控群组）\n"
+        "5️⃣ 开启自动私信（🔔 自动私信开关）",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+# ─── /kw ─────────────────────────────────────────────────────────────────────
+
+async def cmd_kw(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = await ensure_user(update, context)
+    if not uid:
+        await update.message.reply_text("❌ 服务异常，请重试")
+        return
+    if not context.args:
+        await update.message.reply_text(
+            "📋 用法：`/kw 关键词1 关键词2 关键词3`",
+            parse_mode=ParseMode.MARKDOWN,
         )
         return
-
-    keyword = parts[1].strip()
-    await message.reply_text(
-        f"✅ 关键词 **{keyword}** 已添加到队列\n\n"
-        "⚠️ 注意：关键词需要通过 Web 管理后台完成配置（选择匹配类型、绑定群组等）\n"
-        "🌐 https://tgmonitor.manus.space/keywords",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("⚙️ 完善配置", url="https://tgmonitor.manus.space/keywords")
-        ]])
-    )
-
-@app.on_message(filters.command("list_keywords") & filters.private)
-async def cmd_list_keywords(client: Client, message: Message):
-    """查看关键词列表"""
-    await message.reply_text(
-        "📋 **关键词管理**\n\n"
-        "请在 Web 管理后台查看和管理所有关键词：",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📋 关键词列表", url="https://tgmonitor.manus.space/keywords")
-        ]])
-    )
-
-@app.on_message(filters.command("dm_on") & filters.private)
-async def cmd_dm_on(client: Client, message: Message):
-    """开启自动私信"""
-    await message.reply_text(
-        "✅ **自动私信功能**\n\n"
-        "请在防封设置页面开启自动私信开关：",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔔 防封设置", url="https://tgmonitor.manus.space/antiban")
-        ]])
-    )
-
-@app.on_message(filters.command("dm_off") & filters.private)
-async def cmd_dm_off(client: Client, message: Message):
-    """关闭自动私信"""
-    await message.reply_text(
-        "🔕 **关闭自动私信**\n\n"
-        "请在防封设置页面关闭自动私信开关：",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("⚙️ 防封设置", url="https://tgmonitor.manus.space/antiban")
-        ]])
-    )
-
-@app.on_message(filters.command("dm_template") & filters.private)
-async def cmd_dm_template(client: Client, message: Message):
-    """设置私信模板"""
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        await message.reply_text(
-            "💬 **私信模板设置**\n\n"
-            "用法：`/dm_template 你好 {username}，看到你在找 {keyword}，我这里有...`\n\n"
-            "**可用变量：**\n"
-            "• `{username}` - 对方用户名\n"
-            "• `{keyword}` - 命中的关键词\n"
-            "• `{group_name}` - 来源群组名\n"
-            "• `{date}` - 当前日期\n\n"
-            "或在 Web 后台管理多个模板：",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("💬 模板管理", url="https://tgmonitor.manus.space/templates")
-            ]])
+    status = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+    current = status.get("keywordCount", 0)
+    max_kw = status.get("limits", {}).get("maxKeywords", 10)
+    remaining = max_kw - current
+    if remaining <= 0:
+        await update.message.reply_text(
+            f"⚠️ 关键词已达上限（{current}/{max_kw}）\n请升级套餐：`/activate 卡密`",
+            parse_mode=ParseMode.MARKDOWN,
         )
         return
+    added = []
+    for kw in context.args[:remaining]:
+        r = await api_post("engine.botAddKeyword", {"userId": uid, "keyword": kw, "matchType": "contains"})
+        if r and r.get("success"):
+            added.append(kw)
+    msg = f"✅ 成功添加 {len(added)} 个关键词：\n" + "\n".join(f"  • `{k}`" for k in added)
+    if len(context.args) > remaining:
+        msg += f"\n\n⚠️ 仅添加了 {remaining} 个（套餐限制）"
+    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
-    template_content = parts[1].strip()
-    await message.reply_text(
-        f"✅ 模板已记录：\n\n`{template_content}`\n\n"
-        "请在 Web 后台完成保存：",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("💾 保存模板", url="https://tgmonitor.manus.space/templates")
-        ]])
-    )
+# ─── /template ────────────────────────────────────────────────────────────────
 
-@app.on_message(filters.command("dm_status") & filters.private)
-async def cmd_dm_status(client: Client, message: Message):
-    """查看私信队列状态"""
-    await message.reply_text(
-        "📬 **私信队列**\n\n"
-        "查看当前发送队列和历史记录：",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📬 私信队列", url="https://tgmonitor.manus.space/dm-queue")
-        ]])
-    )
-
-@app.on_message(filters.command("plan") & filters.private)
-async def cmd_plan(client: Client, message: Message):
-    """查看当前套餐"""
-    await message.reply_text(
-        "💎 **套餐信息**\n\n"
-        "查看当前套餐和升级选项：",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("💎 查看套餐", url="https://tgmonitor.manus.space/plans")],
-            [InlineKeyboardButton("💳 购买升级", url="https://tgmonitor.manus.space/payment")],
-        ])
-    )
-
-@app.on_message(filters.command("activate") & filters.private)
-async def cmd_activate(client: Client, message: Message):
-    """激活卡密"""
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        await message.reply_text(
-            "🔑 **激活卡密**\n\n"
-            "用法：`/activate TGPRO-XXXX-XXXX-XXXX`\n\n"
-            "或在网页端激活：",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔑 激活页面", url="https://tgmonitor.manus.space/payment")
-            ]])
-        )
+async def cmd_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = await ensure_user(update, context)
+    if not uid:
+        await update.message.reply_text("❌ 服务异常，请重试")
         return
-
-    card_key = parts[1].strip()
-    await message.reply_text(
-        f"🔑 正在激活卡密：`{card_key}`\n\n"
-        "请在网页端完成激活（需要登录验证）：",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔑 激活页面", url=f"https://tgmonitor.manus.space/payment?key={card_key}")
-        ]])
-    )
-
-@app.on_message(filters.command("add_group") & filters.private)
-async def cmd_add_group(client: Client, message: Message):
-    """添加监控群组"""
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        await message.reply_text(
-            "👥 **添加监控群组**\n\n"
-            "用法：`/add_group @group_username` 或 `/add_group https://t.me/group`\n\n"
-            "或在 Web 后台添加：",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("👥 群组管理", url="https://tgmonitor.manus.space/monitor-groups")
-            ]])
-        )
+    if not context.args:
+        tpls = await api_get("engine.botGetTemplates", {"userId": uid})
+        if tpls:
+            await update.message.reply_text(
+                f"💬 **当前模板：**\n\n`{tpls[0]['content']}`\n\n"
+                f"修改：`/template 新模板内容`",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await update.message.reply_text(
+                "💬 用法：`/template 你好 {first_name}，我看到你在群里提到了{keyword}~`\n\n"
+                "变量：`{username}` `{first_name}` `{keyword}` `{group}` `{message}`",
+                parse_mode=ParseMode.MARKDOWN,
+            )
         return
-
-    group_link = parts[1].strip()
-    await message.reply_text(
-        f"✅ 群组 `{group_link}` 已记录\n\n"
-        "请在 Web 后台完成配置（绑定关键词等）：",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("⚙️ 完善配置", url="https://tgmonitor.manus.space/monitor-groups")
-        ]])
-    )
-
-# ─── Callback Query 处理 ──────────────────────────────────────────────────────
-
-@app.on_callback_query(filters.regex("^menu_"))
-async def handle_menu_callback(client: Client, callback: CallbackQuery):
-    """主菜单回调"""
-    action = callback.data.replace("menu_", "")
-
-    menu_map = {
-        "keywords": ("📋 关键词管理", "https://tgmonitor.manus.space/keywords"),
-        "groups": ("👥 监控群组", "https://tgmonitor.manus.space/monitor-groups"),
-        "templates": ("💬 消息模板", "https://tgmonitor.manus.space/templates"),
-        "stats": ("📊 今日统计", "https://tgmonitor.manus.space/dashboard"),
-        "accounts": ("📱 TG 账号", "https://tgmonitor.manus.space/tg-accounts"),
-        "antiban": ("🛡️ 防封设置", "https://tgmonitor.manus.space/antiban"),
-        "plan": ("💎 套餐管理", "https://tgmonitor.manus.space/plans"),
-        "notify": ("🔔 通知设置", "https://tgmonitor.manus.space/antiban"),
-    }
-
-    if action in menu_map:
-        title, url = menu_map[action]
-        await callback.answer()
-        await callback.message.reply_text(
-            f"🔗 **{title}**\n\n点击下方按钮打开管理页面：",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(f"打开 {title}", url=url)
-            ]])
+    content = " ".join(context.args)
+    r = await api_post("engine.botSetTemplate", {"userId": uid, "content": content, "name": "Bot模板"})
+    if r and r.get("success"):
+        await update.message.reply_text(
+            f"✅ 模板已{'更新' if not r.get('isNew') else '创建'}！\n\n`{content}`",
+            parse_mode=ParseMode.MARKDOWN,
         )
     else:
-        await callback.answer("功能开发中...", show_alert=True)
+        await update.message.reply_text("❌ 设置失败，请重试")
 
-# ─── 命中通知推送（由监控引擎调用） ──────────────────────────────────────────
+# ─── /group ───────────────────────────────────────────────────────────────────
 
-async def send_hit_notification(
-    bot_chat_id: int,
-    sender_username: str,
-    sender_tg_id: str,
-    matched_keyword: str,
-    group_name: str,
-    message_text: str,
-    dm_enabled: bool = False,
-):
-    """
-    向用户推送关键词命中通知
-    此函数由监控引擎在检测到命中时调用
-    """
-    dm_status = "✅ 已加入私信队列" if dm_enabled else "❌ 自动私信未开启"
+async def cmd_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = await ensure_user(update, context)
+    if not uid:
+        await update.message.reply_text("❌ 服务异常，请重试")
+        return
+    if not context.args:
+        await update.message.reply_text(
+            "👥 用法：`/group https://t.me/example` 或 `/group -1001234567890`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    raw = context.args[0].strip()
+    gid = raw.replace("https://t.me/", "@").replace("t.me/", "@") if "t.me/" in raw else raw
+    r = await api_post("engine.botAddGroup", {"userId": uid, "groupId": gid, "groupTitle": gid})
+    if r and r.get("success"):
+        await update.message.reply_text(
+            f"✅ 群组 `{gid}` {'已添加' if r.get('isNew') else '已重新激活'}！",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    else:
+        await update.message.reply_text("❌ 添加失败，请检查格式")
 
-    notification_text = (
-        "🎯 **关键词命中通知**\n\n"
-        f"📍 **来源群组：** {group_name}\n"
-        f"🔑 **命中关键词：** `{matched_keyword}`\n"
-        f"👤 **发送者：** @{sender_username or 'N/A'} (`{sender_tg_id}`)\n"
-        f"💬 **消息内容：**\n`{message_text[:200]}{'...' if len(message_text) > 200 else ''}`\n\n"
-        f"📬 **私信状态：** {dm_status}"
+# ─── /stats ───────────────────────────────────────────────────────────────────
+
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = await ensure_user(update, context)
+    if not uid:
+        await update.message.reply_text("❌ 服务异常，请重试")
+        return
+    s = await api_get("engine.botGetStats", {"userId": uid})
+    if s:
+        await update.message.reply_text(
+            f"📊 **今日统计**\n\n"
+            f"🎯 今日命中：**{s.get('todayHits', 0)}** 次\n"
+            f"📬 今日私信：**{s.get('todayDm', 0)}** 条\n"
+            f"📈 累计命中：**{s.get('totalHits', 0)}** 次",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    else:
+        await update.message.reply_text("❌ 获取统计失败")
+
+# ─── /activate ────────────────────────────────────────────────────────────────
+
+async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = await ensure_user(update, context)
+    if not uid:
+        await update.message.reply_text("❌ 服务异常，请重试")
+        return
+    if not context.args:
+        await update.message.reply_text("🎫 用法：`/activate XXXX-XXXX-XXXX`", parse_mode=ParseMode.MARKDOWN)
+        return
+    r = await api_post("engine.botActivateCode", {"userId": uid, "code": context.args[0]})
+    if r and r.get("success"):
+        plan = PLAN_NAMES.get(r.get("planId", ""), "未知")
+        exp = str(r.get("expiresAt", ""))[:10]
+        await update.message.reply_text(
+            f"🎉 **激活成功！**\n\n套餐：**{plan}**\n有效期至：{exp or '永久'}",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    else:
+        msg = r.get("message", "卡密无效") if r else "激活失败"
+        await update.message.reply_text(f"❌ {msg}")
+
+# ─── Callback Query ───────────────────────────────────────────────────────────
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    data = q.data
+    uid = await ensure_user(update, context)
+    if not uid:
+        await q.edit_message_text("❌ 服务异常，请重试")
+        return
+
+    # 主菜单
+    if data == "menu_main":
+        s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+        await q.edit_message_text(main_menu_text(s), reply_markup=main_menu_keyboard(), parse_mode=ParseMode.MARKDOWN)
+
+    # ── 关键词 ──
+    elif data == "menu_keywords":
+        s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+        kw = s.get("keywordCount", 0)
+        kw_max = s.get("limits", {}).get("maxKeywords", 10)
+        await q.edit_message_text(
+            f"📋 **关键词管理**\n\n当前：**{kw}/{kw_max}**\n\n快捷添加：`/kw 词1 词2`",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ 添加关键词", callback_data="kw_add"),
+                 InlineKeyboardButton("📃 查看列表", callback_data="kw_list")],
+                [InlineKeyboardButton("🗑️ 删除关键词", callback_data="kw_delete_menu")],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
+            ]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif data == "kw_add":
+        context.user_data[STATE_KEY] = STATE_KEYWORD
+        await q.edit_message_text(
+            "📋 **添加关键词**\n\n请发送关键词（多个用空格或换行分隔）：",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 取消", callback_data="menu_keywords")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif data == "kw_list":
+        kws = await api_get("engine.botGetKeywords", {"userId": uid}) or []
+        if not kws:
+            text = "📋 暂无关键词"
+        else:
+            text = f"📋 **关键词列表**（{len(kws)} 个）\n\n" + "\n".join(f"{i+1}. `{k['keyword']}`" for i, k in enumerate(kws))
+        await q.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ 添加", callback_data="kw_add"),
+                 InlineKeyboardButton("🗑️ 删除", callback_data="kw_delete_menu")],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_keywords")],
+            ]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif data == "kw_delete_menu":
+        kws = await api_get("engine.botGetKeywords", {"userId": uid}) or []
+        if not kws:
+            await q.edit_message_text("暂无关键词", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_keywords")]]))
+            return
+        btns = [[InlineKeyboardButton(f"🗑️ {k['keyword']}", callback_data=f"kw_del_{k['id']}")] for k in kws]
+        btns.append([InlineKeyboardButton("◀️ 返回", callback_data="menu_keywords")])
+        await q.edit_message_text("🗑️ 选择要删除的关键词：", reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+
+    elif data.startswith("kw_del_"):
+        kid = int(data[7:])
+        r = await api_post("engine.botDeleteKeyword", {"userId": uid, "keywordId": kid})
+        s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+        kw = s.get("keywordCount", 0)
+        kw_max = s.get("limits", {}).get("maxKeywords", 10)
+        await q.edit_message_text(
+            f"✅ 已删除\n\n📋 **关键词管理**\n\n当前：**{kw}/{kw_max}**",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ 添加关键词", callback_data="kw_add"),
+                 InlineKeyboardButton("📃 查看列表", callback_data="kw_list")],
+                [InlineKeyboardButton("🗑️ 继续删除", callback_data="kw_delete_menu")],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
+            ]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    # ── 监控群组 ──
+    elif data == "menu_groups":
+        groups = await api_get("engine.botGetGroups", {"userId": uid}) or []
+        if not groups:
+            text = "👥 **监控群组**\n\n暂无群组\n\n快捷添加：`/group 群组链接`"
+            btns = [[InlineKeyboardButton("➕ 添加群组", callback_data="group_add")],
+                    [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
+        else:
+            text = f"👥 **监控群组**（{len(groups)} 个）\n\n"
+            for g in groups:
+                icon = "🟢" if g.get("monitorStatus") == "active" else "🔴"
+                text += f"{icon} `{g.get('groupTitle') or g.get('groupId')}`\n"
+            btns = [[InlineKeyboardButton("➕ 添加群组", callback_data="group_add")]]
+            for g in groups[:5]:
+                title = (g.get("groupTitle") or g.get("groupId") or "")[:20]
+                btns.append([InlineKeyboardButton(f"🗑️ {title}", callback_data=f"group_del_{g['groupId']}")])
+            btns.append([InlineKeyboardButton("◀️ 返回", callback_data="menu_main")])
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "group_add":
+        context.user_data[STATE_KEY] = STATE_GROUP
+        await q.edit_message_text(
+            "👥 **添加监控群组**\n\n请发送群组链接或 ID：\n• `https://t.me/example`\n• `@example`\n• `-1001234567890`",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 取消", callback_data="menu_groups")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif data.startswith("group_del_"):
+        gid = data[10:]
+        await api_post("engine.botDeleteGroup", {"userId": uid, "groupId": gid})
+        groups = await api_get("engine.botGetGroups", {"userId": uid}) or []
+        text = f"✅ 已移除\n\n👥 **监控群组**（{len(groups)} 个）\n\n"
+        for g in groups:
+            icon = "🟢" if g.get("monitorStatus") == "active" else "🔴"
+            text += f"{icon} `{g.get('groupTitle') or g.get('groupId')}`\n"
+        if not groups:
+            text = "✅ 已移除\n\n👥 暂无监控群组"
+        btns = [[InlineKeyboardButton("➕ 添加群组", callback_data="group_add")],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+
+    # ── 私信模板 ──
+    elif data == "menu_template":
+        tpls = await api_get("engine.botGetTemplates", {"userId": uid}) or []
+        if tpls:
+            text = f"💬 **私信模板**\n\n当前模板：\n`{tpls[0]['content']}`"
+            btns = [[InlineKeyboardButton("✏️ 修改模板", callback_data="template_set")],
+                    [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
+        else:
+            text = "💬 **私信模板**\n\n⚠️ 尚未设置\n\n快捷设置：`/template 模板内容`"
+            btns = [[InlineKeyboardButton("✏️ 设置模板", callback_data="template_set")],
+                    [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "template_set":
+        context.user_data[STATE_KEY] = STATE_TEMPLATE
+        await q.edit_message_text(
+            "💬 **设置私信模板**\n\n请发送模板内容：\n\n"
+            "变量：`{username}` `{first_name}` `{keyword}` `{group}` `{message}`\n\n"
+            "示例：`你好 {first_name}，看到你在 {group} 提到了{keyword}，想和你聊聊~`",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 取消", callback_data="menu_template")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    # ── 私信账号 ──
+    elif data == "menu_sender":
+        s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+        has = s.get("hasSenderAccount", False)
+        phone = s.get("senderPhone", "")
+        if has:
+            text = f"📱 **私信账号**\n\n✅ 已绑定：`{phone}`\n\n此账号将用于自动发送私信。"
+            btns = [[InlineKeyboardButton("🔄 更换账号", callback_data="sender_guide")],
+                    [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
+        else:
+            text = ("📱 **私信账号**\n\n⚠️ 尚未绑定私信账号\n\n"
+                    "绑定后，系统将使用此账号自动向关键词命中的用户发送私信。\n\n"
+                    "请在 Web 管理后台完成账号登录绑定：")
+            btns = [[InlineKeyboardButton("🌐 前往绑定", url=f"{WEB_SITE_URL}/tg-accounts" if WEB_SITE_URL else "https://t.me")],
+                    [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "sender_guide":
+        await q.edit_message_text(
+            "📱 **更换私信账号**\n\n"
+            "请在 Web 管理后台 → TG账号管理 中删除旧账号并重新绑定：",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🌐 TG账号管理", url=f"{WEB_SITE_URL}/tg-accounts" if WEB_SITE_URL else "https://t.me")],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_sender")],
+            ]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    # ── 统计 ──
+    elif data == "menu_stats":
+        s = await api_get("engine.botGetStats", {"userId": uid}) or {}
+        await q.edit_message_text(
+            f"📊 **统计数据**\n\n"
+            f"🎯 今日命中：**{s.get('todayHits', 0)}** 次\n"
+            f"📬 今日私信：**{s.get('todayDm', 0)}** 条\n"
+            f"📈 累计命中：**{s.get('totalHits', 0)}** 次",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    # ── 套餐 ──
+    elif data == "menu_plan":
+        s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+        plan = PLAN_NAMES.get(s.get("planId", "free"), "免费版")
+        limits = s.get("limits", {})
+        exp = str(s.get("planExpiresAt", ""))[:10] or "永久有效"
+        await q.edit_message_text(
+            f"💎 **我的套餐**\n\n当前：**{plan}**\n有效期：{exp}\n\n"
+            f"🔑 关键词：{s.get('keywordCount',0)}/{limits.get('maxKeywords',10)}\n"
+            f"📬 每日私信：{s.get('dailyDmSent',0)}/{limits.get('maxDailyDm',5)}\n"
+            f"📱 TG账号上限：{limits.get('maxTgAccounts',1)} 个\n\n"
+            f"激活套餐：`/activate 卡密`",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    # ── 自动私信开关 ──
+    elif data == "menu_dm_toggle":
+        s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+        current = s.get("dmEnabled", False)
+        new_val = not current
+        r = await api_post("engine.botSetDmEnabled", {"userId": uid, "enabled": new_val})
+        state_text = "✅ 已开启" if new_val else "❌ 已关闭"
+        tip = "系统将在关键词命中时自动发送私信。\n\n⚠️ 请确保已绑定私信账号并设置消息模板！" if new_val else "系统将不再自动发送私信，但仍会记录命中。"
+        await q.edit_message_text(
+            f"🔔 **自动私信{state_text}**\n\n{tip}",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回主菜单", callback_data="menu_main")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    # ── 命中记录操作 ──
+    elif data.startswith("hit_processed_"):
+        await q.edit_message_reply_markup(
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ 已处理", callback_data="noop")]])
+        )
+        await q.answer("✅ 已标记为已处理")
+
+    elif data.startswith("hit_block_"):
+        sender_id = data[10:]
+        await q.answer(f"🚫 已屏蔽用户 {sender_id}", show_alert=True)
+
+    elif data == "noop":
+        pass
+
+# ─── 文本消息（状态机）────────────────────────────────────────────────────────
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    state = context.user_data.get(STATE_KEY)
+    uid = await ensure_user(update, context)
+    if not uid:
+        await update.message.reply_text("❌ 服务异常，请重试")
+        return
+    text = update.message.text.strip()
+
+    if state == STATE_KEYWORD:
+        context.user_data[STATE_KEY] = None
+        raw = [k.strip() for k in text.replace("\n", " ").split() if k.strip()]
+        if not raw:
+            await update.message.reply_text("❌ 请输入有效关键词")
+            return
+        s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+        remaining = s.get("limits", {}).get("maxKeywords", 10) - s.get("keywordCount", 0)
+        if remaining <= 0:
+            await update.message.reply_text(f"⚠️ 关键词已达上限，请升级套餐")
+            return
+        added = []
+        for kw in raw[:remaining]:
+            r = await api_post("engine.botAddKeyword", {"userId": uid, "keyword": kw, "matchType": "contains"})
+            if r and r.get("success"):
+                added.append(kw)
+        msg = f"✅ 成功添加 {len(added)} 个关键词：\n" + "\n".join(f"  • `{k}`" for k in added)
+        if len(raw) > remaining:
+            msg += f"\n\n⚠️ 仅添加了 {remaining} 个（套餐限制）"
+        await update.message.reply_text(
+            msg,
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("📋 查看关键词", callback_data="kw_list"),
+                InlineKeyboardButton("◀️ 主菜单", callback_data="menu_main"),
+            ]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif state == STATE_TEMPLATE:
+        context.user_data[STATE_KEY] = None
+        r = await api_post("engine.botSetTemplate", {"userId": uid, "content": text, "name": "Bot模板"})
+        if r and r.get("success"):
+            await update.message.reply_text(
+                f"✅ 模板已{'更新' if not r.get('isNew') else '创建'}！\n\n`{text}`",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 主菜单", callback_data="menu_main")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await update.message.reply_text("❌ 设置失败，请重试")
+
+    elif state == STATE_GROUP:
+        context.user_data[STATE_KEY] = None
+        raw = text.strip()
+        gid = raw.replace("https://t.me/", "@").replace("t.me/", "@") if "t.me/" in raw else raw
+        r = await api_post("engine.botAddGroup", {"userId": uid, "groupId": gid, "groupTitle": gid})
+        if r and r.get("success"):
+            await update.message.reply_text(
+                f"✅ 群组 `{gid}` {'已添加' if r.get('isNew') else '已重新激活'}！",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("👥 查看群组", callback_data="menu_groups"),
+                    InlineKeyboardButton("◀️ 主菜单", callback_data="menu_main"),
+                ]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await update.message.reply_text("❌ 添加失败，请检查格式")
+
+    else:
+        # 默认显示主菜单
+        s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+        await update.message.reply_text(
+            main_menu_text(s),
+            reply_markup=main_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+# ─── 命中通知推送（由监控引擎调用）──────────────────────────────────────────
+
+async def send_hit_notification(app, bot_chat_id: int, sender_username: str,
+                                sender_tg_id: str, matched_keyword: str,
+                                group_name: str, message_text: str, dm_status: str = "pending"):
+    dm_icon = {
+        "sent": "✅ 私信已发送", "queued": "⏳ 私信排队中",
+        "failed": "❌ 私信发送失败", "skipped": "⏭️ 已跳过",
+        "pending": "⏳ 等待处理",
+    }.get(dm_status, "❓")
+    sender_link = f"@{sender_username}" if sender_username else f"ID: {sender_tg_id}"
+    text = (
+        "🎯 **关键词命中**\n\n"
+        f"📍 群组：**{group_name}**\n"
+        f"🔑 关键词：`{matched_keyword}`\n"
+        f"👤 发送者：{sender_link}\n"
+        f"💬 消息：\n`{message_text[:200]}{'...' if len(message_text) > 200 else ''}`\n\n"
+        f"📬 私信：{dm_icon}"
     )
-
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "💬 私聊TA",
-                url=f"https://t.me/{sender_username}" if sender_username else f"tg://user?id={sender_tg_id}"
-            ),
-            InlineKeyboardButton("✅ 标记已处理", callback_data=f"mark_processed_{sender_tg_id}"),
-        ],
-        [
-            InlineKeyboardButton("🚫 屏蔽此用户", callback_data=f"block_user_{sender_tg_id}"),
-            InlineKeyboardButton("📊 查看记录", url="https://tgmonitor.manus.space/hit-records"),
-        ],
+    url = f"https://t.me/{sender_username}" if sender_username else f"tg://user?id={sender_tg_id}"
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💬 私聊TA", url=url),
+         InlineKeyboardButton("✅ 已处理", callback_data=f"hit_processed_{sender_tg_id}")],
+        [InlineKeyboardButton("🚫 屏蔽", callback_data=f"hit_block_{sender_tg_id}")],
     ])
-
     try:
-        await app.send_message(bot_chat_id, notification_text, reply_markup=keyboard)
+        await app.bot.send_message(chat_id=bot_chat_id, text=text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
-        logger.error(f"Failed to send notification to {bot_chat_id}: {e}")
-
-@app.on_callback_query(filters.regex("^mark_processed_"))
-async def handle_mark_processed(client: Client, callback: CallbackQuery):
-    """标记命中记录为已处理"""
-    await callback.answer("✅ 已标记为已处理", show_alert=False)
-    await callback.message.edit_reply_markup(
-        InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ 已处理", callback_data="noop"),
-        ]])
-    )
-
-@app.on_callback_query(filters.regex("^block_user_"))
-async def handle_block_user(client: Client, callback: CallbackQuery):
-    """屏蔽用户"""
-    tg_id = callback.data.replace("block_user_", "")
-    await callback.answer(f"🚫 用户 {tg_id} 已加入黑名单", show_alert=True)
-
-@app.on_callback_query(filters.regex("^noop$"))
-async def handle_noop(client: Client, callback: CallbackQuery):
-    await callback.answer()
-
-# ─── 设置 Bot 命令菜单 ────────────────────────────────────────────────────────
-
-async def set_bot_commands():
-    """设置 Bot 命令菜单"""
-    commands = [
-        BotCommand("start", "主菜单"),
-        BotCommand("help", "命令帮助"),
-        BotCommand("status", "系统状态"),
-        BotCommand("stats", "今日统计"),
-        BotCommand("add_keyword", "添加关键词"),
-        BotCommand("list_keywords", "关键词列表"),
-        BotCommand("add_group", "添加监控群组"),
-        BotCommand("list_groups", "群组列表"),
-        BotCommand("dm_on", "开启自动私信"),
-        BotCommand("dm_off", "关闭自动私信"),
-        BotCommand("dm_template", "设置私信模板"),
-        BotCommand("dm_status", "私信队列状态"),
-        BotCommand("plan", "查看套餐"),
-        BotCommand("activate", "激活卡密"),
-    ]
-    await app.set_bot_commands(commands)
-    logger.info("Bot commands set successfully")
+        logger.error(f"send_hit_notification error: {e}")
 
 # ─── 主入口 ───────────────────────────────────────────────────────────────────
 
-async def main():
-    await app.start()
-    await set_bot_commands()
-    logger.info("TG Monitor Pro Bot started!")
-    await asyncio.Event().wait()
+async def post_init(app):
+    cmds = [
+        BotCommand("start", "主菜单"),
+        BotCommand("help", "使用帮助"),
+        BotCommand("kw", "添加关键词 /kw 词1 词2"),
+        BotCommand("template", "设置私信模板"),
+        BotCommand("group", "添加监控群组"),
+        BotCommand("stats", "今日统计"),
+        BotCommand("activate", "激活套餐卡密"),
+    ]
+    await app.bot.set_my_commands(cmds)
+    logger.info("✅ Bot commands registered")
+
+def main():
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN not set!")
+        return
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("kw", cmd_kw))
+    app.add_handler(CommandHandler("template", cmd_template))
+    app.add_handler(CommandHandler("group", cmd_group))
+    app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(CommandHandler("activate", cmd_activate))
+    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    logger.info("🤖 TG Monitor Pro Bot starting...")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

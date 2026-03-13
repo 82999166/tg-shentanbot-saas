@@ -1,0 +1,218 @@
+{
+  "query": "DESCRIBE tg_accounts;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user Egqgwtf2w1Dcuzo.bde3d0a5cfff --database 8SLf4cmVRTfEoV2e8JcGKB --execute DESCRIBE tg_accounts;",
+  "rows": [
+    {
+      "Field": "id",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "PRI",
+      "Default": "NULL",
+      "Extra": "auto_increment"
+    },
+    {
+      "Field": "userId",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "MUL",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "phone",
+      "Type": "varchar(32)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "tgUserId",
+      "Type": "varchar(32)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "tgUsername",
+      "Type": "varchar(128)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "tgFirstName",
+      "Type": "varchar(128)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "tgLastName",
+      "Type": "varchar(128)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "sessionString",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "sessionStatus",
+      "Type": "enum('pending','active','expired','banned')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "pending",
+      "Extra": ""
+    },
+    {
+      "Field": "accountRole",
+      "Type": "enum('monitor','sender','both')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "both",
+      "Extra": ""
+    },
+    {
+      "Field": "healthScore",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "100",
+      "Extra": ""
+    },
+    {
+      "Field": "healthStatus",
+      "Type": "enum('healthy','warning','degraded','suspended')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "healthy",
+      "Extra": ""
+    },
+    {
+      "Field": "totalMonitored",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "totalDmSent",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "dailyDmSent",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "dailyDmResetAt",
+      "Type": "timestamp",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "lastActiveAt",
+      "Type": "timestamp",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "proxyHost",
+      "Type": "varchar(256)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "proxyPort",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "proxyType",
+      "Type": "enum('socks5','http','mtproto')",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "proxyUsername",
+      "Type": "varchar(128)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "proxyPassword",
+      "Type": "varchar(256)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "notes",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "isActive",
+      "Type": "tinyint(1)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "1",
+      "Extra": ""
+    },
+    {
+      "Field": "createdAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": ""
+    },
+    {
+      "Field": "updatedAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP"
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nid\tint\tNO\tPRI\tNULL\tauto_increment\nuserId\tint\tNO\tMUL\tNULL\t\nphone\tvarchar(32)\tYES\t\tNULL\t\ntgUserId\tvarchar(32)\tYES\t\tNULL\t\ntgUsername\tvarchar(128)\tYES\t\tNULL\t\ntgFirstName\tvarchar(128)\tYES\t\tNULL\t\ntgLastName\tvarchar(128)\tYES\t\tNULL\t\nsessionString\ttext\tYES\t\tNULL\t\nsessionStatus\tenum('pending','active','expired','banned')\tNO\t\tpending\t\naccountRole\tenum('monitor','sender','both')\tNO\t\tboth\t\nhealthScore\tint\tNO\t\t100\t\nhealthStatus\tenum('healthy','warning','degraded','suspended')\tNO\t\thealthy\t\ntotalMonitored\tint\tNO\t\t0\t\ntotalDmSent\tint\tNO\t\t0\t\ndailyDmSent\tint\tNO\t\t0\t\ndailyDmResetAt\ttimestamp\tYES\t\tNULL\t\nlastActiveAt\ttimestamp\tYES\t\tNULL\t\nproxyHost\tvarchar(256)\tYES\t\tNULL\t\nproxyPort\tint\tYES\t\tNULL\t\nproxyType\tenum('socks5','http','mtproto')\tYES\t\tNULL\t\nproxyUsername\tvarchar(128)\tYES\t\tNULL\t\nproxyPassword\tvarchar(256)\tYES\t\tNULL\t\nnotes\ttext\tYES\t\tNULL\t\nisActive\ttinyint(1)\tNO\t\t1\t\ncreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\t\nupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\tDEFAULT_GENERATED on update CURRENT_TIMESTAMP\n",
+  "stderr": "",
+  "execution_time_ms": 1598
+}

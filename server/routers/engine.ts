@@ -14,8 +14,11 @@ import {
   hitRecords,
   dmQueue,
   messageTemplates,
+  users,
+  redeemCodes,
+  plans,
 } from "../../drizzle/schema";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql, desc, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 const ENGINE_SECRET = process.env.ENGINE_SECRET || "3d9b664c2005b02dd31955a6a70e2bb206901dbe32c7353c";
@@ -286,12 +289,370 @@ export const engineRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      // 可以存储到 systemSettings 表记录引擎状态
       const db = await getDb();
       if (db) {
         // 简单记录到内存，不做持久化
       }
       return { success: true, serverTime: Date.now() };
+    }),
+
+  // ── Bot API：通过 TG 用户 ID 查找用户（先查 users.tgUserId，再查 tgAccounts） ──
+  botGetUserByTgId: engineProcedure
+    .input(z.object({ tgUserId: z.string() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      // 优先从 users 表直接查
+      const directUser = await db.select().from(users)
+        .where(eq(users.tgUserId, input.tgUserId))
+        .limit(1);
+      if (directUser[0]) {
+        const u = directUser[0];
+        return { id: u.id, name: u.name, email: u.email, planId: u.planId, planExpiresAt: u.planExpiresAt, tgUsername: u.tgUsername, tgFirstName: u.tgFirstName };
+      }
+      // 兼容旧逻辑：通过 tgAccounts 表找
+      const account = await db
+        .select({ userId: tgAccounts.userId })
+        .from(tgAccounts)
+        .where(eq(tgAccounts.tgUserId, input.tgUserId))
+        .limit(1);
+      if (!account[0]) return null;
+      const userId = account[0].userId;
+      const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      return user[0] ? { id: user[0].id, name: user[0].name, email: user[0].email, planId: user[0].planId, planExpiresAt: user[0].planExpiresAt, tgUsername: user[0].tgUsername, tgFirstName: user[0].tgFirstName } : null;
+    }),
+
+  // ── Bot API：自动注册（/start 时调用） ───────────────────────
+  botAutoRegister: engineProcedure
+    .input(z.object({
+      tgUserId: z.string(),
+      tgUsername: z.string().optional().nullable(),
+      tgFirstName: z.string().optional().nullable(),
+      tgLastName: z.string().optional().nullable(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // 检查是否已存在
+      const existing = await db.select().from(users)
+        .where(eq(users.tgUserId, input.tgUserId))
+        .limit(1);
+      if (existing[0]) {
+        // 更新用户名（可能改变）
+        await db.update(users).set({
+          tgUsername: input.tgUsername || existing[0].tgUsername,
+          tgFirstName: input.tgFirstName || existing[0].tgFirstName,
+        }).where(eq(users.id, existing[0].id));
+        const u = existing[0];
+        return { isNew: false, id: u.id, name: u.name || input.tgFirstName || 'User', planId: u.planId, planExpiresAt: u.planExpiresAt };
+      }
+      // 创建新用户
+      const displayName = [input.tgFirstName, input.tgLastName].filter(Boolean).join(' ') || `tg_${input.tgUserId}`;
+      const result = await db.insert(users).values({
+        tgUserId: input.tgUserId,
+        tgUsername: input.tgUsername || null,
+        tgFirstName: input.tgFirstName || null,
+        name: displayName,
+        loginMethod: 'telegram',
+        emailVerified: false,
+        planId: 'free',
+        dailyDmSent: 0,
+      });
+      const newId = (result as any).insertId || (result as any)[0]?.insertId;
+      return { isNew: true, id: newId, name: displayName, planId: 'free', planExpiresAt: null };
+    }),
+
+  // ── Bot API：设置消息模板 ──────────────────────────────────
+  botSetTemplate: engineProcedure
+    .input(z.object({ userId: z.number(), content: z.string(), name: z.string().default('默认模板') }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // 检查是否已有模板
+      const existing = await db.select().from(messageTemplates)
+        .where(and(eq(messageTemplates.userId, input.userId), eq(messageTemplates.isActive, true)))
+        .limit(1);
+      if (existing[0]) {
+        await db.update(messageTemplates).set({ content: input.content, name: input.name })
+          .where(eq(messageTemplates.id, existing[0].id));
+        return { success: true, id: existing[0].id, isNew: false };
+      }
+      const result = await db.insert(messageTemplates).values({
+        userId: input.userId,
+        name: input.name,
+        content: input.content,
+        weight: 1,
+        usedCount: 0,
+        isActive: true,
+      });
+      const newId = (result as any).insertId || (result as any)[0]?.insertId;
+      return { success: true, id: newId, isNew: true };
+    }),
+
+  // ── Bot API：获取消息模板 ──────────────────────────────────
+  botGetTemplates: engineProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(messageTemplates)
+        .where(and(eq(messageTemplates.userId, input.userId), eq(messageTemplates.isActive, true)))
+        .orderBy(desc(messageTemplates.createdAt))
+        .limit(10);
+    }),
+
+  // ── Bot API：开关自动私信 ──────────────────────────────────
+  botSetDmEnabled: engineProcedure
+    .input(z.object({ userId: z.number(), enabled: z.boolean() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const existing = await db.select().from(antibanSettings)
+        .where(eq(antibanSettings.userId, input.userId)).limit(1);
+      if (existing[0]) {
+        await db.update(antibanSettings).set({ dmEnabled: input.enabled })
+          .where(eq(antibanSettings.id, existing[0].id));
+      } else {
+        await db.insert(antibanSettings).values({
+          userId: input.userId,
+          dmEnabled: input.enabled,
+          minIntervalSeconds: 60,
+          maxIntervalSeconds: 180,
+          dailyDmLimit: 30,
+          deduplicateWindowHours: 24,
+        });
+      }
+      return { success: true };
+    }),
+
+  // ── Bot API：获取用户完整状态（套餐+关键词数+私信开关） ────
+  botGetUserStatus: engineProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const user = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
+      if (!user[0]) return null;
+      const u = user[0];
+      const kwCount = await db.select({ count: sql<number>`count(*)` }).from(keywords)
+        .where(and(eq(keywords.userId, input.userId), eq(keywords.isActive, true)));
+      const groupCount = await db.select({ count: sql<number>`count(*)` }).from(monitorGroups)
+        .where(and(eq(monitorGroups.userId, input.userId), eq(monitorGroups.isActive, true)));
+      const antiban = await db.select().from(antibanSettings)
+        .where(eq(antibanSettings.userId, input.userId)).limit(1);
+      const senderAccounts = await db.select().from(tgAccounts)
+        .where(and(eq(tgAccounts.userId, input.userId), eq(tgAccounts.isActive, true),
+          inArray(tgAccounts.accountRole, ['sender', 'both']))).limit(1);
+      // 套餐限制
+      const PLAN_LIMITS: Record<string, { maxKeywords: number; maxDailyDm: number; maxTgAccounts: number }> = {
+        free: { maxKeywords: 10, maxDailyDm: 5, maxTgAccounts: 1 },
+        basic: { maxKeywords: 50, maxDailyDm: 30, maxTgAccounts: 3 },
+        pro: { maxKeywords: 200, maxDailyDm: 100, maxTgAccounts: 10 },
+        enterprise: { maxKeywords: 1000, maxDailyDm: 500, maxTgAccounts: 50 },
+      };
+      const limits = PLAN_LIMITS[u.planId] || PLAN_LIMITS.free;
+      return {
+        id: u.id,
+        name: u.name,
+        planId: u.planId,
+        planExpiresAt: u.planExpiresAt,
+        keywordCount: Number(kwCount[0]?.count || 0),
+        groupCount: Number(groupCount[0]?.count || 0),
+        dmEnabled: antiban[0]?.dmEnabled ?? false,
+        hasSenderAccount: senderAccounts.length > 0,
+        senderPhone: senderAccounts[0]?.phone || null,
+        limits,
+        dailyDmSent: u.dailyDmSent,
+      };
+    }),
+
+  // ── Bot API：添加监控群组 ──────────────────────────────────
+  botAddGroup: engineProcedure
+    .input(z.object({ userId: z.number(), groupId: z.string(), groupTitle: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // 检查是否已存在
+      const existing = await db.select().from(monitorGroups)
+        .where(and(eq(monitorGroups.userId, input.userId), eq(monitorGroups.groupId, input.groupId)))
+        .limit(1);
+      if (existing[0]) {
+        // 重新激活
+        await db.update(monitorGroups).set({ isActive: true, monitorStatus: 'active' })
+          .where(eq(monitorGroups.id, existing[0].id));
+        return { success: true, isNew: false };
+      }
+      // 需要一个 tgAccountId，找用户的第一个账号
+      const account = await db.select().from(tgAccounts)
+        .where(and(eq(tgAccounts.userId, input.userId), eq(tgAccounts.isActive, true)))
+        .limit(1);
+      const tgAccountId = account[0]?.id || 0;
+      await db.insert(monitorGroups).values({
+        userId: input.userId,
+        tgAccountId,
+        groupId: input.groupId,
+        groupTitle: input.groupTitle || input.groupId,
+        monitorStatus: 'active',
+        totalHits: 0,
+        isActive: true,
+      });
+      return { success: true, isNew: true };
+    }),
+
+  // ── Bot API：删除监控群组 ──────────────────────────────────
+  botDeleteGroup: engineProcedure
+    .input(z.object({ userId: z.number(), groupId: z.string() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(monitorGroups).set({ isActive: false })
+        .where(and(eq(monitorGroups.userId, input.userId), eq(monitorGroups.groupId, input.groupId)));
+      return { success: true };
+    }),
+
+  // ── Bot API：获取今日统计 ──────────────────────────────────
+  botGetStats: engineProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { todayHits: 0, todayDm: 0, totalHits: 0 };
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayHitsResult = await db.select({ count: sql<number>`count(*)` }).from(hitRecords)
+        .where(and(eq(hitRecords.userId, input.userId), gte(hitRecords.createdAt, today)));
+      const totalHitsResult = await db.select({ count: sql<number>`count(*)` }).from(hitRecords)
+        .where(eq(hitRecords.userId, input.userId));
+      const user = await db.select({ dailyDmSent: users.dailyDmSent }).from(users)
+        .where(eq(users.id, input.userId)).limit(1);
+      return {
+        todayHits: Number(todayHitsResult[0]?.count || 0),
+        todayDm: user[0]?.dailyDmSent || 0,
+        totalHits: Number(totalHitsResult[0]?.count || 0),
+      };
+    }),
+
+  // ── Bot API：获取关键词列表 ────────────────────────────────
+  botGetKeywords: engineProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(keywords)
+        .where(and(eq(keywords.userId, input.userId), eq(keywords.isActive, true)))
+        .orderBy(desc(keywords.createdAt))
+        .limit(20);
+    }),
+
+  // ── Bot API：添加关键词 ────────────────────────────────────
+  botAddKeyword: engineProcedure
+    .input(z.object({ userId: z.number(), keyword: z.string(), matchType: z.string().default("contains") }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.insert(keywords).values({
+        userId: input.userId,
+        keyword: input.keyword,
+        matchType: input.matchType as any,
+        isActive: true,
+      });
+      return { success: true };
+    }),
+
+  // ── Bot API：删除关键词 ────────────────────────────────────
+  botDeleteKeyword: engineProcedure
+    .input(z.object({ userId: z.number(), keywordId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(keywords)
+        .set({ isActive: false })
+        .where(and(eq(keywords.id, input.keywordId), eq(keywords.userId, input.userId)));
+      return { success: true };
+    }),
+
+  // ── Bot API：获取监控群组列表 ─────────────────────────────
+  botGetGroups: engineProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(monitorGroups)
+        .where(and(eq(monitorGroups.userId, input.userId), eq(monitorGroups.isActive, true)))
+        .orderBy(desc(monitorGroups.createdAt))
+        .limit(20);
+    }),
+
+  // ── Bot API：获取最近命中记录 ─────────────────────────────
+  botGetHitRecords: engineProcedure
+    .input(z.object({ userId: z.number(), limit: z.number().default(10) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(hitRecords)
+        .where(eq(hitRecords.userId, input.userId))
+        .orderBy(desc(hitRecords.createdAt))
+        .limit(input.limit);
+    }),
+
+  // ── Bot API：激活卡密 ─────────────────────────────────────
+  botActivateCode: engineProcedure
+    .input(z.object({ userId: z.number(), code: z.string() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const code = await db.select().from(redeemCodes)
+        .where(and(eq(redeemCodes.code, input.code), eq(redeemCodes.status, "unused")))
+        .limit(1);
+      if (!code[0]) return { success: false, message: "卡密无效或已使用" };
+      const rc = code[0];
+      // 检查卡密是否过期
+      if (rc.expiresAt && rc.expiresAt < new Date()) {
+        return { success: false, message: "卡密已过期" };
+      }
+      // 计算套餐到期时间
+      const user = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
+      if (!user[0]) return { success: false, message: "用户不存在" };
+      const now = new Date();
+      const base = user[0].planExpiresAt && user[0].planExpiresAt > now ? user[0].planExpiresAt : now;
+      const newExpiry = new Date(base);
+      newExpiry.setMonth(newExpiry.getMonth() + rc.durationMonths);
+      // 更新用户套餐
+      await db.update(users).set({
+        planId: rc.planId,
+        planExpiresAt: newExpiry,
+      }).where(eq(users.id, input.userId));
+      // 标记卡密已使用
+      await db.update(redeemCodes).set({
+        status: "used",
+        usedByUserId: input.userId,
+        usedAt: now,
+      }).where(eq(redeemCodes.id, rc.id));
+      return { success: true, planId: rc.planId, durationMonths: rc.durationMonths, expiresAt: newExpiry };
+    }),
+
+  // ── Bot API：绑定用户 TG ID ───────────────────────────────
+  botBindTgId: engineProcedure
+    .input(z.object({ userId: z.number(), tgUserId: z.string(), tgUsername: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // 在 tg_accounts 中找到该用户的账号并更新 tgUserId
+      // 同时在 users 表中记录（如果有字段）
+      // 这里我们在 system_settings 中存储 tgUserId -> userId 映射
+      // 实际上通过 tgAccounts 表的 tgUserId 字段来关联
+      return { success: true };
+    }),
+
+  // ── Bot API：获取私信队列 ─────────────────────────────────
+  botGetDmQueue: engineProcedure
+    .input(z.object({ userId: z.number(), limit: z.number().default(10) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(dmQueue)
+        .where(eq(dmQueue.userId, input.userId))
+        .orderBy(desc(dmQueue.createdAt))
+        .limit(input.limit);
     }),
 });
 
@@ -374,7 +735,13 @@ function engineRouter_config() {
       const antibanConfig = antiban[0] || {};
       const senderAccount = senderAccounts[0];
 
+      // 获取用户的 tgUserId（用于 Bot 推送命中通知）
+      const userRow = await db.select({ tgUserId: users.tgUserId }).from(users)
+        .where(eq(users.id, userId)).limit(1);
+      const botChatId = userRow[0]?.tgUserId || null;
+
       userConfigs[String(userId)] = {
+        botChatId,
         groups: groupsWithKeywords,
         dmTemplates: templates.map((t) => ({
           id: t.id,

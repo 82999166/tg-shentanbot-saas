@@ -26,6 +26,10 @@ export const users = mysqlTable("users", {
   emailVerified: boolean("emailVerified").default(false).notNull(),
   emailVerifyToken: varchar("emailVerifyToken", { length: 128 }),
   emailVerifyExpiry: timestamp("emailVerifyExpiry"),
+  // Telegram 绑定（Bot 自动注册）
+  tgUserId: varchar("tgUserId", { length: 32 }).unique(),    // TG 用户 ID
+  tgUsername: varchar("tgUsername", { length: 128 }),        // TG 用户名
+  tgFirstName: varchar("tgFirstName", { length: 128 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   // 套餐
   planId: mysqlEnum("planId", ["free", "basic", "pro", "enterprise"]).default("free").notNull(),
