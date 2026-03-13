@@ -1,5 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { TelegramClient } from "telegram";
+import { StringSession } from "telegram/sessions/StringSession.js";
 import {
   createTgAccount,
   deleteTgAccount,
@@ -10,9 +12,23 @@ import {
 } from "../db";
 import { protectedProcedure, router } from "../_core/trpc";
 
-// ─── 模拟"登录会话"缓存（生产环境应用 Redis / DB 存储）─────────────────────
-// key: `${userId}:${phone}`  value: { phoneCodeHash, step }
-const loginSessions = new Map<string, { phoneCodeHash: string; step: "code" | "2fa" }>();
+// ─── Telegram API 凭证 ─────────────────────────────────────────────────────
+const TG_API_ID = 37358587;
+const TG_API_HASH = "d673f19449baeaf208d0cacd1cb16ad8";
+
+// ─── 登录会话缓存（key: `${userId}:${phone}`）─────────────────────────────
+interface LoginSession {
+  client: TelegramClient;
+  phoneCodeHash: string;
+  step: "code" | "2fa";
+  phone: string;
+  // 存储用户提供的验证码/密码，等待回调取用
+  pendingCode?: string;
+  pendingPassword?: string;
+  resolvePassword?: (password: string) => void;
+  loginPromise?: Promise<void>;
+}
+const loginSessions = new Map<string, LoginSession>();
 
 export const tgAccountsRouter = router({
   // ─── 获取用户的所有TG账号 ─────────────────────────────────────────────────
@@ -30,8 +46,6 @@ export const tgAccountsRouter = router({
     }),
 
   // ─── 手机号登录：第一步 - 发送验证码 ─────────────────────────────────────
-  // 实际生产中此处调用 Pyrogram/Telethon send_code_request()
-  // 当前返回模拟 phoneCodeHash 供后续步骤使用
   sendCode: protectedProcedure
     .input(z.object({
       phone: z.string().min(7, "请输入有效手机号").regex(/^\+?[0-9]{7,15}$/, "手机号格式不正确（含国际区号，如 +8613800000000）"),
@@ -43,21 +57,75 @@ export const tgAccountsRouter = router({
       const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
       const key = `${ctx.user.id}:${phone}`;
 
-      // 模拟 Telegram API 返回的 phoneCodeHash
-      const phoneCodeHash = `hash_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-      loginSessions.set(key, { phoneCodeHash, step: "code" });
+      // 清理旧会话
+      const existing = loginSessions.get(key);
+      if (existing) {
+        try { await existing.client.disconnect(); } catch {}
+        loginSessions.delete(key);
+      }
 
-      // 实际生产代码示例（需安装 gramjs / pyrogram-bridge）：
-      // const client = new TelegramClient(new StringSession(""), API_ID, API_HASH, { ... });
-      // await client.connect();
-      // const result = await client.sendCode({ apiId, apiHash }, phone);
-      // loginSessions.set(key, { phoneCodeHash: result.phoneCodeHash, step: "code" });
+      // 构建代理配置
+      let proxyOpts: any = {};
+      if (input.proxyHost && input.proxyPort) {
+        if (input.proxyType === "mtproto") {
+          proxyOpts = { proxy: { ip: input.proxyHost, port: input.proxyPort, MTProxy: true as const } };
+        } else {
+          proxyOpts = { proxy: { ip: input.proxyHost, port: input.proxyPort, socksType: 5 as const } };
+        }
+      }
 
-      return {
-        success: true,
-        message: `验证码已发送至 ${phone}，请在 Telegram 中查收（有效期 5 分钟）`,
-        phoneCodeHash, // 前端需缓存此值用于下一步
-      };
+      const client = new TelegramClient(
+        new StringSession(""),
+        TG_API_ID,
+        TG_API_HASH,
+        { connectionRetries: 3, useWSS: false, ...proxyOpts }
+      );
+
+      try {
+        await client.connect();
+
+        const result = await client.sendCode(
+          { apiId: TG_API_ID, apiHash: TG_API_HASH },
+          phone
+        );
+
+        loginSessions.set(key, {
+          client,
+          phoneCodeHash: result.phoneCodeHash,
+          step: "code",
+          phone,
+        });
+
+        // 10分钟后自动清理
+        setTimeout(async () => {
+          const s = loginSessions.get(key);
+          if (s) {
+            try { await s.client.disconnect(); } catch {}
+            loginSessions.delete(key);
+          }
+        }, 10 * 60 * 1000);
+
+        return {
+          success: true,
+          message: `验证码已发送至 ${phone}，请在 Telegram 中查收（有效期 5 分钟）`,
+          phoneCodeHash: result.phoneCodeHash,
+        };
+      } catch (err: any) {
+        try { await client.disconnect(); } catch {}
+        const msg = String(err?.message ?? err);
+        if (msg.includes("PHONE_NUMBER_INVALID")) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "手机号格式不正确，请检查国际区号" });
+        }
+        if (msg.includes("PHONE_NUMBER_BANNED")) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "该手机号已被 Telegram 封禁" });
+        }
+        if (msg.includes("FLOOD_WAIT")) {
+          const seconds = msg.match(/(\d+)/)?.[1] ?? "60";
+          throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: `请求过于频繁，请等待 ${seconds} 秒后重试` });
+        }
+        console.error("[TG sendCode error]", msg);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `发送验证码失败：${msg}` });
+      }
     }),
 
   // ─── 手机号登录：第二步 - 验证验证码 ─────────────────────────────────────
@@ -72,47 +140,84 @@ export const tgAccountsRouter = router({
       const key = `${ctx.user.id}:${phone}`;
       const session = loginSessions.get(key);
 
-      if (!session) {
+      if (!session || session.step !== "code") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "登录会话已过期，请重新发送验证码" });
       }
 
-      // 模拟验证逻辑（生产中调用 Telegram API sign_in）
-      // 若账号开启了二步验证，Telegram 会返回 SessionPasswordNeededError
-      const needs2FA = input.code === "22222"; // 模拟：输入 22222 触发二步验证流程
-      const isWrongCode = input.code === "00000"; // 模拟：输入 00000 表示验证码错误
+      const { client } = session;
 
-      if (isWrongCode) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "验证码错误，请重新输入" });
-      }
+      let needs2FA = false;
+      let resolvePassword!: (pwd: string) => void;
 
-      if (needs2FA) {
-        loginSessions.set(key, { ...session, step: "2fa" });
+      // 先把验证码存入会话，phoneCode 回调会来取
+      loginSessions.set(key, { ...session, pendingCode: input.code });
+
+      const loginPromise = client.signInUser(
+        { apiId: TG_API_ID, apiHash: TG_API_HASH },
+        {
+          phoneNumber: phone,
+          phoneCode: async () => {
+            // 直接从会话取已存好的验证码
+            const s = loginSessions.get(key);
+            return s?.pendingCode ?? input.code;
+          },
+          password: async (_hint?: string) => {
+            needs2FA = true;
+            // 等待 verify2FA 提供密码
+            return new Promise<string>((res) => {
+              resolvePassword = res;
+              const s = loginSessions.get(key);
+              loginSessions.set(key, {
+                ...(s ?? session),
+                step: "2fa",
+                resolvePassword: res,
+              });
+            });
+          },
+          onError: async (err: Error) => {
+            console.error("[TG signInUser error]", err.message);
+            return false;
+          },
+        }
+      ).then(() => {}) as Promise<void>;
+
+      // 更新会话，保存 loginPromise 供 verify2FA 使用
+      const currentSess = loginSessions.get(key);
+      loginSessions.set(key, { ...(currentSess ?? session), loginPromise });
+
+      // 等待最多 20 秒，看是否需要 2FA 或直接登录成功
+      const result = await Promise.race([
+        loginPromise.then(() => ({ type: "success" as const })),
+        new Promise<{ type: "2fa" | "timeout" }>((res) => {
+          const check = setInterval(() => {
+            const s = loginSessions.get(key);
+            if (s?.step === "2fa" || needs2FA) {
+              clearInterval(check);
+              res({ type: "2fa" });
+            }
+          }, 200);
+          setTimeout(() => { clearInterval(check); res({ type: "timeout" }); }, 20000);
+        }),
+      ]);
+
+      if (result.type === "2fa") {
         return { success: true, needs2FA: true, message: "该账号已开启二步验证，请输入密码" };
       }
 
-      // 验证成功，生成 Session 字符串（生产中从 Telegram 客户端获取）
-      const sessionString = `1BVtsOK8Bu${Math.random().toString(36).slice(2, 30)}`;
-      loginSessions.delete(key);
-
-      // 检查套餐配额
-      const plans = await getAllPlans();
-      const userPlan = plans.find((p) => p.id === (ctx.user as any).planId) ?? plans.find((p) => p.id === "free");
-      const accounts = await getTgAccountsByUserId(ctx.user.id);
-      if (userPlan && accounts.length >= userPlan.maxTgAccounts) {
-        throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐最多支持 ${userPlan.maxTgAccounts} 个TG账号，请升级套餐` });
+      if (result.type === "timeout") {
+        const s = loginSessions.get(key);
+        if (s?.step === "2fa") {
+          return { success: true, needs2FA: true, message: "该账号已开启二步验证，请输入密码" };
+        }
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "登录超时，请重试" });
       }
 
-      const id = await createTgAccount({
-        userId: ctx.user.id,
-        phone,
-        sessionString,
-        sessionStatus: "active",
-        accountRole: "both",
-        healthScore: 90,
-        healthStatus: "healthy",
-      });
+      // 登录成功
+      const sessionString = (client.session as StringSession).save();
+      await client.disconnect();
+      loginSessions.delete(key);
 
-      return { success: true, needs2FA: false, accountId: id, message: "账号登录成功，已添加到账号列表" };
+      return await saveAccount(ctx.user, phone, sessionString);
     }),
 
   // ─── 手机号登录：第三步 - 二步验证密码 ───────────────────────────────────
@@ -130,38 +235,37 @@ export const tgAccountsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "登录会话已过期，请重新开始" });
       }
 
-      // 模拟二步验证（生产中调用 check_password）
-      if (input.password === "wrong") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "二步验证密码错误" });
+      if (!session.resolvePassword) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "登录会话状态异常，请重新开始" });
       }
 
-      const sessionString = `1BVtsOK8Bu${Math.random().toString(36).slice(2, 30)}`;
+      // 提供二步验证密码，让 signInUser 继续执行
+      session.resolvePassword(input.password);
+
+      // 等待登录完成
+      try {
+        await Promise.race([
+          session.loginPromise,
+          new Promise<void>((_, rej) => setTimeout(() => rej(new Error("2FA timeout")), 20000)),
+        ]);
+      } catch (err: any) {
+        const msg = String(err?.message ?? err);
+        if (msg.includes("PASSWORD_HASH_INVALID") || msg.includes("2FA timeout")) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "二步验证密码错误，请重新输入" });
+        }
+        console.error("[TG verify2FA error]", msg);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `二步验证失败：${msg}` });
+      }
+
+      const { client } = session;
+      const sessionString = (client.session as StringSession).save();
+      await client.disconnect();
       loginSessions.delete(key);
 
-      const plans = await getAllPlans();
-      const userPlan = plans.find((p) => p.id === (ctx.user as any).planId) ?? plans.find((p) => p.id === "free");
-      const accounts = await getTgAccountsByUserId(ctx.user.id);
-      if (userPlan && accounts.length >= userPlan.maxTgAccounts) {
-        throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐最多支持 ${userPlan.maxTgAccounts} 个TG账号，请升级套餐` });
-      }
-
-      const id = await createTgAccount({
-        userId: ctx.user.id,
-        phone,
-        sessionString,
-        sessionStatus: "active",
-        accountRole: "both",
-        healthScore: 90,
-        healthStatus: "healthy",
-      });
-
-      return { success: true, accountId: id, message: "二步验证通过，账号已成功添加" };
+      return await saveAccount(ctx.user, phone, sessionString);
     }),
 
   // ─── Session 批量导入 ─────────────────────────────────────────────────────
-  // 支持两种格式：
-  //   1. 每行一个 Session 字符串
-  //   2. JSON 数组：[{ phone, session, role?, proxy? }, ...]
   importSessions: protectedProcedure
     .input(z.object({
       sessions: z.array(z.object({
@@ -177,7 +281,6 @@ export const tgAccountsRouter = router({
       })).min(1, "至少导入一个 Session").max(100, "单次最多导入 100 个 Session"),
     }))
     .mutation(async ({ ctx, input }) => {
-      // 检查套餐配额
       const plans = await getAllPlans();
       const userPlan = plans.find((p) => p.id === (ctx.user as any).planId) ?? plans.find((p) => p.id === "free");
       const existing = await getTgAccountsByUserId(ctx.user.id);
@@ -190,7 +293,6 @@ export const tgAccountsRouter = router({
 
       const toImport = input.sessions.slice(0, remaining);
       const skipped = input.sessions.length - toImport.length;
-
       const results: { index: number; success: boolean; accountId?: number; error?: string }[] = [];
 
       for (let i = 0; i < toImport.length; i++) {
@@ -231,8 +333,7 @@ export const tgAccountsRouter = router({
       };
     }),
 
-  // ─── 解析文本格式的 Session（辅助接口）────────────────────────────────────
-  // 前端粘贴原始文本后调用此接口解析，再展示预览让用户确认后批量导入
+  // ─── 解析文本格式的 Session ────────────────────────────────────────────────
   parseSessionText: protectedProcedure
     .input(z.object({
       text: z.string().min(1),
@@ -244,7 +345,6 @@ export const tgAccountsRouter = router({
       const errors: string[] = [];
 
       if (input.format === "json" || (input.format === "auto" && input.text.trim().startsWith("["))) {
-        // JSON 格式
         try {
           const arr = JSON.parse(input.text);
           if (!Array.isArray(arr)) throw new Error("JSON 必须是数组格式");
@@ -260,11 +360,9 @@ export const tgAccountsRouter = router({
           errors.push(`JSON 解析失败：${e.message}`);
         }
       } else {
-        // 每行一个 Session 格式
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i].trim();
           if (line.length >= 10) {
-            // 支持 "phone|session" 格式
             const parts = line.split("|");
             if (parts.length === 2 && parts[0].match(/^\+?[0-9]{7,15}$/)) {
               parsed.push({ phone: parts[0], sessionString: parts[1], accountRole: "both" });
@@ -280,61 +378,10 @@ export const tgAccountsRouter = router({
       return { parsed, errors, count: parsed.length };
     }),
 
-  // ─── 添加TG账号（直接输入 Session 字符串）────────────────────────────────
-  create: protectedProcedure
-    .input(z.object({
-      phone: z.string().optional(),
-      tgUserId: z.string().optional(),
-      tgUsername: z.string().optional(),
-      tgFirstName: z.string().optional(),
-      tgLastName: z.string().optional(),
-      sessionString: z.string().optional(),
-      accountRole: z.enum(["monitor", "sender", "both"]).default("both"),
-      proxyHost: z.string().optional(),
-      proxyPort: z.number().optional(),
-      proxyType: z.enum(["socks5", "http", "mtproto"]).optional(),
-      proxyUsername: z.string().optional(),
-      proxyPassword: z.string().optional(),
-      notes: z.string().optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const plans = await getAllPlans();
-      const userPlan = plans.find((p) => p.id === (ctx.user as any).planId) ?? plans.find((p) => p.id === "free");
-      const accounts = await getTgAccountsByUserId(ctx.user.id);
-      if (userPlan && accounts.length >= userPlan.maxTgAccounts) {
-        throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐最多支持 ${userPlan.maxTgAccounts} 个TG账号，请升级套餐` });
-      }
-      const id = await createTgAccount({
-        userId: ctx.user.id,
-        phone: input.phone,
-        tgUserId: input.tgUserId,
-        tgUsername: input.tgUsername,
-        tgFirstName: input.tgFirstName,
-        tgLastName: input.tgLastName,
-        sessionString: input.sessionString,
-        sessionStatus: input.sessionString ? "active" : "pending",
-        accountRole: input.accountRole,
-        proxyHost: input.proxyHost,
-        proxyPort: input.proxyPort,
-        proxyType: input.proxyType,
-        proxyUsername: input.proxyUsername,
-        proxyPassword: input.proxyPassword,
-        notes: input.notes,
-      });
-      return { id, success: true };
-    }),
-
-  // ─── 更新TG账号信息 ───────────────────────────────────────────────────────
+  // ─── 更新TG账号 ───────────────────────────────────────────────────────────
   update: protectedProcedure
     .input(z.object({
       id: z.number(),
-      phone: z.string().optional(),
-      tgUserId: z.string().optional(),
-      tgUsername: z.string().optional(),
-      tgFirstName: z.string().optional(),
-      tgLastName: z.string().optional(),
-      sessionString: z.string().optional(),
-      sessionStatus: z.enum(["pending", "active", "expired", "banned"]).optional(),
       accountRole: z.enum(["monitor", "sender", "both"]).optional(),
       proxyHost: z.string().optional(),
       proxyPort: z.number().optional(),
@@ -342,13 +389,12 @@ export const tgAccountsRouter = router({
       proxyUsername: z.string().optional(),
       proxyPassword: z.string().optional(),
       notes: z.string().optional(),
-      isActive: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
-      const account = await getTgAccountById(id, ctx.user.id);
+      const account = await getTgAccountById(input.id, ctx.user.id);
       if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
-      await updateTgAccount(id, ctx.user.id, data);
+      const { id, ...updates } = input;
+      await updateTgAccount(id, ctx.user.id, updates);
       return { success: true };
     }),
 
@@ -362,19 +408,6 @@ export const tgAccountsRouter = router({
       return { success: true };
     }),
 
-  // ─── 更新账号健康度 ───────────────────────────────────────────────────────
-  updateHealth: protectedProcedure
-    .input(z.object({
-      id: z.number(),
-      healthScore: z.number().min(0).max(100),
-      healthStatus: z.enum(["healthy", "warning", "degraded", "suspended"]),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
-      await updateTgAccount(id, ctx.user.id, data);
-      return { success: true };
-    }),
-
   // ─── 测试账号连接 ─────────────────────────────────────────────────────────
   testConnection: protectedProcedure
     .input(z.object({ id: z.number() }))
@@ -382,24 +415,67 @@ export const tgAccountsRouter = router({
       const account = await getTgAccountById(input.id, ctx.user.id);
       if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
       if (!account.sessionString) {
-        return { success: false, message: "未配置 Session，请先添加 Session 字符串" };
+        return { success: false, message: "账号无有效 Session，请重新登录" };
       }
-      await updateTgAccount(input.id, ctx.user.id, {
-        sessionStatus: "active",
-        lastActiveAt: new Date(),
-        healthScore: 95,
-        healthStatus: "healthy",
-      });
-      return { success: true, message: "连接测试成功" };
+      try {
+        const client = new TelegramClient(
+          new StringSession(account.sessionString),
+          TG_API_ID,
+          TG_API_HASH,
+          { connectionRetries: 2, useWSS: false }
+        );
+        await client.connect();
+        const me = await client.getMe();
+        await client.disconnect();
+        await updateTgAccount(input.id, ctx.user.id, {
+          sessionStatus: "active",
+          healthStatus: "healthy",
+          healthScore: 95,
+          tgUserId: (me as any).id?.toString(),
+          tgUsername: (me as any).username,
+          tgFirstName: (me as any).firstName,
+          tgLastName: (me as any).lastName,
+        });
+        return { success: true, message: "连接正常" };
+      } catch (err: any) {
+        await updateTgAccount(input.id, ctx.user.id, { sessionStatus: "expired", healthStatus: "warning", healthScore: 20 });
+        return { success: false, message: `连接失败：${err?.message ?? err}` };
+      }
     }),
 
-  // ─── 切换账号启用状态 ─────────────────────────────────────────────────────
+  // ─── 启用/停用账号 ────────────────────────────────────────────────────────
   toggleActive: protectedProcedure
     .input(z.object({ id: z.number(), isActive: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const account = await getTgAccountById(input.id, ctx.user.id);
       if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
-      await updateTgAccount(input.id, ctx.user.id, { isActive: input.isActive });
+      await updateTgAccount(input.id, ctx.user.id, {
+        sessionStatus: input.isActive ? "active" : "expired",
+      });
       return { success: true };
     }),
 });
+
+// ─── 保存账号到数据库（检查配额）─────────────────────────────────────────
+async function saveAccount(user: any, phone: string, sessionString: string) {
+  const plans = await getAllPlans();
+  const userPlan = plans.find((p: any) => p.id === user.planId) ?? plans.find((p: any) => p.id === "free");
+  const accounts = await getTgAccountsByUserId(user.id);
+  if (userPlan && accounts.length >= (userPlan as any).maxTgAccounts) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐最多支持 ${(userPlan as any).maxTgAccounts} 个TG账号，请升级套餐` });
+  }
+
+  const id = await createTgAccount({
+    userId: user.id,
+    phone,
+    sessionString,
+    sessionStatus: "active",
+    accountRole: "both",
+    healthScore: 90,
+    healthStatus: "healthy",
+  });
+
+  return { success: true, needs2FA: false, accountId: id, message: "账号登录成功，已添加到账号列表" };
+}
+
+

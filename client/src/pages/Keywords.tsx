@@ -46,6 +46,120 @@ const defaultForm: FormState = {
   groupId: undefined,
 };
 
+// 提取到组件外部，避免每次渲染都重新创建导致输入框失焦
+function FormFields({
+  form,
+  setForm,
+  groups,
+  testText,
+  setTestText,
+  testResult,
+  onTest,
+  testPending,
+}: {
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  groups: { id: number; name: string; color: string | null }[] | undefined;
+  testText: string;
+  setTestText: React.Dispatch<React.SetStateAction<string>>;
+  testResult: { matched: boolean; reason: string } | null;
+  onTest: () => void;
+  testPending: boolean;
+}) {
+  const needsSubKeywords = ["and", "or", "not"].includes(form.matchType);
+  return (
+    <div className="space-y-4 py-2">
+      <div>
+        <Label className="text-xs text-muted-foreground">匹配类型</Label>
+        <Select value={form.matchType} onValueChange={(v) => setForm((f) => ({ ...f, matchType: v as any }))}>
+          <SelectTrigger className="bg-background border-border mt-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-card border-border">
+            {MATCH_TYPES.map((t) => (
+              <SelectItem key={t.value} value={t.value}>
+                <div>
+                  <div className="font-medium text-sm">{t.label}</div>
+                  <div className="text-xs text-muted-foreground">{t.desc}</div>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div>
+        <Label className="text-xs text-muted-foreground">
+          {needsSubKeywords ? "主关键词（描述用）" : "关键词"}
+        </Label>
+        <Input
+          placeholder={form.matchType === "regex" ? "^.*求购.*$" : "输入关键词..."}
+          value={form.keyword}
+          onChange={(e) => setForm((f) => ({ ...f, keyword: e.target.value }))}
+          className="bg-background border-border mt-1 font-mono"
+        />
+      </div>
+
+      {needsSubKeywords && (
+        <div>
+          <Label className="text-xs text-muted-foreground">子关键词（每行一个）</Label>
+          <Textarea
+            placeholder={"关键词1\n关键词2\n关键词3"}
+            value={form.subKeywords}
+            onChange={(e) => setForm((f) => ({ ...f, subKeywords: e.target.value }))}
+            className="bg-background border-border mt-1 font-mono text-sm h-24 resize-none"
+          />
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <Label className="text-xs font-medium">区分大小写</Label>
+          <p className="text-xs text-muted-foreground">开启后大小写需完全匹配</p>
+        </div>
+        <Switch checked={form.caseSensitive} onCheckedChange={(v) => setForm((f) => ({ ...f, caseSensitive: v }))} />
+      </div>
+
+      {groups && groups.length > 0 && (
+        <div>
+          <Label className="text-xs text-muted-foreground">所属分组（可选）</Label>
+          <Select value={form.groupId?.toString() ?? ""} onValueChange={(v) => setForm((f) => ({ ...f, groupId: v ? parseInt(v) : undefined }))}>
+            <SelectTrigger className="bg-background border-border mt-1">
+              <SelectValue placeholder="不分组" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border">
+              <SelectItem value="">不分组</SelectItem>
+              {groups.map((g) => <SelectItem key={g.id} value={g.id.toString()}>{g.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* 测试区域 */}
+      <div className="border border-border rounded-lg p-3 space-y-2">
+        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+          <TestTube2 className="w-3.5 h-3.5" /> 测试匹配效果
+        </p>
+        <Textarea
+          placeholder="输入测试文本，验证关键词是否能正确匹配..."
+          value={testText}
+          onChange={(e) => setTestText(e.target.value)}
+          className="bg-background border-border text-sm h-16 resize-none"
+        />
+        <Button size="sm" variant="outline" onClick={onTest} disabled={!testText || !form.keyword || testPending} className="border-border w-full">
+          {testPending ? "测试中..." : "立即测试"}
+        </Button>
+        {testResult && (
+          <div className={`flex items-center gap-2 text-sm p-2 rounded-lg ${testResult.matched ? "bg-emerald-900/30 text-emerald-300" : "bg-red-900/30 text-red-300"}`}>
+            {testResult.matched ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+            <span>{testResult.reason}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Keywords() {
   const utils = trpc.useUtils();
   const { data: groups } = trpc.keywords.listGroups.useQuery();
@@ -82,7 +196,6 @@ export default function Keywords() {
   const [testResult, setTestResult] = useState<{ matched: boolean; reason: string } | null>(null);
   const [form, setForm] = useState<FormState>(defaultForm);
 
-  const needsSubKeywords = ["and", "or", "not"].includes(form.matchType);
   const groupMap = Object.fromEntries((groups ?? []).map((g) => [g.id, g]));
 
   const openEdit = (kw: any) => {
@@ -132,98 +245,6 @@ export default function Keywords() {
     });
     setTestResult(result);
   };
-
-  const FormFields = () => (
-    <div className="space-y-4 py-2">
-      <div>
-        <Label className="text-xs text-muted-foreground">匹配类型</Label>
-        <Select value={form.matchType} onValueChange={(v) => setForm({ ...form, matchType: v as any })}>
-          <SelectTrigger className="bg-background border-border mt-1">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="bg-card border-border">
-            {MATCH_TYPES.map((t) => (
-              <SelectItem key={t.value} value={t.value}>
-                <div>
-                  <div className="font-medium text-sm">{t.label}</div>
-                  <div className="text-xs text-muted-foreground">{t.desc}</div>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div>
-        <Label className="text-xs text-muted-foreground">
-          {needsSubKeywords ? "主关键词（描述用）" : "关键词"}
-        </Label>
-        <Input
-          placeholder={form.matchType === "regex" ? "^.*求购.*$" : "输入关键词..."}
-          value={form.keyword}
-          onChange={(e) => setForm({ ...form, keyword: e.target.value })}
-          className="bg-background border-border mt-1 font-mono"
-        />
-      </div>
-
-      {needsSubKeywords && (
-        <div>
-          <Label className="text-xs text-muted-foreground">子关键词（每行一个）</Label>
-          <Textarea
-            placeholder={"关键词1\n关键词2\n关键词3"}
-            value={form.subKeywords}
-            onChange={(e) => setForm({ ...form, subKeywords: e.target.value })}
-            className="bg-background border-border mt-1 font-mono text-sm h-24 resize-none"
-          />
-        </div>
-      )}
-
-      <div className="flex items-center justify-between">
-        <div>
-          <Label className="text-xs font-medium">区分大小写</Label>
-          <p className="text-xs text-muted-foreground">开启后大小写需完全匹配</p>
-        </div>
-        <Switch checked={form.caseSensitive} onCheckedChange={(v) => setForm({ ...form, caseSensitive: v })} />
-      </div>
-
-      {groups && groups.length > 0 && (
-        <div>
-          <Label className="text-xs text-muted-foreground">所属分组（可选）</Label>
-          <Select value={form.groupId?.toString() ?? ""} onValueChange={(v) => setForm({ ...form, groupId: v ? parseInt(v) : undefined })}>
-            <SelectTrigger className="bg-background border-border mt-1">
-              <SelectValue placeholder="不分组" />
-            </SelectTrigger>
-            <SelectContent className="bg-card border-border">
-              <SelectItem value="">不分组</SelectItem>
-              {groups.map((g) => <SelectItem key={g.id} value={g.id.toString()}>{g.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
-      {/* 测试区域 */}
-      <div className="border border-border rounded-lg p-3 space-y-2">
-        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-          <TestTube2 className="w-3.5 h-3.5" /> 测试匹配效果
-        </p>
-        <Textarea
-          placeholder="输入测试文本，验证关键词是否能正确匹配..."
-          value={testText}
-          onChange={(e) => setTestText(e.target.value)}
-          className="bg-background border-border text-sm h-16 resize-none"
-        />
-        <Button size="sm" variant="outline" onClick={handleTest} disabled={!testText || !form.keyword || testMut.isPending} className="border-border w-full">
-          {testMut.isPending ? "测试中..." : "立即测试"}
-        </Button>
-        {testResult && (
-          <div className={`flex items-center gap-2 text-sm p-2 rounded-lg ${testResult.matched ? "bg-emerald-900/30 text-emerald-300" : "bg-red-900/30 text-red-300"}`}>
-            {testResult.matched ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
-            <span>{testResult.reason}</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 
   return (
     <AppLayout title="关键词管理">
@@ -315,7 +336,16 @@ export default function Keywords() {
           <DialogHeader>
             <DialogTitle>添加关键词</DialogTitle>
           </DialogHeader>
-          <FormFields />
+          <FormFields
+            form={form}
+            setForm={setForm}
+            groups={groups}
+            testText={testText}
+            setTestText={setTestText}
+            testResult={testResult}
+            onTest={handleTest}
+            testPending={testMut.isPending}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} className="border-border">取消</Button>
             <Button onClick={handleCreate} disabled={!form.keyword || createMut.isPending}>
@@ -331,7 +361,16 @@ export default function Keywords() {
           <DialogHeader>
             <DialogTitle>编辑关键词</DialogTitle>
           </DialogHeader>
-          <FormFields />
+          <FormFields
+            form={form}
+            setForm={setForm}
+            groups={groups}
+            testText={testText}
+            setTestText={setTestText}
+            testResult={testResult}
+            onTest={handleTest}
+            testPending={testMut.isPending}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)} className="border-border">取消</Button>
             <Button onClick={handleUpdate} disabled={!form.keyword || updateMut.isPending}>
