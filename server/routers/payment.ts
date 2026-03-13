@@ -218,22 +218,25 @@ export const systemSettingsRouter = router({
           }
           fs.writeFileSync(envPath, envContent, "utf-8");
 
-          // 重启 PM2 引擎进程（尝试多种 pm2 路径）
+          // 异步重启 PM2 引擎进程（不阻塞响应，立即返回成功）
           const pm2Paths = [
             "/usr/bin/pm2",
             "/www/server/nvm/versions/node/v22.22.0/bin/pm2",
             "/www/server/nodejs/v22.14.0/lib/node_modules/pm2/bin/pm2",
             "pm2",
           ];
-          for (const pm2 of pm2Paths) {
-            try {
-              await execAsync(`${pm2} restart tg-monitor-engine 2>/dev/null || ${pm2} restart ecosystem.engine 2>/dev/null`);
-              console.log(`[Settings] 引擎已通过 ${pm2} 重启`);
-              break;
-            } catch (_) {
-              // 继续尝试下一个路径
+          // 不用 await，异步执行重启
+          (async () => {
+            for (const pm2 of pm2Paths) {
+              try {
+                await execAsync(`${pm2} restart tg-monitor-engine 2>/dev/null || ${pm2} restart ecosystem.engine 2>/dev/null`);
+                console.log(`[Settings] 引擎已通过 ${pm2} 重启`);
+                break;
+              } catch (_) {
+                // 继续尝试下一个路径
+              }
             }
-          }
+          })();
         }
       } catch (e) {
         console.error("[Settings] 写入 .env 失败:", e);
@@ -290,6 +293,80 @@ export const systemSettingsRouter = router({
       if (row.value) config[row.key] = row.value;
     }
     return config;
+  }),
+
+  /** 保存 Bot 配置（Bot Token + 推送频道/群组 ID） */
+  saveBotConfig: protectedProcedure
+    .input(
+      z.object({
+        botToken: z.string().min(1),
+        notifyChannelId: z.string().default(""),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      for (const [key, value] of [
+        ["bot_token", input.botToken],
+        ["notify_channel_id", input.notifyChannelId],
+      ] as [string, string][]) {
+        await db
+          .insert(systemSettings)
+          .values({ key, value, description: "Telegram Bot 配置" })
+          .onDuplicateKeyUpdate({ set: { value } });
+      }
+
+      // 异步写入 monitor-engine/.env 并重启引擎
+      try {
+        const engineDir = path.resolve(process.cwd(), "monitor-engine");
+        const envPath = path.join(engineDir, ".env");
+        if (fs.existsSync(envPath)) {
+          let envContent = fs.readFileSync(envPath, "utf-8");
+          if (/^BOT_TOKEN=/m.test(envContent)) {
+            envContent = envContent.replace(/^BOT_TOKEN=.*/m, `BOT_TOKEN=${input.botToken}`);
+          } else {
+            envContent += `\nBOT_TOKEN=${input.botToken}`;
+          }
+          if (/^NOTIFY_CHANNEL_ID=/m.test(envContent)) {
+            envContent = envContent.replace(/^NOTIFY_CHANNEL_ID=.*/m, `NOTIFY_CHANNEL_ID=${input.notifyChannelId}`);
+          } else {
+            envContent += `\nNOTIFY_CHANNEL_ID=${input.notifyChannelId}`;
+          }
+          fs.writeFileSync(envPath, envContent, "utf-8");
+          const pm2Paths = ["/usr/bin/pm2", "/www/server/nvm/versions/node/v22.22.0/bin/pm2", "pm2"];
+          (async () => {
+            for (const pm2 of pm2Paths) {
+              try {
+                await execAsync(`${pm2} restart tg-monitor-engine 2>/dev/null`);
+                break;
+              } catch (_) { /* 继续 */ }
+            }
+          })();
+        }
+      } catch (e) {
+        console.error("[BotConfig] 写入 .env 失败:", e);
+      }
+
+      return { success: true };
+    }),
+
+  /** 获取 Bot 配置 */
+  getBotConfig: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+    const db = await getDb();
+    if (!db) return { botToken: "", notifyChannelId: "" };
+    const rows = await db
+      .select()
+      .from(systemSettings)
+      .where(sql`${systemSettings.key} IN ('bot_token', 'notify_channel_id')`);
+    const map: Record<string, string> = {};
+    for (const r of rows) map[r.key] = r.value || "";
+    return {
+      botToken: map["bot_token"] || "",
+      notifyChannelId: map["notify_channel_id"] || "",
+    };
   }),
 });
 
@@ -728,4 +805,5 @@ export const paymentRouter = router({
         .limit(input.limit)
         .offset(input.offset);
     }),
+
 });

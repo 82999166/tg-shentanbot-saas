@@ -240,3 +240,9 @@
 - [ ] 修复 ENGINE_SECRET 不一致问题（引擎和 Web 服务的 secret 不同步）
 - [ ] 在系统设置 TG API 凭证页面增加「引擎密钥」配置项
 - [ ] 构建并部署到服务器，验证关键词命中功能
+
+## v1.9 修复系统设置问题 (2026-03-13)
+- [x] 修复 saveTgApiCredentials 保存后卡住问题（PM2 重启改为异步不阻塞）
+- [x] 恢复系统设置 Bot 配置 Tab（Bot Token、推送频道 ID）
+- [x] 后端新增 saveBotConfig / getBotConfig API
+- [x] 构建部署到服务器验证

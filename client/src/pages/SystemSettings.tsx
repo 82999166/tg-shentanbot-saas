@@ -616,6 +616,126 @@ function OrdersTab() {
   );
 }
 
+// ── Bot 配置 Tab ────────────────────────────────────────────────
+function BotConfigTab() {
+  const { data: config, refetch } = trpc.settings.getBotConfig.useQuery();
+  const [botToken, setBotToken] = useState("");
+  const [channelId, setChannelId] = useState("");
+  const [showToken, setShowToken] = useState(false);
+
+  const saveMutation = trpc.settings.saveBotConfig.useMutation({
+    onSuccess: () => {
+      toast.success("Bot 配置已保存，引擎正在重启...");
+      setBotToken("");
+      setTimeout(() => refetch(), 2000);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* 当前状态 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            <Bot className="w-4 h-4" />
+            当前 Bot 状态
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {config?.botToken ? (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+              <CheckCircle className="w-5 h-5 text-green-400 shrink-0" />
+              <div>
+                <p className="text-green-300 text-sm font-medium">Bot 已配置</p>
+                <p className="text-gray-400 text-xs mt-0.5">
+                  Token: {config.botToken.slice(0, 10)}...{config.botToken.slice(-6)}
+                  {config.notifyChannelId && ` · 推送频道: ${config.notifyChannelId}`}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+              <Clock className="w-5 h-5 text-amber-400 shrink-0" />
+              <div>
+                <p className="text-amber-300 text-sm font-medium">未配置</p>
+                <p className="text-gray-400 text-xs mt-0.5">请填入 Bot Token 以启用推送通知</p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Bot Token 输入 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium">Telegram Bot 配置</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+            通过{" "}
+            <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" className="underline font-medium">@BotFather</a>
+            {" "}创建 Bot 并获取 Token。关键词命中后，Bot 将向指定频道/群组推送通知。
+          </div>
+
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">Bot Token</Label>
+            <div className="relative">
+              <Input
+                type={showToken ? "text" : "password"}
+                placeholder="例如：7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                value={botToken}
+                onChange={(e) => setBotToken(e.target.value)}
+                className="bg-gray-900 border-gray-600 text-white pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(!showToken)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+              >
+                {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">推送频道/群组 ID（可选）</Label>
+            <Input
+              type="text"
+              placeholder="例如：-1001234567890（频道/群组的数字 ID）"
+              value={channelId}
+              onChange={(e) => setChannelId(e.target.value)}
+              className="bg-gray-900 border-gray-600 text-white"
+            />
+            <p className="text-gray-500 text-xs mt-1">将关键词命中通知推送到此频道或群组。留空则不推送到频道。</p>
+          </div>
+
+          <Button
+            className="w-full bg-blue-600 hover:bg-blue-700"
+            onClick={() => saveMutation.mutate({ botToken: botToken || config?.botToken || "", notifyChannelId: channelId || config?.notifyChannelId || "" })}
+            disabled={saveMutation.isPending || (!botToken && !config?.botToken)}
+          >
+            <Save className="w-4 h-4 mr-2" />
+            {saveMutation.isPending ? "保存中..." : "保存 Bot 配置"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* 说明 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium">使用说明</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-xs text-gray-400">
+          <p>1. 创建 Bot 后，将 Bot 添加到目标频道/群组并设为管理员（需要发送消息权限）。</p>
+          <p>2. 频道 ID 可通过将频道转发消息给 @userinfobot 获取，格式为负数（如 -1001234567890）。</p>
+          <p>3. 配置后，每次关键词命中时 Bot 会自动推送包含发送者信息和消息内容的通知。</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ── 主页// ── SMTP 邮件配置 Tab ────────────────────────────────
 function SmtpSettingsTab() {
   const { data: settings, refetch } = trpc.settings.list.useQuery();
@@ -768,6 +888,10 @@ export default function SystemSettings() {
             <Mail className="w-4 h-4 mr-1.5" />
             邮件配置
           </TabsTrigger>
+          <TabsTrigger value="bot" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
+            <Bot className="w-4 h-4 mr-1.5" />
+            Bot 配置
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="tgapi">
@@ -784,6 +908,9 @@ export default function SystemSettings() {
         </TabsContent>
         <TabsContent value="smtp">
           <SmtpSettingsTab />
+        </TabsContent>
+        <TabsContent value="bot">
+          <BotConfigTab />
         </TabsContent>
       </Tabs>
     </div>
