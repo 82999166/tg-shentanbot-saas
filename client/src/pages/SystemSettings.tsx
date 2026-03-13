@@ -1,4 +1,5 @@
 import { useState } from "react";
+import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -855,16 +856,8 @@ export default function SystemSettings() {
   }
 
   return (
+    <AppLayout title="系统设置">
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-          <Settings className="w-5 h-5 text-blue-400" />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold text-white">系统设置</h1>
-          <p className="text-gray-400 text-sm">配置 USDT 收款、套餐价格、卡密管理</p>
-        </div>
-      </div>
 
       <Tabs defaultValue="tgapi" className="space-y-4">
         <TabsList className="bg-gray-800 border border-gray-700 flex-wrap h-auto gap-1">
@@ -914,5 +907,6 @@ export default function SystemSettings() {
         </TabsContent>
       </Tabs>
     </div>
+    </AppLayout>
   );
 }

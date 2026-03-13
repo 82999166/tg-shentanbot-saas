@@ -1,3 +1,4 @@
+import AppLayout from "@/components/AppLayout";
 import { useState, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -323,6 +324,7 @@ export default function Payment() {
   };
 
   return (
+    <AppLayout title="购买升级">
     <div className="p-6 max-w-5xl mx-auto space-y-8">
       {/* 标题 */}
       <div className="text-center space-y-2">
@@ -515,5 +517,6 @@ export default function Payment() {
         />
       )}
     </div>
+    </AppLayout>
   );
 }

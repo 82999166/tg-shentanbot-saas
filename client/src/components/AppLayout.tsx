@@ -13,7 +13,6 @@ import {
   Gift,
   Hash,
   Inbox,
-  Key,
   LayoutDashboard,
   LogOut,
   MessageSquare,
@@ -23,6 +22,8 @@ import {
   Users,
   Wrench,
   Zap,
+  FileText,
+  Radio,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -40,9 +41,12 @@ const NAV_ITEMS = [
   { icon: MessageSquare, label: "消息模板", path: "/templates" },
   { icon: Inbox, label: "私信队列", path: "/queue" },
   { icon: Activity, label: "命中记录", path: "/records" },
+  { icon: FileText, label: "命中消息", path: "/hit-messages" },
+  { icon: BarChart3, label: "关键词统计", path: "/keyword-stats" },
+  { icon: Radio, label: "推送设置", path: "/push-settings" },
+  { icon: Users, label: "群组审核", path: "/group-submissions" },
   { icon: Bot, label: "TG 账号", path: "/accounts" },
   { icon: Shield, label: "防封策略", path: "/antiban" },
-  { icon: Bell, label: "Bot 配置", path: "/bot-config" },
   { icon: Crown, label: "套餐管理", path: "/plans" },
   { icon: CreditCard, label: "购买升级", path: "/payment" },
   { icon: Gift, label: "邀请裂变", path: "/invite" },

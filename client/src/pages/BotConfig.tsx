@@ -1,3 +1,4 @@
+import AppLayout from "@/components/AppLayout";
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -87,6 +88,7 @@ export default function BotConfig() {
   ];
 
   return (
+    <AppLayout title="Bot 配置">
     <div className="p-6 space-y-6 max-w-4xl">
       {/* 页面标题 */}
       <div>
@@ -359,5 +361,6 @@ export WEB_API_BASE="http://你的服务器:3000/api"`}
         </CardContent>
       </Card>
     </div>
+    </AppLayout>
   );
 }

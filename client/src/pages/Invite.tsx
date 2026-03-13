@@ -1,3 +1,4 @@
+import AppLayout from "@/components/AppLayout";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -54,6 +55,7 @@ export default function Invite() {
   const myRank = leaderboard?.findIndex((item) => item.userId === user?.id);
 
   return (
+    <AppLayout title="邀请裂变">
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
       {/* 页面标题 */}
       <div className="flex items-center gap-3">
@@ -378,5 +380,6 @@ export default function Invite() {
         </CardContent>
       </Card>
     </div>
+    </AppLayout>
   );
 }
