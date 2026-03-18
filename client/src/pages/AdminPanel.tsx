@@ -6,19 +6,349 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import {
   Users, Activity, Crown, Shield, Smartphone, RefreshCw,
   Trash2, CheckCircle2, XCircle, Zap, Loader2, Phone,
-  TrendingUp, Database, WifiOff, Wifi, Search, Eye
+  TrendingUp, WifiOff, Wifi, Search, Eye, Key, Hash,
+  Calendar, Plus, Tag, BarChart2, ChevronDown, ChevronUp
 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 
+// ─── 用户详情弹窗 ───────────────────────────────────────────────────────────────
+function UserDetailDialog({ userId, onClose, planColors }: {
+  userId: number;
+  onClose: () => void;
+  planColors: Record<string, string>;
+}) {
+  const utils = trpc.useUtils();
+  const [newKeyword, setNewKeyword] = useState("");
+  const [newMatchType, setNewMatchType] = useState<"contains" | "exact" | "regex">("contains");
+  const [editPlan, setEditPlan] = useState<"free" | "basic" | "pro" | "enterprise">("free");
+  const [editExpiry, setEditExpiry] = useState<string>("");
+  const [planEditing, setPlanEditing] = useState(false);
+  const [kwExpanded, setKwExpanded] = useState(true);
+  const [groupExpanded, setGroupExpanded] = useState(false);
+
+  const { data, isLoading, refetch } = trpc.admin.userDetail.useQuery({ userId });
+
+  // 初始化套餐编辑状态
+  useEffect(() => {
+    if (data?.user) {
+      setEditPlan((data.user.planId as any) ?? "free");
+      setEditExpiry(data.user.planExpiresAt ? new Date(data.user.planExpiresAt).toISOString().slice(0, 10) : "");
+    }
+  }, [data?.user]);
+
+  const updatePlanMut = trpc.admin.updateUserPlanExpiry.useMutation({
+    onSuccess: () => {
+      toast.success("套餐已更新");
+      setPlanEditing(false);
+      refetch();
+      utils.admin.users.invalidate();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const addKwMut = trpc.admin.addKeyword.useMutation({
+    onSuccess: () => { toast.success("关键词已添加"); setNewKeyword(""); refetch(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const deleteKwMut = trpc.admin.deleteKeyword.useMutation({
+    onSuccess: () => { toast.success("关键词已删除"); refetch(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const toggleKwMut = trpc.admin.toggleKeyword.useMutation({
+    onSuccess: () => refetch(),
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const matchTypeLabels: Record<string, string> = {
+    contains: "包含", exact: "精确", regex: "正则", and: "AND", or: "OR", not: "NOT"
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Eye className="w-5 h-5 text-blue-400" /> 用户详情
+          </DialogTitle>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
+        ) : !data ? (
+          <p className="text-slate-400 text-center py-8">加载失败</p>
+        ) : (
+          <div className="space-y-5">
+            {/* ── 基本信息 ── */}
+            <div className="bg-slate-800 rounded-xl p-4 space-y-2 text-sm">
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">基本信息</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex justify-between col-span-2 sm:col-span-1">
+                  <span className="text-slate-400">用户名</span>
+                  <span className="text-white font-medium">{data.user.name ?? "—"}</span>
+                </div>
+                <div className="flex justify-between col-span-2 sm:col-span-1">
+                  <span className="text-slate-400">邮箱</span>
+                  <span className="text-white">{data.user.email ?? "—"}</span>
+                </div>
+                <div className="flex justify-between col-span-2 sm:col-span-1">
+                  <span className="text-slate-400">TG ID</span>
+                  <span className="text-white font-mono text-xs">{data.user.tgUserId ?? "未绑定"}</span>
+                </div>
+                <div className="flex justify-between col-span-2 sm:col-span-1">
+                  <span className="text-slate-400">角色</span>
+                  <span className="text-white capitalize">{data.user.role}</span>
+                </div>
+                <div className="flex justify-between col-span-2 sm:col-span-1">
+                  <span className="text-slate-400">注册时间</span>
+                  <span className="text-white">{new Date(data.user.createdAt).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between col-span-2 sm:col-span-1">
+                  <span className="text-slate-400">最后登录</span>
+                  <span className="text-white">{new Date(data.user.lastSignedIn).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* ── 命中统计 ── */}
+            <div className="grid grid-cols-4 gap-3">
+              {[
+                { label: "今日命中", value: data.stats.todayHits, color: "text-green-400", icon: Activity },
+                { label: "总命中", value: data.stats.totalHits, color: "text-blue-400", icon: BarChart2 },
+                { label: "关键词", value: `${data.stats.activeKeywordCount}/${data.stats.keywordCount}`, color: "text-purple-400", icon: Tag },
+                { label: "监控群组", value: `${data.stats.activeGroupCount}/${data.stats.groupCount}`, color: "text-cyan-400", icon: Hash },
+              ].map((s) => (
+                <div key={s.label} className="bg-slate-800 rounded-lg p-3 text-center">
+                  <s.icon className={`w-4 h-4 mx-auto mb-1 ${s.color}`} />
+                  <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+                  <p className="text-xs text-slate-500">{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* ── 套餐管理 ── */}
+            <div className="bg-slate-800 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                  <Crown className="w-3.5 h-3.5 text-amber-400" /> 套餐管理
+                </h3>
+                {!planEditing && (
+                  <Button size="sm" variant="ghost" className="h-7 text-xs text-blue-400 hover:text-blue-300"
+                    onClick={() => setPlanEditing(true)}>
+                    修改
+                  </Button>
+                )}
+              </div>
+              {!planEditing ? (
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">当前套餐</span>
+                    <Badge className={`text-xs border-0 ${planColors[data.user.planId ?? "free"] ?? planColors.free}`}>
+                      {data.user.planId ?? "free"}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">到期日期</span>
+                    <span className="text-white flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-slate-500" />
+                      {data.user.planExpiresAt ? new Date(data.user.planExpiresAt).toLocaleDateString() : "永久 / 未设置"}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1 block">套餐类型</label>
+                      <Select value={editPlan} onValueChange={(v) => setEditPlan(v as any)}>
+                        <SelectTrigger className="h-8 text-xs bg-slate-700 border-slate-600 text-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-600">
+                          {["free", "basic", "pro", "enterprise"].map((p) => (
+                            <SelectItem key={p} value={p} className="text-xs capitalize">{p}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1 block">到期日期（留空=永久）</label>
+                      <Input type="date" value={editExpiry} onChange={(e) => setEditExpiry(e.target.value)}
+                        className="h-8 text-xs bg-slate-700 border-slate-600 text-white" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-400"
+                      onClick={() => setPlanEditing(false)}>取消</Button>
+                    <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                      disabled={updatePlanMut.isPending}
+                      onClick={() => updatePlanMut.mutate({
+                        userId,
+                        planId: editPlan,
+                        planExpiresAt: editExpiry || null,
+                      })}>
+                      {updatePlanMut.isPending && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
+                      保存
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── 关键词管理 ── */}
+            <div className="bg-slate-800 rounded-xl p-4">
+              <button className="w-full flex items-center justify-between mb-3"
+                onClick={() => setKwExpanded(!kwExpanded)}>
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                  <Key className="w-3.5 h-3.5 text-purple-400" /> 关键词管理
+                  <Badge className="text-xs bg-purple-900/50 text-purple-300 border-0">
+                    {data.stats.activeKeywordCount} 个启用
+                  </Badge>
+                </h3>
+                {kwExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+              </button>
+
+              {kwExpanded && (
+                <div className="space-y-3">
+                  {/* 添加关键词 */}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="输入关键词..."
+                      value={newKeyword}
+                      onChange={(e) => setNewKeyword(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newKeyword.trim()) {
+                          addKwMut.mutate({ userId, keyword: newKeyword.trim(), matchType: newMatchType });
+                        }
+                      }}
+                      className="h-8 text-xs bg-slate-700 border-slate-600 text-white placeholder-slate-500 flex-1"
+                    />
+                    <Select value={newMatchType} onValueChange={(v) => setNewMatchType(v as any)}>
+                      <SelectTrigger className="h-8 w-20 text-xs bg-slate-700 border-slate-600 text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-600">
+                        {["contains", "exact", "regex"].map((t) => (
+                          <SelectItem key={t} value={t} className="text-xs">{matchTypeLabels[t]}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" className="h-8 w-8 p-0 bg-purple-600 hover:bg-purple-700"
+                      disabled={!newKeyword.trim() || addKwMut.isPending}
+                      onClick={() => addKwMut.mutate({ userId, keyword: newKeyword.trim(), matchType: newMatchType })}>
+                      {addKwMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                    </Button>
+                  </div>
+
+                  {/* 关键词列表 */}
+                  {data.keywords.length === 0 ? (
+                    <p className="text-slate-500 text-xs text-center py-3">暂无关键词</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {data.keywords.map((kw: any) => (
+                        <div key={kw.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors ${kw.isActive ? "bg-slate-700" : "bg-slate-800/50 opacity-60"}`}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`font-medium truncate ${kw.isActive ? "text-white" : "text-slate-500"}`}>{kw.keyword}</span>
+                            <Badge className="text-xs bg-slate-600 text-slate-300 border-0 shrink-0">
+                              {matchTypeLabels[kw.matchType] ?? kw.matchType}
+                            </Badge>
+                            {kw.hitCount > 0 && (
+                              <span className="text-green-400 shrink-0">命中 {kw.hitCount}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0 ml-2">
+                            <Button size="icon" variant="ghost"
+                              className={`w-6 h-6 ${kw.isActive ? "text-green-400 hover:text-slate-400" : "text-slate-500 hover:text-green-400"}`}
+                              onClick={() => toggleKwMut.mutate({ keywordId: kw.id, userId, isActive: !kw.isActive })}>
+                              {kw.isActive ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                            </Button>
+                            <Button size="icon" variant="ghost"
+                              className="w-6 h-6 text-slate-500 hover:text-red-400"
+                              onClick={() => deleteKwMut.mutate({ keywordId: kw.id, userId })}>
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ── 监控群组 ── */}
+            <div className="bg-slate-800 rounded-xl p-4">
+              <button className="w-full flex items-center justify-between mb-3"
+                onClick={() => setGroupExpanded(!groupExpanded)}>
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                  <Hash className="w-3.5 h-3.5 text-cyan-400" /> 监控群组
+                  <Badge className="text-xs bg-cyan-900/50 text-cyan-300 border-0">
+                    {data.stats.activeGroupCount} 个启用
+                  </Badge>
+                </h3>
+                {groupExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+              </button>
+
+              {groupExpanded && (
+                data.monitorGroups.length === 0 ? (
+                  <p className="text-slate-500 text-xs text-center py-3">暂无监控群组</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {data.monitorGroups.map((g: any) => (
+                      <div key={g.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs ${g.isActive ? "bg-slate-700" : "bg-slate-800/50 opacity-60"}`}>
+                        <div className="min-w-0">
+                          <span className="text-white font-medium truncate block">{g.groupTitle ?? g.groupId}</span>
+                          <span className="text-slate-500 font-mono">{g.groupId}</span>
+                        </div>
+                        <Badge className={`text-xs border shrink-0 ml-2 ${g.isActive ? "border-green-700 text-green-300" : "border-slate-600 text-slate-400"}`}>
+                          {g.isActive ? "监控中" : "已停用"}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
+
+            {/* ── TG 账号 ── */}
+            {data.tgAccounts.length > 0 && (
+              <div className="bg-slate-800 rounded-xl p-4">
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Smartphone className="w-3.5 h-3.5 text-blue-400" /> 绑定 TG 账号（{data.tgAccounts.length} 个）
+                </h3>
+                <div className="space-y-1.5">
+                  {data.tgAccounts.map((a: any) => (
+                    <div key={a.id} className="flex items-center justify-between bg-slate-700 rounded-lg px-3 py-2 text-xs">
+                      <span className="text-white">{a.tgFirstName ?? a.phone ?? `账号 #${a.id}`}</span>
+                      <Badge className={`border text-xs ${a.sessionStatus === "active" ? "border-green-700 text-green-300" : "border-slate-600 text-slate-400"}`}>
+                        {a.sessionStatus ?? "pending"}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} className="text-slate-400">关闭</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── 主页面 ─────────────────────────────────────────────────────────────────────
 export default function AdminPanel() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
@@ -214,7 +544,7 @@ export default function AdminPanel() {
                             </div>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
-                            <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-green-400" title="测试连接"
+                            <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-blue-400" title="测试连接"
                               onClick={() => testConnMut.mutate({ id: account.id })}>
                               {testConnMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                             </Button>
@@ -265,6 +595,12 @@ export default function AdminPanel() {
                             <span className="font-medium text-white text-sm">{u.name ?? `用户 #${u.id}`}</span>
                             {u.role === "admin" && <Badge className="text-xs bg-amber-900/50 text-amber-300 border border-amber-700">管理员</Badge>}
                             <Badge className={`text-xs border-0 ${planColors[u.planId] ?? planColors.free}`}>{u.planId ?? "free"}</Badge>
+                            {u.planExpiresAt && (
+                              <span className="text-xs text-slate-500 flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                到期: {new Date(u.planExpiresAt).toLocaleDateString()}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
                             {u.email && <span>{u.email}</span>}
@@ -316,51 +652,14 @@ export default function AdminPanel() {
         </DialogContent>
       </Dialog>
 
-      {/* 用户详情 */}
-      <Dialog open={viewUserId !== null} onOpenChange={(o) => { if (!o) setViewUserId(null); }}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Eye className="w-5 h-5 text-blue-400" /> 用户详情</DialogTitle>
-          </DialogHeader>
-          {viewUserId && (() => {
-            const u = (users as any[]).find((x: any) => x.id === viewUserId);
-            if (!u) return <p className="text-slate-400">用户不存在</p>;
-            const userAccounts = (allAccounts as any[]).filter((a: any) => a.userId === viewUserId);
-            return (
-              <div className="space-y-4">
-                <div className="bg-slate-800 rounded-lg p-4 space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-slate-400">用户名</span><span className="text-white">{u.name ?? "—"}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">邮箱</span><span className="text-white">{u.email ?? "—"}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">套餐</span><Badge className={`text-xs border-0 ${planColors[u.planId] ?? planColors.free}`}>{u.planId ?? "free"}</Badge></div>
-                  <div className="flex justify-between"><span className="text-slate-400">角色</span><span className="text-white capitalize">{u.role}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">注册时间</span><span className="text-white">{new Date(u.createdAt).toLocaleString()}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">最后登录</span><span className="text-white">{new Date(u.lastSignedIn).toLocaleString()}</span></div>
-                </div>
-                <div>
-                  <p className="text-sm text-slate-300 mb-2">该用户的监控账号（{userAccounts.length} 个）</p>
-                  {userAccounts.length === 0 ? (
-                    <p className="text-slate-500 text-xs">暂无监控账号</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {userAccounts.map((a: any) => (
-                        <div key={a.id} className="bg-slate-800 rounded-lg p-3 flex items-center justify-between text-xs">
-                          <span className="text-white">{a.tgFirstName ?? a.phone ?? `账号 #${a.id}`}</span>
-                          <Badge className={`border ${a.sessionStatus === "active" ? "border-green-700 text-green-300" : "border-slate-600 text-slate-400"}`}>
-                            {a.sessionStatus ?? "pending"}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setViewUserId(null)} className="text-slate-400">关闭</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* 用户详情弹窗 */}
+      {viewUserId !== null && (
+        <UserDetailDialog
+          userId={viewUserId}
+          onClose={() => setViewUserId(null)}
+          planColors={planColors}
+        />
+      )}
     </AppLayout>
   );
 }

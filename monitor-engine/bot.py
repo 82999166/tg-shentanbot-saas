@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 WEB_API_BASE = os.getenv("WEB_API_BASE", "http://localhost:3000/api")
-ENGINE_SECRET = os.getenv("ENGINE_SECRET", "tg-monitor-engine-secret")
+ENGINE_SECRET = os.getenv("ENGINE_SECRET", "3d9b664c2005b02dd31955a6a70e2bb206901dbe32c7353c")
 WEB_SITE_URL = os.getenv("WEB_SITE_URL", "")  # 网站地址，用于 Bot 中的跳转链接
 
 # 套餐名称
@@ -92,7 +92,7 @@ def main_menu_keyboard():
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📋 关键词管理", callback_data="menu_keywords"),
-            InlineKeyboardButton("👥 监控群组", callback_data="menu_groups"),
+            InlineKeyboardButton("📢 推送群组", callback_data="menu_push_group"),
         ],
         [
             InlineKeyboardButton("💬 私信模板", callback_data="menu_template"),
@@ -104,6 +104,14 @@ def main_menu_keyboard():
         ],
         [
             InlineKeyboardButton("🔔 自动私信开关", callback_data="menu_dm_toggle"),
+        ],
+        [
+            InlineKeyboardButton("⏰ 到期时间", callback_data="menu_expiry"),
+            InlineKeyboardButton("📖 使用教程", callback_data="menu_tutorial"),
+        ],
+        [
+            InlineKeyboardButton("💬 技术支持", callback_data="menu_support"),
+            InlineKeyboardButton("📢 官方频道", callback_data="menu_channel"),
         ],
     ])
 
@@ -118,7 +126,7 @@ def main_menu_text(s: dict) -> str:
         f"🤖 **TG Monitor Pro**\n\n"
         f"👤 套餐：**{plan}**\n"
         f"🔑 关键词：**{kw}/{kw_max}**\n"
-        f"👥 监控群组：**{grp}** 个\n"
+        f"📢 推送群组：**{grp}** 个\n"
         f"📬 自动私信：{dm}\n"
         f"📱 私信账号：{sender}\n\n"
         f"请选择操作："
@@ -235,6 +243,47 @@ async def cmd_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text("❌ 设置失败，请重试")
+
+
+# ─── /listen ──────────────────────────────────────────────────────────────────
+
+async def cmd_listen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/listen 命令：在群组中发送，将该群组绑定为推送目标"""
+    chat = update.effective_chat
+    # 只允许在群组中使用
+    if chat.type not in ("group", "supergroup"):
+        await update.message.reply_text(
+            "📢 /listen 命令介绍：\n\n"
+            "/listen 命令可以控制机器人将监听到的消息推送至您创建的私有群组中，方便多人协作共同处理监听到的消息。\n\n"
+            "**如何设置推送至群组：**\n"
+            "1️⃣ 新建群组（已有群组也可）\n"
+            "2️⃣ 将本机器人拉进群组\n"
+            "3️⃣ 在群组中发送 /listen，跟着机器人提示操作即可。\n\n"
+            "我们强烈推荐您设置将消息推送到群组，点击下方按钮将机器人添加至群组 👇👇",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    uid = await ensure_user(update, context)
+    if not uid:
+        await update.message.reply_text("❌ 请先在私聊中发送 /start 注册账号")
+        return
+    chat_id = str(chat.id)
+    chat_title = chat.title or chat_id
+    r = await api_post("engine.botSetPushGroup", {
+        "userId": uid,
+        "collabChatId": chat_id,
+        "collabChatTitle": chat_title,
+    })
+    if r and r.get("success"):
+        await update.message.reply_text(
+            f"✅ **推送群组绑定成功！**\n\n"
+            f"📢 群组：**{chat_title}**\n"
+            f"🔑 ID：`{chat_id}`\n\n"
+            f"此后关键词命中时，消息将自动推送到此群组，方便多人协作处理。",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    else:
+        await update.message.reply_text("❌ 绑定失败，请确认已在私聊中发送过 /start")
 
 # ─── /group ───────────────────────────────────────────────────────────────────
 
@@ -383,47 +432,44 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN,
         )
 
-    # ── 监控群组 ──
-    elif data == "menu_groups":
-        groups = await api_get("engine.botGetGroups", {"userId": uid}) or []
-        if not groups:
-            text = "👥 **监控群组**\n\n暂无群组\n\n快捷添加：`/group 群组链接`"
-            btns = [[InlineKeyboardButton("➕ 添加群组", callback_data="group_add")],
-                    [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
+    # ── 推送群组 ──
+    elif data == "menu_push_group":
+        push_cfg = await api_get("engine.botGetPushGroup", {"userId": uid}) or {}
+        collab_id = push_cfg.get("collabChatId")
+        collab_title = push_cfg.get("collabChatTitle") or collab_id
+        if collab_id:
+            text = (
+                f"📢 **推送群组**\n\n"
+                f"✅ 当前推送群组：**{collab_title}**\n"
+                f"ID: `{collab_id}`\n\n"
+                f"命中消息将自动推送到该群组，方便多人协作处理。\n\n"
+                f"如需更换，将 Bot 拉入新群组后在群内发送 `/listen`"
+            )
+            btns = [
+                [InlineKeyboardButton("🗑️ 解除绑定", callback_data="push_group_unbind")],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
+            ]
         else:
-            text = f"👥 **监控群组**（{len(groups)} 个）\n\n"
-            for g in groups:
-                icon = "🟢" if g.get("monitorStatus") == "active" else "🔴"
-                text += f"{icon} `{g.get('groupTitle') or g.get('groupId')}`\n"
-            btns = [[InlineKeyboardButton("➕ 添加群组", callback_data="group_add")]]
-            for g in groups[:5]:
-                title = (g.get("groupTitle") or g.get("groupId") or "")[:20]
-                btns.append([InlineKeyboardButton(f"🗑️ {title}", callback_data=f"group_del_{g['groupId']}")])
-            btns.append([InlineKeyboardButton("◀️ 返回", callback_data="menu_main")])
+            text = (
+                "📢 **推送群组**\n\n"
+                "⚠️ 尚未绑定推送群组\n\n"
+                "**如何设置推送至群组：**\n"
+                "1️⃣ 新建群组（已有群组也可）\n"
+                "2️⃣ 将本机器人拉进群组\n"
+                "3️⃣ 在群组中发送 `/listen`，跟着机器人提示操作即可\n\n"
+                "我们强烈推荐您设置将消息推送到群组，点击下方按钮将机器人添加至群组 👇👇"
+            )
+            btns = [
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
+            ]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
-
-    elif data == "group_add":
-        context.user_data[STATE_KEY] = STATE_GROUP
+    elif data == "push_group_unbind":
+        await api_post("engine.botSetPushGroup", {"userId": uid, "collabChatId": None, "collabChatTitle": None})
         await q.edit_message_text(
-            "👥 **添加监控群组**\n\n请发送群组链接或 ID：\n• `https://t.me/example`\n• `@example`\n• `-1001234567890`",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 取消", callback_data="menu_groups")]]),
+            "✅ 已解除推送群组绑定\n\n命中消息将不再推送到群组。",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_push_group")]]),
             parse_mode=ParseMode.MARKDOWN,
         )
-
-    elif data.startswith("group_del_"):
-        gid = data[10:]
-        await api_post("engine.botDeleteGroup", {"userId": uid, "groupId": gid})
-        groups = await api_get("engine.botGetGroups", {"userId": uid}) or []
-        text = f"✅ 已移除\n\n👥 **监控群组**（{len(groups)} 个）\n\n"
-        for g in groups:
-            icon = "🟢" if g.get("monitorStatus") == "active" else "🔴"
-            text += f"{icon} `{g.get('groupTitle') or g.get('groupId')}`\n"
-        if not groups:
-            text = "✅ 已移除\n\n👥 暂无监控群组"
-        btns = [[InlineKeyboardButton("➕ 添加群组", callback_data="group_add")],
-                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
-        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
-
     # ── 私信模板 ──
     elif data == "menu_template":
         tpls = await api_get("engine.botGetTemplates", {"userId": uid}) or []
@@ -528,6 +574,61 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sender_id = data[10:]
         await q.answer(f"🚫 已屏蔽用户 {sender_id}", show_alert=True)
 
+    # ── 到期时间 ──
+    elif data == "menu_expiry":
+        s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+        plan = PLAN_NAMES.get(s.get("planId", "free"), "免费版")
+        exp = str(s.get("planExpiresAt", ""))[:10] or "永久有效"
+        await q.edit_message_text(
+            f"⏰ **套餐到期时间**\n\n当前套餐：**{plan}**\n到期时间：**{exp}**\n\n"
+            f"如需续费或升级，请联系客服或使用 `/activate 卡密` 激活。",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    # ── 使用教程 ──
+    elif data == "menu_tutorial":
+        cfg = await api_get("engine.botGetSysConfig", {}) or {}
+        tutorial = cfg.get("tutorial_text") or (
+            "📖 **使用教程**\n\n"
+            "1️⃣ **添加监控账号**\n   前往网站 TG账号 页面添加\n\n"
+            "2️⃣ **设置关键词**\n   点击「关键词管理」添加要监控的词\n\n"
+            "3️⃣ **添加监控群组**\n   前往网站 监控群组 页面添加\n\n"
+            "4️⃣ **绑定推送群组**\n   将Bot拉入群组，发送 /listen 绑定\n\n"
+            "5️⃣ **开启自动私信**\n   绑定私信账号并设置模板后开启"
+        )
+        await q.edit_message_text(
+            tutorial,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    # ── 技术支持 ──
+    elif data == "menu_support":
+        cfg = await api_get("engine.botGetSysConfig", {}) or {}
+        support_username = cfg.get("support_username", "")
+        if support_username:
+            text = f"💬 **技术支持**\n\n如有问题，请联系客服：\n👉 @{support_username}"
+            btns = [
+                [InlineKeyboardButton(f"💬 联系客服 @{support_username}", url=f"https://t.me/{support_username}")],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
+            ]
+        else:
+            text = "💬 **技术支持**\n\n客服账号暂未配置，请稍后再试。"
+            btns = [[InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+    # ── 官方频道 ──
+    elif data == "menu_channel":
+        cfg = await api_get("engine.botGetSysConfig", {}) or {}
+        channel_url = cfg.get("official_channel", "")
+        if channel_url:
+            text = f"📢 **官方频道**\n\n点击下方按钮加入官方频道，获取最新公告和更新。"
+            btns = [
+                [InlineKeyboardButton("📢 加入官方频道", url=channel_url)],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
+            ]
+        else:
+            text = "📢 **官方频道**\n\n官方频道暂未配置，请稍后再试。"
+            btns = [[InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
     elif data == "noop":
         pass
 
@@ -645,6 +746,7 @@ async def post_init(app):
         BotCommand("help", "使用帮助"),
         BotCommand("kw", "添加关键词 /kw 词1 词2"),
         BotCommand("template", "设置私信模板"),
+        BotCommand("listen", "绑定推送群组（在群组中发送）"),
         BotCommand("group", "添加监控群组"),
         BotCommand("stats", "今日统计"),
         BotCommand("activate", "激活套餐卡密"),
@@ -661,6 +763,7 @@ def main():
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("kw", cmd_kw))
     app.add_handler(CommandHandler("template", cmd_template))
+    app.add_handler(CommandHandler("listen", cmd_listen))
     app.add_handler(CommandHandler("group", cmd_group))
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("activate", cmd_activate))

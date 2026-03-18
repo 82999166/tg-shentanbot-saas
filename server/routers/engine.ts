@@ -17,11 +17,13 @@ import {
   users,
   redeemCodes,
   plans,
+  pushSettings,
+  systemConfig,
 } from "../../drizzle/schema";
 import { eq, and, inArray, sql, desc, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
-const ENGINE_SECRET = process.env.ENGINE_SECRET || "3d9b664c2005b02dd31955a6a70e2bb206901dbe32c7353c";
+const ENGINE_SECRET = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
 
 // 引擎鉴权中间件
 const engineProcedure = publicProcedure.use(({ ctx, next }) => {
@@ -582,6 +584,46 @@ export const engineRouter = router({
         .limit(20);
     }),
 
+  // ── Bot API：获取推送群组 ─────────────────────────────────
+  botGetPushGroup: engineProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return {};
+      const rows = await db.select({
+        collabChatId: pushSettings.collaborationGroupId,
+        collabChatTitle: pushSettings.collaborationGroupTitle,
+      }).from(pushSettings).where(eq(pushSettings.userId, input.userId)).limit(1);
+      return rows[0] || {};
+    }),
+
+  // ── Bot API：设置推送群组 ─────────────────────────────────
+  botSetPushGroup: engineProcedure
+    .input(z.object({
+      userId: z.number(),
+      collabChatId: z.string().nullable(),
+      collabChatTitle: z.string().nullable(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const existing = await db.select({ id: pushSettings.id }).from(pushSettings)
+        .where(eq(pushSettings.userId, input.userId)).limit(1);
+      if (existing.length > 0) {
+        await db.update(pushSettings).set({
+          collaborationGroupId: input.collabChatId,
+          collaborationGroupTitle: input.collabChatTitle,
+        }).where(eq(pushSettings.userId, input.userId));
+      } else {
+        await db.insert(pushSettings).values({
+          userId: input.userId,
+          collaborationGroupId: input.collabChatId,
+          collaborationGroupTitle: input.collabChatTitle,
+        });
+      }
+      return { success: true };
+    }),
+
   // ── Bot API：获取最近命中记录 ─────────────────────────────
   botGetHitRecords: engineProcedure
     .input(z.object({ userId: z.number(), limit: z.number().default(10) }))
@@ -653,6 +695,20 @@ export const engineRouter = router({
         .where(eq(dmQueue.userId, input.userId))
         .orderBy(desc(dmQueue.createdAt))
         .limit(input.limit);
+    }),
+
+  // ── Bot API：获取系统配置（客服/频道/教程等） ─────────────
+  botGetSysConfig: engineProcedure
+    .input(z.object({}).optional())
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return {};
+      const rows = await db.select().from(systemConfig);
+      const result: Record<string, string> = {};
+      for (const row of rows) {
+        result[row.configKey] = row.configValue || "";
+      }
+      return result;
     }),
 });
 

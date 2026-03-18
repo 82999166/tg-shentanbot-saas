@@ -87,6 +87,59 @@ export const monitorGroupsRouter = router({
       return { success: true };
     }),
 
+  // 批量创建监控群组
+  batchCreate: protectedProcedure
+    .input(z.object({
+      tgAccountId: z.number(),
+      groups: z.array(z.object({
+        groupId: z.string().min(1),
+        groupTitle: z.string().optional(),
+        groupUsername: z.string().optional(),
+        groupType: z.enum(["group", "supergroup", "channel"]).default("supergroup"),
+        memberCount: z.number().optional(),
+      })).min(1, "至少选择一个群组"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const plans = await getAllPlans();
+      const userPlan = plans.find((p) => p.id === ctx.user.planId) ?? plans.find((p) => p.id === "free");
+      const count = await countMonitorGroupsByUserId(ctx.user.id);
+      const maxAllowed = userPlan?.maxMonitorGroups ?? 10;
+      const remaining = maxAllowed - count;
+      if (remaining <= 0) {
+        throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐监控群组配额已满（${maxAllowed} 个），请升级套餐` });
+      }
+      const toCreate = input.groups.slice(0, remaining);
+      const skipped = input.groups.length - toCreate.length;
+      const results: { groupId: string; success: boolean; id?: number; error?: string }[] = [];
+      for (const g of toCreate) {
+        try {
+          const id = await createMonitorGroup({
+            userId: ctx.user.id,
+            tgAccountId: input.tgAccountId,
+            groupId: g.groupId,
+            groupTitle: g.groupTitle,
+            groupUsername: g.groupUsername,
+            groupType: g.groupType,
+            memberCount: g.memberCount,
+            keywordIds: [],
+            monitorStatus: "active",
+          });
+          results.push({ groupId: g.groupId, success: true, id });
+        } catch (err: any) {
+          results.push({ groupId: g.groupId, success: false, error: err.message });
+        }
+      }
+      const successCount = results.filter((r) => r.success).length;
+      return {
+        success: true,
+        total: input.groups.length,
+        created: successCount,
+        skipped,
+        results,
+        message: `成功添加 ${successCount} 个监控群组${skipped > 0 ? `，${skipped} 个因配额不足跳过` : ""}`,
+      };
+    }),
+
   // 切换监控状态
   toggleStatus: protectedProcedure
     .input(z.object({

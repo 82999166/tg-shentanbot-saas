@@ -13,6 +13,7 @@ import { engineRouter } from "./routers/engine";
 import { inviteRouter } from "./routers/invite";
 import { emailAuthRouter } from "./routers/emailAuth";
 import { hitMessagesRouter } from "./routers/hitMessages";
+import { systemConfigRouter } from "./routers/systemConfig";
 
 export const appRouter = router({
   system: systemRouter,
@@ -43,6 +44,7 @@ export const appRouter = router({
   invite: inviteRouter,
   emailAuth: emailAuthRouter,
   hitMessages: hitMessagesRouter,
+  sysConfig: systemConfigRouter,
 });
 
 export type AppRouter = typeof appRouter;

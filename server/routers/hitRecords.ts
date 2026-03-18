@@ -22,8 +22,8 @@ import {
 } from "../db";
 import { protectedProcedure, router, adminProcedure } from "../_core/trpc";
 import { getAllUsers, getDb } from "../db";
-import { users, tgAccounts } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { users, tgAccounts, keywords, monitorGroups, hitRecords } from "../../drizzle/schema";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 // ============================================================
 // 命中记录路由
@@ -267,4 +267,107 @@ export const adminRouter = router({
       userName: userMap.get(a.userId) ?? `用户 #${a.userId}`,
     }));
   }),
+
+  // ── 用户详情 ─────────────────────────────────────────────
+  userDetail: adminProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const user = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
+      if (!user[0]) throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+      const userKws = await db.select().from(keywords)
+        .where(eq(keywords.userId, input.userId))
+        .orderBy(desc(keywords.createdAt));
+      const userGroups = await db.select().from(monitorGroups)
+        .where(eq(monitorGroups.userId, input.userId))
+        .orderBy(desc(monitorGroups.createdAt));
+      const userAccounts = await db.select().from(tgAccounts)
+        .where(eq(tgAccounts.userId, input.userId));
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const [totalHitsRow] = await db.select({ count: sql<number>`count(*)` })
+        .from(hitRecords).where(eq(hitRecords.userId, input.userId));
+      const [todayHitsRow] = await db.select({ count: sql<number>`count(*)` })
+        .from(hitRecords).where(and(
+          eq(hitRecords.userId, input.userId),
+          sql`${hitRecords.createdAt} >= ${todayStart}`
+        ));
+      return {
+        user: user[0],
+        keywords: userKws,
+        monitorGroups: userGroups,
+        tgAccounts: userAccounts,
+        stats: {
+          totalHits: Number(totalHitsRow?.count ?? 0),
+          todayHits: Number(todayHitsRow?.count ?? 0),
+          keywordCount: userKws.length,
+          activeKeywordCount: userKws.filter(k => k.isActive).length,
+          groupCount: userGroups.length,
+          activeGroupCount: userGroups.filter(g => g.isActive).length,
+        },
+      };
+    }),
+
+  // ── 修改套餐 + 到期日 ──────────────────────────────────────
+  updateUserPlanExpiry: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      planId: z.enum(["free", "basic", "pro", "enterprise"]),
+      planExpiresAt: z.string().nullable(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(users).set({
+        planId: input.planId,
+        planExpiresAt: input.planExpiresAt ? new Date(input.planExpiresAt) : null,
+      }).where(eq(users.id, input.userId));
+      return { success: true };
+    }),
+
+  // ── 管理员添加关键词 ──────────────────────────────────────
+  addKeyword: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      keyword: z.string().min(1),
+      matchType: z.enum(["exact", "contains", "regex", "and", "or", "not"]).default("contains"),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const existing = await db.select().from(keywords)
+        .where(and(eq(keywords.userId, input.userId), eq(keywords.keyword, input.keyword)))
+        .limit(1);
+      if (existing[0]) throw new TRPCError({ code: "CONFLICT", message: "关键词已存在" });
+      await db.insert(keywords).values({
+        userId: input.userId,
+        keyword: input.keyword,
+        matchType: input.matchType,
+        isActive: true,
+      });
+      return { success: true };
+    }),
+
+  // ── 管理员删除关键词 ──────────────────────────────────────
+  deleteKeyword: adminProcedure
+    .input(z.object({ keywordId: z.number(), userId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.delete(keywords)
+        .where(and(eq(keywords.id, input.keywordId), eq(keywords.userId, input.userId)));
+      return { success: true };
+    }),
+
+  // ── 管理员切换关键词状态 ──────────────────────────────────
+  toggleKeyword: adminProcedure
+    .input(z.object({ keywordId: z.number(), userId: z.number(), isActive: z.boolean() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(keywords).set({ isActive: input.isActive })
+        .where(and(eq(keywords.id, input.keywordId), eq(keywords.userId, input.userId)));
+      return { success: true };
+    }),
 });

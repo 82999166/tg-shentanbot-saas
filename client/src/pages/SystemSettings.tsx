@@ -737,7 +737,108 @@ function BotConfigTab() {
   );
 }
 
-// ── 主页// ── SMTP 邮件配置 Tab ────────────────────────────────
+// ── 系统配置 Tab（客服、官方频道、使用教程）────────────────────────────────
+function SysConfigTab() {
+  const { data: configs, refetch } = trpc.sysConfig.getAll.useQuery();
+  const [values, setValues] = useState<Record<string, string>>({});
+
+  const updateMutation = trpc.sysConfig.updateBatch.useMutation({
+    onSuccess: () => { toast.success("系统配置已保存"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const getValue = (key: string) => {
+    if (values[key] !== undefined) return values[key];
+    return configs?.find((c) => c.key === key)?.value ?? "";
+  };
+
+  const handleChange = (key: string, value: string) => {
+    setValues((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = () => {
+    const allKeys = ["support_username", "official_channel", "tutorial_text", "bot_name", "site_name"];
+    const configsToSave = allKeys.map((key) => ({ key, value: getValue(key) }));
+    updateMutation.mutate({ configs: configsToSave });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            <Bot className="w-4 h-4" />
+            Bot 菜单配置
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+            以下配置将在 Bot 菜单中展示，用户点击对应按钮时会看到这些信息。
+          </div>
+
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">平台名称</Label>
+            <Input
+              placeholder="例如：TG Monitor Pro"
+              value={getValue("site_name")}
+              onChange={(e) => handleChange("site_name", e.target.value)}
+              className="bg-gray-900 border-gray-600 text-white"
+            />
+          </div>
+
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">客服 TG 用户名（不含 @）</Label>
+            <Input
+              placeholder="例如：support_admin"
+              value={getValue("support_username")}
+              onChange={(e) => handleChange("support_username", e.target.value)}
+              className="bg-gray-900 border-gray-600 text-white"
+            />
+            <p className="text-gray-500 text-xs mt-1">用户点击「技术支持」按钮时，将跳转到此 TG 账号</p>
+          </div>
+
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">官方频道链接</Label>
+            <Input
+              placeholder="例如：https://t.me/yourchannel"
+              value={getValue("official_channel")}
+              onChange={(e) => handleChange("official_channel", e.target.value)}
+              className="bg-gray-900 border-gray-600 text-white"
+            />
+            <p className="text-gray-500 text-xs mt-1">用户点击「官方频道」按钮时，将跳转到此链接</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium">使用教程内容</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-gray-500 text-xs">用户点击「使用教程」按钮时显示的内容，支持 Markdown 格式</p>
+          <textarea
+            rows={10}
+            placeholder={`例如：\n📖 **使用教程**\n\n1. 添加监控账号\n2. 设置关键词\n3. 添加监控群组\n4. 开启自动私信`}
+            value={getValue("tutorial_text")}
+            onChange={(e) => handleChange("tutorial_text", e.target.value)}
+            className="w-full bg-gray-900 border border-gray-600 text-white rounded-md p-3 text-sm resize-y font-mono"
+          />
+        </CardContent>
+      </Card>
+
+      <Button
+        className="w-full bg-blue-600 hover:bg-blue-700"
+        onClick={handleSave}
+        disabled={updateMutation.isPending}
+      >
+        <Save className="w-4 h-4 mr-2" />
+        {updateMutation.isPending ? "保存中..." : "保存系统配置"}
+      </Button>
+    </div>
+  );
+}
+
+// ── SMTP 邮件配置 Tab ────────────────────────────────
 function SmtpSettingsTab() {
   const { data: settings, refetch } = trpc.settings.list.useQuery();
   const upsertMutation = trpc.settings.upsert.useMutation({
@@ -885,6 +986,10 @@ export default function SystemSettings() {
             <Bot className="w-4 h-4 mr-1.5" />
             Bot 配置
           </TabsTrigger>
+          <TabsTrigger value="sysconfig" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
+            <Settings className="w-4 h-4 mr-1.5" />
+            系统配置
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="tgapi">
@@ -904,6 +1009,9 @@ export default function SystemSettings() {
         </TabsContent>
         <TabsContent value="bot">
           <BotConfigTab />
+        </TabsContent>
+        <TabsContent value="sysconfig">
+          <SysConfigTab />
         </TabsContent>
       </Tabs>
     </div>

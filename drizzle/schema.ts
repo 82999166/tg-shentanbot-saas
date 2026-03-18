@@ -577,3 +577,16 @@ export const keywordDailyStats = mysqlTable("keyword_daily_stats", {
 
 export type KeywordDailyStat = typeof keywordDailyStats.$inferSelect;
 export type InsertKeywordDailyStat = typeof keywordDailyStats.$inferInsert;
+
+// ============================================================
+// 系统配置表（单行 key-value 配置）
+// ============================================================
+export const systemConfig = mysqlTable("system_config", {
+  id: int("id").autoincrement().primaryKey(),
+  configKey: varchar("configKey", { length: 64 }).unique().notNull(),
+  configValue: text("configValue"),
+  description: varchar("description", { length: 256 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SystemConfig = typeof systemConfig.$inferSelect;
+export type InsertSystemConfig = typeof systemConfig.$inferInsert;

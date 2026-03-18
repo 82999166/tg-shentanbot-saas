@@ -1,7 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { TelegramClient } from "telegram";
-import { StringSession } from "telegram/sessions/StringSession.js";
+import http from "http";
 import {
   createTgAccount,
   deleteTgAccount,
@@ -12,23 +11,54 @@ import {
 } from "../db";
 import { protectedProcedure, router } from "../_core/trpc";
 
-// ─── Telegram API 凭证 ─────────────────────────────────────────────────────
-const TG_API_ID = 37358587;
-const TG_API_HASH = "d673f19449baeaf208d0cacd1cb16ad8";
+// ─── Pyrogram 登录服务地址（本地 Python HTTP 服务）─────────────────────────
+const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5050";
 
-// ─── 登录会话缓存（key: `${userId}:${phone}`）─────────────────────────────
-interface LoginSession {
-  client: TelegramClient;
-  phoneCodeHash: string;
-  step: "code" | "2fa";
-  phone: string;
-  // 存储用户提供的验证码/密码，等待回调取用
-  pendingCode?: string;
-  pendingPassword?: string;
-  resolvePassword?: (password: string) => void;
-  loginPromise?: Promise<void>;
+// ─── 调用 Pyrogram 登录服务的辅助函数（使用内置 http 模块）──────────────────
+function callLoginService(path: string, body: Record<string, any>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(`${LOGIN_SERVICE_URL}${path}`);
+    const postData = JSON.stringify(body);
+    const options = {
+      hostname: url.hostname,
+      port: parseInt(url.port || "5050"),
+      path: url.pathname,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(postData),
+      },
+    };
+    const req = http.request(options, (res: any) => {
+      let data = "";
+      res.on("data", (chunk: any) => { data += chunk; });
+      res.on("end", () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (!parsed.success) {
+            reject(new TRPCError({
+              code: res.statusCode === 400 ? "BAD_REQUEST" : res.statusCode === 429 ? "TOO_MANY_REQUESTS" : "INTERNAL_SERVER_ERROR",
+              message: parsed.error ?? "登录服务异常，请稍后重试",
+            }));
+          } else {
+            resolve(parsed);
+          }
+        } catch (e) {
+          reject(new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "登录服务响应解析失败" }));
+        }
+      });
+    });
+    req.on("error", (e: any) => {
+      reject(new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `登录服务连接失败: ${e.message}` }));
+    });
+    req.setTimeout(30000, () => {
+      req.destroy();
+      reject(new TRPCError({ code: "TIMEOUT", message: "登录服务超时" }));
+    });
+    req.write(postData);
+    req.end();
+  });
 }
-const loginSessions = new Map<string, LoginSession>();
 
 export const tgAccountsRouter = router({
   // ─── 获取用户的所有TG账号 ─────────────────────────────────────────────────
@@ -45,7 +75,7 @@ export const tgAccountsRouter = router({
       return account;
     }),
 
-  // ─── 手机号登录：第一步 - 发送验证码 ─────────────────────────────────────
+  // ─── 手机号登录：第一步 - 发送验证码（调用 Pyrogram 服务）────────────────
   sendCode: protectedProcedure
     .input(z.object({
       phone: z.string().min(7, "请输入有效手机号").regex(/^\+?[0-9]{7,15}$/, "手机号格式不正确（含国际区号，如 +8613800000000）"),
@@ -53,82 +83,17 @@ export const tgAccountsRouter = router({
       proxyPort: z.number().optional(),
       proxyType: z.enum(["socks5", "http", "mtproto"]).optional(),
     }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ input }) => {
       const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
-      const key = `${ctx.user.id}:${phone}`;
-
-      // 清理旧会话
-      const existing = loginSessions.get(key);
-      if (existing) {
-        try { await existing.client.disconnect(); } catch {}
-        loginSessions.delete(key);
-      }
-
-      // 构建代理配置
-      let proxyOpts: any = {};
-      if (input.proxyHost && input.proxyPort) {
-        if (input.proxyType === "mtproto") {
-          proxyOpts = { proxy: { ip: input.proxyHost, port: input.proxyPort, MTProxy: true as const } };
-        } else {
-          proxyOpts = { proxy: { ip: input.proxyHost, port: input.proxyPort, socksType: 5 as const } };
-        }
-      }
-
-      const client = new TelegramClient(
-        new StringSession(""),
-        TG_API_ID,
-        TG_API_HASH,
-        { connectionRetries: 3, useWSS: false, ...proxyOpts }
-      );
-
-      try {
-        await client.connect();
-
-        const result = await client.sendCode(
-          { apiId: TG_API_ID, apiHash: TG_API_HASH },
-          phone
-        );
-
-        loginSessions.set(key, {
-          client,
-          phoneCodeHash: result.phoneCodeHash,
-          step: "code",
-          phone,
-        });
-
-        // 10分钟后自动清理
-        setTimeout(async () => {
-          const s = loginSessions.get(key);
-          if (s) {
-            try { await s.client.disconnect(); } catch {}
-            loginSessions.delete(key);
-          }
-        }, 10 * 60 * 1000);
-
-        return {
-          success: true,
-          message: `验证码已发送至 ${phone}，请在 Telegram 中查收（有效期 5 分钟）`,
-          phoneCodeHash: result.phoneCodeHash,
-        };
-      } catch (err: any) {
-        try { await client.disconnect(); } catch {}
-        const msg = String(err?.message ?? err);
-        if (msg.includes("PHONE_NUMBER_INVALID")) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "手机号格式不正确，请检查国际区号" });
-        }
-        if (msg.includes("PHONE_NUMBER_BANNED")) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "该手机号已被 Telegram 封禁" });
-        }
-        if (msg.includes("FLOOD_WAIT")) {
-          const seconds = msg.match(/(\d+)/)?.[1] ?? "60";
-          throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: `请求过于频繁，请等待 ${seconds} 秒后重试` });
-        }
-        console.error("[TG sendCode error]", msg);
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `发送验证码失败：${msg}` });
-      }
+      const data = await callLoginService("/send_code", { phone });
+      return {
+        success: true,
+        message: data.message ?? `验证码已发送至 ${phone}，请在 Telegram 中查收`,
+        phoneCodeHash: data.phone_code_hash ?? "",
+      };
     }),
 
-  // ─── 手机号登录：第二步 - 验证验证码 ─────────────────────────────────────
+  // ─── 手机号登录：第二步 - 验证验证码（调用 Pyrogram 服务）───────────────
   verifyCode: protectedProcedure
     .input(z.object({
       phone: z.string(),
@@ -137,90 +102,21 @@ export const tgAccountsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
-      const key = `${ctx.user.id}:${phone}`;
-      const session = loginSessions.get(key);
+      const data = await callLoginService("/verify_code", {
+        phone,
+        code: input.code,
+        phone_code_hash: input.phoneCodeHash,
+      });
 
-      if (!session || session.step !== "code") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "登录会话已过期，请重新发送验证码" });
-      }
-
-      const { client } = session;
-
-      let needs2FA = false;
-      let resolvePassword!: (pwd: string) => void;
-
-      // 先把验证码存入会话，phoneCode 回调会来取
-      loginSessions.set(key, { ...session, pendingCode: input.code });
-
-      const loginPromise = client.signInUser(
-        { apiId: TG_API_ID, apiHash: TG_API_HASH },
-        {
-          phoneNumber: phone,
-          phoneCode: async () => {
-            // 直接从会话取已存好的验证码
-            const s = loginSessions.get(key);
-            return s?.pendingCode ?? input.code;
-          },
-          password: async (_hint?: string) => {
-            needs2FA = true;
-            // 等待 verify2FA 提供密码
-            return new Promise<string>((res) => {
-              resolvePassword = res;
-              const s = loginSessions.get(key);
-              loginSessions.set(key, {
-                ...(s ?? session),
-                step: "2fa",
-                resolvePassword: res,
-              });
-            });
-          },
-          onError: async (err: Error) => {
-            console.error("[TG signInUser error]", err.message);
-            return false;
-          },
-        }
-      ).then(() => {}) as Promise<void>;
-
-      // 更新会话，保存 loginPromise 供 verify2FA 使用
-      const currentSess = loginSessions.get(key);
-      loginSessions.set(key, { ...(currentSess ?? session), loginPromise });
-
-      // 等待最多 20 秒，看是否需要 2FA 或直接登录成功
-      const result = await Promise.race([
-        loginPromise.then(() => ({ type: "success" as const })),
-        new Promise<{ type: "2fa" | "timeout" }>((res) => {
-          const check = setInterval(() => {
-            const s = loginSessions.get(key);
-            if (s?.step === "2fa" || needs2FA) {
-              clearInterval(check);
-              res({ type: "2fa" });
-            }
-          }, 200);
-          setTimeout(() => { clearInterval(check); res({ type: "timeout" }); }, 20000);
-        }),
-      ]);
-
-      if (result.type === "2fa") {
+      if (data.needs_2fa) {
         return { success: true, needs2FA: true, message: "该账号已开启二步验证，请输入密码" };
       }
 
-      if (result.type === "timeout") {
-        const s = loginSessions.get(key);
-        if (s?.step === "2fa") {
-          return { success: true, needs2FA: true, message: "该账号已开启二步验证，请输入密码" };
-        }
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "登录超时，请重试" });
-      }
-
-      // 登录成功
-      const sessionString = (client.session as StringSession).save();
-      await client.disconnect();
-      loginSessions.delete(key);
-
-      return await saveAccount(ctx.user, phone, sessionString);
+      // 登录成功，保存 Pyrogram Session
+      return await saveAccount(ctx.user, phone, data.session_string);
     }),
 
-  // ─── 手机号登录：第三步 - 二步验证密码 ───────────────────────────────────
+  // ─── 手机号登录：第三步 - 二步验证密码（调用 Pyrogram 服务）─────────────
   verify2FA: protectedProcedure
     .input(z.object({
       phone: z.string(),
@@ -228,41 +124,12 @@ export const tgAccountsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
-      const key = `${ctx.user.id}:${phone}`;
-      const session = loginSessions.get(key);
+      const data = await callLoginService("/verify_2fa", {
+        phone,
+        password: input.password,
+      });
 
-      if (!session || session.step !== "2fa") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "登录会话已过期，请重新开始" });
-      }
-
-      if (!session.resolvePassword) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "登录会话状态异常，请重新开始" });
-      }
-
-      // 提供二步验证密码，让 signInUser 继续执行
-      session.resolvePassword(input.password);
-
-      // 等待登录完成
-      try {
-        await Promise.race([
-          session.loginPromise,
-          new Promise<void>((_, rej) => setTimeout(() => rej(new Error("2FA timeout")), 20000)),
-        ]);
-      } catch (err: any) {
-        const msg = String(err?.message ?? err);
-        if (msg.includes("PASSWORD_HASH_INVALID") || msg.includes("2FA timeout")) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "二步验证密码错误，请重新输入" });
-        }
-        console.error("[TG verify2FA error]", msg);
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `二步验证失败：${msg}` });
-      }
-
-      const { client } = session;
-      const sessionString = (client.session as StringSession).save();
-      await client.disconnect();
-      loginSessions.delete(key);
-
-      return await saveAccount(ctx.user, phone, sessionString);
+      return await saveAccount(ctx.user, phone, data.session_string);
     }),
 
   // ─── Session 批量导入 ─────────────────────────────────────────────────────
@@ -408,7 +275,7 @@ export const tgAccountsRouter = router({
       return { success: true };
     }),
 
-  // ─── 测试账号连接 ─────────────────────────────────────────────────────────
+  // ─── 测试账号连接（通过 Pyrogram 登录服务验证）───────────────────────────
   testConnection: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -418,29 +285,51 @@ export const tgAccountsRouter = router({
         return { success: false, message: "账号无有效 Session，请重新登录" };
       }
       try {
-        const client = new TelegramClient(
-          new StringSession(account.sessionString),
-          TG_API_ID,
-          TG_API_HASH,
-          { connectionRetries: 2, useWSS: false }
-        );
-        await client.connect();
-        const me = await client.getMe();
-        await client.disconnect();
-        await updateTgAccount(input.id, ctx.user.id, {
-          sessionStatus: "active",
-          healthStatus: "healthy",
-          healthScore: 95,
-          tgUserId: (me as any).id?.toString(),
-          tgUsername: (me as any).username,
-          tgFirstName: (me as any).firstName,
-          tgLastName: (me as any).lastName,
+        const res = await fetch(`${LOGIN_SERVICE_URL}/test_session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_string: account.sessionString }),
+          // @ts-ignore
+          signal: AbortSignal.timeout(20000),
         });
-        return { success: true, message: "连接正常" };
+        const data = await res.json() as any;
+        if (data.success) {
+          await updateTgAccount(input.id, ctx.user.id, {
+            sessionStatus: "active",
+            healthStatus: "healthy",
+            healthScore: 95,
+            tgUserId: data.user_id?.toString(),
+            tgUsername: data.username,
+            tgFirstName: data.first_name,
+          });
+          return { success: true, message: `连接正常，账号：@${data.username ?? data.user_id}` };
+        } else {
+          await updateTgAccount(input.id, ctx.user.id, { sessionStatus: "expired", healthStatus: "warning", healthScore: 20 });
+          return { success: false, message: `连接失败：${data.error ?? "Session 已失效"}` };
+        }
       } catch (err: any) {
         await updateTgAccount(input.id, ctx.user.id, { sessionStatus: "expired", healthStatus: "warning", healthScore: 20 });
         return { success: false, message: `连接失败：${err?.message ?? err}` };
       }
+    }),
+
+  // ─── 获取账号已加入的群组/频道列表 ──────────────────────────────────────────
+  getDialogs: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const account = await getTgAccountById(input.id, ctx.user.id);
+      if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
+      if (!account.sessionString) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "账号无有效 Session，请重新登录" });
+      }
+      const data = await callLoginService("/get_dialogs", { session_string: account.sessionString });
+      return { success: true, dialogs: data.dialogs as Array<{
+        id: string;
+        title: string;
+        username: string;
+        type: string;
+        members_count: number | null;
+      }> };
     }),
 
   // ─── 启用/停用账号 ────────────────────────────────────────────────────────
@@ -477,5 +366,3 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
 
   return { success: true, needs2FA: false, accountId: id, message: "账号登录成功，已添加到账号列表" };
 }
-
-

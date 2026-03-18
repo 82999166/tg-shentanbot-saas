@@ -162,7 +162,7 @@ def match_keyword(text: str, keyword: dict) -> bool:
     compare_text = text if case_sensitive else text.lower()
     compare_pattern = pattern if case_sensitive else pattern.lower()
 
-    if match_type == "exact":
+    if match_type in ("exact", "contains"):
         return compare_pattern in compare_text
 
     elif match_type == "regex":
@@ -323,6 +323,7 @@ def create_message_handler(account_id: int, user_id: int):
 
     async def handle_message(client: Client, message: Message):
         try:
+            logger.info(f"[DEBUG] 收到消息: chat_type={message.chat.type.name if message.chat else None} chat_id={message.chat.id if message.chat else None} from_user={message.from_user.id if message.from_user else None} is_bot={message.from_user.is_bot if message.from_user else None} text={repr((message.text or message.caption or "")[:50])}")
             # 只处理群组/频道消息
             if not message.chat or message.chat.type.name not in ("GROUP", "SUPERGROUP"):
                 return
@@ -358,9 +359,12 @@ def create_message_handler(account_id: int, user_id: int):
                 logger.debug(f"[SPAM] 过滤疑似广告用户 {sender_tg_id}: {text[:50]}")
                 return
 
+            logger.info(f"[DEBUG2] chat_id={chat_id} user_id={user_id} groups_count={len(groups)} group_ids={[g.get("groupId") for g in groups]}")
             for group in groups:
-                if str(group.get("tgGroupId")) != chat_id:
+                logger.info(f"[DEBUG3] 比较 group.groupId={group.get("groupId")} vs chat_id={chat_id} match={str(group.get("groupId")) == chat_id}")
+                if str(group.get("groupId")) != chat_id:
                     continue
+                logger.info(f"[DEBUG4] 群组匹配！isActive={group.get("isActive")} keywords={[k.get("pattern") for k in group.get("keywords", [])]}")
                 if not group.get("isActive"):
                     continue
 

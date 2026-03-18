@@ -102,6 +102,18 @@ export const keywordsRouter = router({
         }
       }
 
+      // 检查重复关键词（同一用户、同一 pattern、同一 matchType）
+      const existing = await getKeywordsByUserId(ctx.user.id);
+      const isDuplicate = existing.some(
+        (k) => k.keyword === input.keyword && k.matchType === input.matchType
+      );
+      if (isDuplicate) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `关键词「${input.keyword}」已存在，请勿重复添加`,
+        });
+      }
+
       const id = await createKeyword({
         userId: ctx.user.id,
         keyword: input.keyword,
