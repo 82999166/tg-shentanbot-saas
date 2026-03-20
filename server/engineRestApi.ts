@@ -17,6 +17,8 @@ import {
   senderHistory,
   keywordDailyStats,
   pushSettings,
+  users,
+  publicMonitorGroups,
 } from "../drizzle/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 
@@ -119,7 +121,13 @@ export function registerEngineRestRoutes(app: Router) {
           .limit(1);
         const pushConfig = pushSettingsRows[0] || {};
 
+        // 获取用户的 tgUserId（用于 Bot 推送命中通知）
+        const userRow = await db.select({ tgUserId: users.tgUserId }).from(users)
+          .where(eq(users.id, userId)).limit(1);
+        const botChatId = userRow[0]?.tgUserId || null;
+
         userConfigs[String(userId)] = {
+          botChatId,
           groups: groupsWithKeywords,
           dmTemplates: templates.map((t) => ({
             id: t.id,
@@ -143,6 +151,12 @@ export function registerEngineRestRoutes(app: Router) {
         };
       }
 
+      // 获取公共监控群组
+      const publicGroups = await db
+        .select()
+        .from(publicMonitorGroups)
+        .where(eq(publicMonitorGroups.isActive, true));
+
       return res.json({
         accounts: accounts.map((a) => ({
           id: a.id,
@@ -153,6 +167,12 @@ export function registerEngineRestRoutes(app: Router) {
           status: a.sessionStatus,
         })),
         userConfigs,
+        publicGroups: publicGroups.map((g) => ({
+          id: g.id,
+          groupId: g.groupId,
+          groupTitle: g.groupTitle,
+          groupType: g.groupType,
+        })),
       });
     } catch (e: any) {
       console.error("[Engine API] config error:", e);

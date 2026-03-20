@@ -19,6 +19,7 @@ import {
   plans,
   pushSettings,
   systemConfig,
+  publicMonitorGroups,
 } from "../../drizzle/schema";
 import { eq, and, inArray, sql, desc, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -710,6 +711,16 @@ export const engineRouter = router({
       }
       return result;
     }),
+  // ── Bot API：获取公共监控群组列表（管理员配置，所有会员共享）──
+  botGetPublicGroups: engineProcedure
+    .input(z.object({}).optional())
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(publicMonitorGroups)
+        .where(eq(publicMonitorGroups.isActive, true))
+        .orderBy(publicMonitorGroups.createdAt);
+    }),
 });
 
 // ── 配置查询（独立函数，避免循环引用） ──────────────────────
@@ -796,6 +807,11 @@ function engineRouter_config() {
         .where(eq(users.id, userId)).limit(1);
       const botChatId = userRow[0]?.tgUserId || null;
 
+      // 获取推送设置（协作群、过滤广告等）
+      const pushSettingsRow = await db.select().from(pushSettings)
+        .where(eq(pushSettings.userId, userId)).limit(1);
+      const pushConfig = pushSettingsRow[0] || {};
+
       userConfigs[String(userId)] = {
         botChatId,
         groups: groupsWithKeywords,
@@ -811,6 +827,12 @@ function engineRouter_config() {
           maxDelay: antibanConfig.maxIntervalSeconds || 180,
           dailyLimit: antibanConfig.dailyDmLimit || 30,
           cooldownHours: antibanConfig.deduplicateWindowHours || 24,
+        },
+        pushSettings: {
+          pushEnabled: pushConfig.pushEnabled ?? true,
+          filterAds: pushConfig.filterAds ?? false,
+          collabChatId: pushConfig.collaborationGroupId || null,
+          collabChatTitle: pushConfig.collaborationGroupTitle || null,
         },
       };
     }

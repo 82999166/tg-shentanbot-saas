@@ -34,10 +34,150 @@ import {
   EyeOff,
   Zap,
   Mail,
-} from "lucide-react";
+  Globe,
+  Trash2,
+  ToggleLeft,
+  ToggleRight,
+} from "lucide-react";// ── 公共监控群组 Tab ──────────────────────────────────────────────
+function PublicGroupsTab() {
+  const { data: groups, refetch } = trpc.sysConfig.getPublicGroups.useQuery();
+  const [newGroupId, setNewGroupId] = useState("");
+  const [newGroupTitle, setNewGroupTitle] = useState("");
+  const [newNote, setNewNote] = useState("");
+  const [adding, setAdding] = useState(false);
 
-// ── 系统设置 Tab ─────────────────────────────────────────────
-function PaymentSettingsTab() {
+  const addMutation = trpc.sysConfig.addPublicGroup.useMutation({
+    onSuccess: (res) => {
+      toast.success(res.isNew ? "群组已添加" : "群组已重新激活");
+      setNewGroupId(""); setNewGroupTitle(""); setNewNote(""); setAdding(false);
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const removeMutation = trpc.sysConfig.removePublicGroup.useMutation({
+    onSuccess: () => { toast.success("群组已移除"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const toggleMutation = trpc.sysConfig.updatePublicGroup.useMutation({
+    onSuccess: () => { toast.success("状态已更新"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <div className="space-y-4">
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            <Globe className="w-4 h-4" />
+            公共监控群组管理
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+            此处添加的群组供所有会员共同监控使用，不占用会员个人群组配额。监控引擎会自动加载这些群组并应用所有用户的关键词规则。
+          </div>
+
+          {adding ? (
+            <div className="space-y-3 p-4 bg-gray-900/50 rounded-lg border border-gray-600">
+              <h4 className="text-gray-300 text-sm font-medium">添加新公共群组</h4>
+              <div>
+                <Label className="text-gray-400 text-xs mb-1 block">群组 ID 或 @用户名 *</Label>
+                <Input
+                  placeholder="例如：-1001234567890 或 @groupname"
+                  value={newGroupId}
+                  onChange={(e) => setNewGroupId(e.target.value)}
+                  className="bg-gray-900 border-gray-600 text-white"
+                />
+              </div>
+              <div>
+                <Label className="text-gray-400 text-xs mb-1 block">群组名称（可选）</Label>
+                <Input
+                  placeholder="为这个群组起一个备注名称"
+                  value={newGroupTitle}
+                  onChange={(e) => setNewGroupTitle(e.target.value)}
+                  className="bg-gray-900 border-gray-600 text-white"
+                />
+              </div>
+              <div>
+                <Label className="text-gray-400 text-xs mb-1 block">备注（可选）</Label>
+                <Input
+                  placeholder="例如：某某行业交流群"
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  className="bg-gray-900 border-gray-600 text-white"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700"
+                  onClick={() => addMutation.mutate({ groupId: newGroupId.trim(), groupTitle: newGroupTitle.trim() || undefined, note: newNote.trim() || undefined })}
+                  disabled={!newGroupId.trim() || addMutation.isPending}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  {addMutation.isPending ? "添加中..." : "确认添加"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setAdding(false)} className="border-gray-600 text-gray-300">
+                  取消
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => setAdding(true)}>
+              <Plus className="w-3.5 h-3.5 mr-1" />添加公共群组
+            </Button>
+          )}
+
+          <div className="space-y-2">
+            {!groups || groups.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 text-sm">暂无公共监控群组，点击上方按鈕添加</div>
+            ) : (
+              groups.map((g) => (
+                <div key={g.id} className={`flex items-center justify-between p-3 rounded-lg border ${
+                  g.isActive ? "bg-gray-900/50 border-gray-600" : "bg-gray-900/20 border-gray-700 opacity-60"
+                }`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-200 text-sm font-medium truncate">{g.groupTitle || g.groupId}</span>
+                      {g.isActive
+                        ? <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">监控中</Badge>
+                        : <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30 text-xs">已禁用</Badge>}
+                    </div>
+                    <div className="text-gray-500 text-xs mt-0.5 font-mono">{g.groupId}</div>
+                    {g.note && <div className="text-gray-500 text-xs mt-0.5">{g.note}</div>}
+                  </div>
+                  <div className="flex items-center gap-1.5 ml-3 shrink-0">
+                    <Button
+                      size="sm" variant="ghost"
+                      className="h-7 w-7 p-0 text-gray-400 hover:text-yellow-400"
+                      title={g.isActive ? "禁用" : "启用"}
+                      onClick={() => toggleMutation.mutate({ id: g.id, isActive: !g.isActive })}
+                    >
+                      {g.isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                    </Button>
+                    <Button
+                      size="sm" variant="ghost"
+                      className="h-7 w-7 p-0 text-gray-400 hover:text-red-400"
+                      title="移除"
+                      onClick={() => removeMutation.mutate({ id: g.id })}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          {groups && groups.length > 0 && (
+            <p className="text-gray-500 text-xs">共 {groups.filter(g => g.isActive).length} 个活跃公共群组，{groups.filter(g => !g.isActive).length} 个已禁用</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+// ── 支付配置 Tab ──────────────────────────────────────────────
+function PaymentSettingsTab(){
   const { data: settings, refetch } = trpc.settings.list.useQuery();
   const upsertMutation = trpc.settings.upsert.useMutation({
     onSuccess: () => {
@@ -46,7 +186,6 @@ function PaymentSettingsTab() {
     },
     onError: (e) => toast.error(e.message),
   });
-
   const settingFields = [
     {
       group: "USDT 收款配置",
@@ -990,6 +1129,10 @@ export default function SystemSettings() {
             <Settings className="w-4 h-4 mr-1.5" />
             系统配置
           </TabsTrigger>
+          <TabsTrigger value="publicgroups" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
+            <Globe className="w-4 h-4 mr-1.5" />
+            公共群组
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="tgapi">
@@ -1012,6 +1155,9 @@ export default function SystemSettings() {
         </TabsContent>
         <TabsContent value="sysconfig">
           <SysConfigTab />
+        </TabsContent>
+        <TabsContent value="publicgroups">
+          <PublicGroupsTab />
         </TabsContent>
       </Tabs>
     </div>

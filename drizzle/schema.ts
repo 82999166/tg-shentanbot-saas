@@ -590,3 +590,24 @@ export const systemConfig = mysqlTable("system_config", {
 });
 export type SystemConfig = typeof systemConfig.$inferSelect;
 export type InsertSystemConfig = typeof systemConfig.$inferInsert;
+
+// ============================================================
+// 公共监控群组表（管理员添加，所有会员共享使用）
+// ============================================================
+export const publicMonitorGroups = mysqlTable("public_monitor_groups", {
+  id: int("id").autoincrement().primaryKey(),
+  groupId: varchar("groupId", { length: 128 }).notNull().unique(),   // TG 群组 ID 或 @username
+  groupTitle: varchar("groupTitle", { length: 256 }),                // 群组名称
+  groupType: varchar("groupType", { length: 32 }).default("group"),  // group / channel
+  memberCount: int("memberCount").default(0),
+  isActive: boolean("isActive").default(true).notNull(),
+  addedBy: int("addedBy"),                                           // 添加者 userId（管理员）
+  note: varchar("note", { length: 512 }),                           // 备注
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("idx_pmg_groupId").on(t.groupId),
+  index("idx_pmg_isActive").on(t.isActive),
+]);
+export type PublicMonitorGroup = typeof publicMonitorGroups.$inferSelect;
+export type InsertPublicMonitorGroup = typeof publicMonitorGroups.$inferInsert;

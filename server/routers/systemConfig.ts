@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
-import { systemConfig } from "../../drizzle/schema";
+import { systemConfig, publicMonitorGroups } from "../../drizzle/schema";
 import { adminProcedure, publicProcedure, router } from "../_core/trpc";
 
 // 默认配置键列表
@@ -99,7 +99,6 @@ export const systemConfigRouter = router({
       return { success: true };
     }),
 
-
   // 管理员接口：批量更新
   updateBatch: adminProcedure
     .input(
@@ -138,6 +137,79 @@ export const systemConfigRouter = router({
           });
         }
       }
+      return { success: true };
+    }),
+
+  // ── 公共监控群组管理 ──────────────────────────────────────────────────────────
+
+  // 获取公共群组列表（管理员）
+  getPublicGroups: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(publicMonitorGroups).orderBy(publicMonitorGroups.createdAt);
+  }),
+
+  // 添加公共群组
+  addPublicGroup: adminProcedure
+    .input(z.object({
+      groupId: z.string().min(1),
+      groupTitle: z.string().optional(),
+      groupType: z.string().optional(),
+      note: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // 检查是否已存在
+      const existing = await db.select().from(publicMonitorGroups)
+        .where(eq(publicMonitorGroups.groupId, input.groupId)).limit(1);
+      if (existing[0]) {
+        // 如果已存在，重新激活
+        await db.update(publicMonitorGroups)
+          .set({ isActive: true, groupTitle: input.groupTitle || existing[0].groupTitle, note: input.note || existing[0].note })
+          .where(eq(publicMonitorGroups.id, existing[0].id));
+        return { success: true, isNew: false };
+      }
+      await db.insert(publicMonitorGroups).values({
+        groupId: input.groupId,
+        groupTitle: input.groupTitle || input.groupId,
+        groupType: input.groupType || "group",
+        isActive: true,
+        addedBy: ctx.user.id,
+        note: input.note || null,
+      });
+      return { success: true, isNew: true };
+    }),
+
+  // 删除/禁用公共群组
+  removePublicGroup: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(publicMonitorGroups)
+        .set({ isActive: false })
+        .where(eq(publicMonitorGroups.id, input.id));
+      return { success: true };
+    }),
+
+  // 更新公共群组信息
+  updatePublicGroup: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      groupTitle: z.string().optional(),
+      note: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const updates: Record<string, any> = {};
+      if (input.groupTitle !== undefined) updates.groupTitle = input.groupTitle;
+      if (input.note !== undefined) updates.note = input.note;
+      if (input.isActive !== undefined) updates.isActive = input.isActive;
+      await db.update(publicMonitorGroups).set(updates)
+        .where(eq(publicMonitorGroups.id, input.id));
       return { success: true };
     }),
 });
