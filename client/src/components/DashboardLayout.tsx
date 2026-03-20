@@ -24,34 +24,39 @@ import { useIsMobile } from "@/hooks/useMobile";
 import {
   LayoutDashboard, LogOut, PanelLeft, Users, Key, Radio, MessageSquare,
   ListOrdered, FileText, Shield, CreditCard, Settings, Bot, Gift,
-  MessageCircle, BarChart2, Send, FolderPlus, Bell
+  MessageCircle, BarChart2, Send, FolderPlus, Globe
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
-const menuItems = [
+// 所有用户可见的菜单
+const memberMenuItems = [
   // 核心监控
   { icon: LayoutDashboard, label: "仪表盘", path: "/dashboard", group: "监控" },
-  { icon: Radio, label: "群组监控", path: "/monitor", group: "监控" },
   { icon: Key, label: "关键词规则", path: "/keywords", group: "监控" },
   { icon: MessageCircle, label: "命中消息", path: "/hit-messages", group: "监控" },
   { icon: BarChart2, label: "关键词统计", path: "/keyword-stats", group: "监控" },
   // 推送管理
   { icon: Send, label: "推送设置", path: "/push-settings", group: "推送" },
-  { icon: MessageSquare, label: "消息模板", path: "/templates", group: "推送" },
+  { icon: MessageSquare, label: "私信模板", path: "/templates", group: "推送" },
   { icon: ListOrdered, label: "发送队列", path: "/queue", group: "推送" },
-  // 账号管理
-  { icon: Users, label: "TG 账号", path: "/accounts", group: "账号" },
-  { icon: Bot, label: "Bot 配置", path: "/bot-config", group: "账号" },
-  { icon: Shield, label: "防封设置", path: "/antiban", group: "账号" },
   // 其他
-  { icon: FolderPlus, label: "群组提交", path: "/group-submissions", group: "其他" },
   { icon: FileText, label: "命中记录", path: "/records", group: "其他" },
   { icon: CreditCard, label: "订阅套餐", path: "/plans", group: "其他" },
   { icon: Gift, label: "邀请返佣", path: "/invite", group: "其他" },
-  { icon: Settings, label: "系统设置", path: "/system-settings", group: "其他" },
+  { icon: FolderPlus, label: "提交群组", path: "/group-submissions", group: "其他" },
+];
+
+// 管理员额外菜单
+const adminMenuItems = [
+  { icon: Globe, label: "公共群组管理", path: "/admin-groups", group: "管理" },
+  { icon: Users, label: "系统 TG 账号", path: "/accounts", group: "管理" },
+  { icon: Bot, label: "Bot 配置", path: "/bot-config", group: "管理" },
+  { icon: Shield, label: "防封设置", path: "/antiban", group: "管理" },
+  { icon: Settings, label: "系统设置", path: "/system-settings", group: "管理" },
+  { icon: Radio, label: "管理后台", path: "/admin", group: "管理" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -140,6 +145,8 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const isAdmin = user?.role === "admin";
+  const menuItems = isAdmin ? [...memberMenuItems, ...adminMenuItems] : memberMenuItems;
   const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
 
@@ -207,26 +214,36 @@ function DashboardLayoutContent({
           </SidebarHeader>
 
           <SidebarContent className="gap-0">
-            <SidebarMenu className="px-2 py-1">
-              {menuItems.map(item => {
-                const isActive = location === item.path;
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
-                      className={`h-10 transition-all font-normal`}
-                    >
-                      <item.icon
-                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
-                      />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
+            {/* 按分组渲染菜单 */}
+            {Array.from(new Set(menuItems.map(i => i.group))).map(group => (
+              <div key={group}>
+                {!isCollapsed && (
+                  <div className="px-4 pt-3 pb-1">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{group}</span>
+                  </div>
+                )}
+                <SidebarMenu className="px-2 py-0.5">
+                  {menuItems.filter(i => i.group === group).map(item => {
+                    const isActive = location === item.path;
+                    return (
+                      <SidebarMenuItem key={item.path}>
+                        <SidebarMenuButton
+                          isActive={isActive}
+                          onClick={() => setLocation(item.path)}
+                          tooltip={item.label}
+                          className={`h-10 transition-all font-normal`}
+                        >
+                          <item.icon
+                            className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
+                          />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </div>
+            ))}
           </SidebarContent>
 
           <SidebarFooter className="p-3">

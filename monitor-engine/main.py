@@ -457,7 +457,12 @@ def create_message_handler(account_id: int, user_id: int):
                             f"📝 内容: {text[:100]}{'...' if len(text) > 100 else ''}\n"
                             f"⏰ 时间: {datetime.now().strftime('%H:%M:%S')}"
                         )
-                        await client.send_message(int(collab_chat_id), notify_text)
+                        # 支持群组 ID（数字）和邀请链接两种格式
+                        try:
+                            target = int(collab_chat_id)
+                        except (ValueError, TypeError):
+                            target = collab_chat_id  # 邀请链接或用户名格式
+                        await client.send_message(target, notify_text)
                         logger.info(f"[COLLAB] 已推送到协作群 {collab_chat_id}")
                     except Exception as e:
                         logger.warning(f"[COLLAB] 推送协作群失败: {e}")
@@ -508,8 +513,7 @@ def create_message_handler(account_id: int, user_id: int):
             )
             if matched_public_group:
                 sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
-                # 获取公共群组独立关键词（若为空则使用用户自己的关键词）
-                public_group_keywords = matched_public_group.get("keywords", [])
+                # 新模式：公共群组不再有独立关键词，每个会员使用自己的全局关键词匹配
                 # 去重：记录本条消息已通知的用户（防止同一用户收到两次推送）
                 notified_users_for_msg: set = set()
                 # 遍历所有用户的配置，匹配其关键词
@@ -523,15 +527,15 @@ def create_message_handler(account_id: int, user_id: int):
                     u_blocked_ids = set(uconfig.get("blockedTgIds", []))
                     if sender_tg_id in u_blocked_ids:
                         continue
-                    # 优先使用公共群组独立关键词，若为空则使用用户自己的关键词
-                    if public_group_keywords:
-                        u_matched_keywords = [kw for kw in public_group_keywords if match_keyword(text, kw)]
-                    else:
-                        all_keywords = []
+                    # 新模式：使用会员的全局关键词（globalKeywords）
+                    # 兼容旧模式：若无 globalKeywords 则从 groups 中收集
+                    global_kws = uconfig.get("globalKeywords", [])
+                    if not global_kws:
+                        # 兼容旧模式：从私有群组关键词中收集
                         for g in uconfig.get("groups", []):
                             if g.get("isActive"):
-                                all_keywords.extend([k for k in g.get("keywords", []) if k.get("isActive")])
-                        u_matched_keywords = [kw for kw in all_keywords if match_keyword(text, kw)]
+                                global_kws.extend([k for k in g.get("keywords", []) if k.get("isActive")])
+                    u_matched_keywords = [kw for kw in global_kws if kw.get("isActive", True) and match_keyword(text, kw)]
                     if not u_matched_keywords:
                         continue
 
@@ -582,7 +586,12 @@ def create_message_handler(account_id: int, user_id: int):
                                 f"📝 内容: {text[:100]}{'...' if len(text) > 100 else ''}\n"
                                 f"⏰ 时间: {datetime.now().strftime('%H:%M:%S')}"
                             )
-                            await client.send_message(int(u_collab_chat_id), notify_text)
+                            # 支持群组 ID（数字）和邀请链接两种格式
+                            try:
+                                u_target = int(u_collab_chat_id)
+                            except (ValueError, TypeError):
+                                u_target = u_collab_chat_id  # 邀请链接或用户名格式
+                            await client.send_message(u_target, notify_text)
                         except Exception as e:
                             logger.warning(f"[PUBLIC_COLLAB] 推送协作群失败: {e}")
 

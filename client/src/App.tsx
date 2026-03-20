@@ -27,6 +27,7 @@ import ResetPassword from "./pages/ResetPassword";
 import HitMessages from "./pages/HitMessages";
 import KeywordStats from "./pages/KeywordStats";
 import GroupSubmissions from "./pages/GroupSubmissions";
+import AdminGroups from "./pages/AdminGroups";
 import PushSettings from "./pages/PushSettings";
 
 function Router() {
@@ -50,6 +51,7 @@ function Router() {
       <Route path={"/hit-messages"} component={HitMessages} />
       <Route path={"/keyword-stats"} component={KeywordStats} />
       <Route path={"/group-submissions"} component={GroupSubmissions} />
+      <Route path={"/admin-groups"} component={AdminGroups} />
       <Route path={"/push-settings"} component={PushSettings} />
       <Route path={"/login"} component={Login} />
       <Route path={"/register"} component={Register} />

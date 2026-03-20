@@ -1,0 +1,8 @@
+{
+  "query": "SELECT configKey, configValue FROM system_config WHERE configKey = 'bot_token';\nSELECT id, email, tgUserId, botChatId FROM users WHERE id = 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user Egqgwtf2w1Dcuzo.bde3d0a5cfff --database 8SLf4cmVRTfEoV2e8JcGKB --execute SELECT configKey, configValue FROM system_config WHERE configKey = 'bot_token';\nSELECT id, email, tgUserId, botChatId FROM users WHERE id = 3;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'botchatid' in 'field list'"
+  ]
+}

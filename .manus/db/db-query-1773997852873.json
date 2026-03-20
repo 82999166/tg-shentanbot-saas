@@ -1,0 +1,94 @@
+{
+  "query": "SELECT configKey, configValue FROM system_config WHERE configKey = 'bot_token';\nSHOW TABLES;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user Egqgwtf2w1Dcuzo.bde3d0a5cfff --database 8SLf4cmVRTfEoV2e8JcGKB --execute SELECT configKey, configValue FROM system_config WHERE configKey = 'bot_token';\nSHOW TABLES;",
+  "rows": [
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "__drizzle_migrations"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "antiban_settings"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "blacklist"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "bot_configs"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "dm_queue"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "group_submissions"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "hit_records"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "invite_codes"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "invite_records"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "keyword_daily_stats"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "keyword_groups"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "keywords"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "login_attempts"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "message_templates"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "monitor_groups"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "password_reset_tokens"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "payment_orders"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "plans"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "public_group_join_status"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "public_group_keywords"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "public_monitor_groups"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "push_settings"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "redeem_codes"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "sender_history"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "system_config"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "system_settings"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "tg_accounts"
+    },
+    {
+      "Tables_in_8SLf4cmVRTfEoV2e8JcGKB": "users"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_8SLf4cmVRTfEoV2e8JcGKB\n__drizzle_migrations\nantiban_settings\nblacklist\nbot_configs\ndm_queue\ngroup_submissions\nhit_records\ninvite_codes\ninvite_records\nkeyword_daily_stats\nkeyword_groups\nkeywords\nlogin_attempts\nmessage_templates\nmonitor_groups\npassword_reset_tokens\npayment_orders\nplans\npublic_group_join_status\npublic_group_keywords\npublic_monitor_groups\npush_settings\nredeem_codes\nsender_history\nsystem_config\nsystem_settings\ntg_accounts\nusers\n",
+  "stderr": "",
+  "execution_time_ms": 1705
+}

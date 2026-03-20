@@ -1,0 +1,9 @@
+{
+  "query": "SELECT id, email, tgUserId, tgUsername FROM users WHERE id = 3;\nSELECT configKey, LEFT(configValue, 30) as token_prefix FROM system_config WHERE configKey = 'bot_token';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user Egqgwtf2w1Dcuzo.bde3d0a5cfff --database 8SLf4cmVRTfEoV2e8JcGKB --execute SELECT id, email, tgUserId, tgUsername FROM users WHERE id = 3;\nSELECT configKey, LEFT(configValue, 30) as token_prefix FROM system_config WHERE configKey = 'bot_token';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1827
+}

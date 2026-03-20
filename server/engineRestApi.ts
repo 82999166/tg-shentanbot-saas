@@ -43,6 +43,7 @@ export function registerEngineRestRoutes(app: Router) {
       const db = await getDb();
       if (!db) return res.json({ accounts: [], userConfigs: {} });
 
+      // 获取所有系统监控账号（管理员 userId 下的账号，供引擎使用）
       const accounts = await db
         .select()
         .from(tgAccounts)
@@ -53,36 +54,44 @@ export function registerEngineRestRoutes(app: Router) {
           )
         );
 
-      const userIdArr = accounts.map((a) => a.userId);
-      const userIds: number[] = userIdArr.filter((v, i, arr) => arr.indexOf(v) === i);
+      // 新模式：获取所有有关键词或推送设置的用户（不依赖 tgAccounts）
+      const allUsersWithKeywords = await db
+        .selectDistinct({ userId: keywords.userId })
+        .from(keywords)
+        .where(eq(keywords.isActive, true));
+      const allUsersWithPush = await db
+        .selectDistinct({ userId: pushSettings.userId })
+        .from(pushSettings);
+      const allUserIdSet = new Set<number>();
+      allUsersWithKeywords.forEach(r => allUserIdSet.add(r.userId));
+      allUsersWithPush.forEach(r => allUserIdSet.add(r.userId));
+      const userIds: number[] = Array.from(allUserIdSet);
       const userConfigs: Record<string, any> = {};
 
       for (const userId of userIds) {
+        // 新模式：获取该用户的全局关键词（不绑定特定群组）
+        const kws = await db
+          .select()
+          .from(keywords)
+          .where(and(eq(keywords.userId, userId), eq(keywords.isActive, true)));
+        const globalKeywords = kws.map((k) => ({
+          id: k.id,
+          pattern: k.keyword,
+          matchType: k.matchType,
+          subKeywords: Array.isArray(k.subKeywords) ? k.subKeywords : [],
+          caseSensitive: k.caseSensitive,
+          isActive: k.isActive,
+        }));
+
+        // 兼容旧模式：也获取私有监控群组（如果有的话）
         const groups = await db
           .select()
           .from(monitorGroups)
           .where(and(eq(monitorGroups.userId, userId), eq(monitorGroups.isActive, true)));
-
-        const groupsWithKeywords = await Promise.all(
-          groups.map(async (group) => {
-            const kws = await db
-              .select()
-              .from(keywords)
-              .where(and(eq(keywords.userId, userId), eq(keywords.isActive, true)));
-
-            return {
-              ...group,
-              keywords: kws.map((k) => ({
-                id: k.id,
-                pattern: k.keyword,
-                matchType: k.matchType,
-                subKeywords: Array.isArray(k.subKeywords) ? k.subKeywords : [],
-                caseSensitive: k.caseSensitive,
-                isActive: k.isActive,
-              })),
-            };
-          })
-        );
+        const groupsWithKeywords = groups.map((group) => ({
+          ...group,
+          keywords: globalKeywords,
+        }));
 
         const templates = await db
           .select()
@@ -130,6 +139,9 @@ export function registerEngineRestRoutes(app: Router) {
 
         userConfigs[String(userId)] = {
           botChatId,
+          // 新模式：全局关键词（对所有公共群组生效）
+          globalKeywords,
+          // 兼容旧模式：私有监控群组
           groups: groupsWithKeywords,
           dmTemplates: templates.map((t) => ({
             id: t.id,
@@ -153,32 +165,19 @@ export function registerEngineRestRoutes(app: Router) {
         };
       }
 
-      // 获取公共监控群组（含独立关键词）
+      // 获取公共监控群组（新模式：不含独立关键词，由每个会员的全局关键词匹配）
       const publicGroups = await db
         .select()
         .from(publicMonitorGroups)
         .where(eq(publicMonitorGroups.isActive, true));
 
-      const publicGroupsWithKeywords = await Promise.all(
-        publicGroups.map(async (g) => {
-          const kws = await db
-            .select()
-            .from(publicGroupKeywords)
-            .where(and(eq(publicGroupKeywords.publicGroupId, g.id), eq(publicGroupKeywords.isActive, true)));
-          return {
-            id: g.id,
-            groupId: g.groupId,
-            groupTitle: g.groupTitle,
-            groupType: g.groupType,
-            // 独立关键词（若为空则使用用户自己的关键词规则）
-            keywords: kws.map((k) => ({
-              id: k.id,
-              pattern: k.pattern,
-              matchType: k.matchType,
-            })),
-          };
-        })
-      );
+      const publicGroupsList = publicGroups.map((g) => ({
+        id: g.id,
+        groupId: g.groupId,
+        groupTitle: g.groupTitle,
+        groupType: g.groupType,
+        memberCount: g.memberCount,
+      }));
 
       return res.json({
         accounts: accounts.map((a) => ({
@@ -190,7 +189,8 @@ export function registerEngineRestRoutes(app: Router) {
           status: a.sessionStatus,
         })),
         userConfigs,
-        publicGroups: publicGroupsWithKeywords,
+        // 新模式：公共群组列表（引擎用每个会员的 globalKeywords 匹配这些群组的消息）
+        publicGroups: publicGroupsList,
       });
     } catch (e: any) {
       console.error("[Engine API] config error:", e);
@@ -509,6 +509,31 @@ export function registerEngineRestRoutes(app: Router) {
       res.json({ success: true });
     } catch (e: any) {
       console.error("[Engine API] public-group/join-status error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/engine/update-user-tgid - 直接更新用户的 tgUserId（管理员操作）
+  app.post("/api/engine/update-user-tgid", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB unavailable" });
+      const { userId, tgUserId, tgUsername } = req.body;
+      if (!userId || !tgUserId) {
+        return res.status(400).json({ error: "userId and tgUserId are required" });
+      }
+      // 先清除其他用户的相同 tgUserId
+      await db.update(users).set({ tgUserId: null, tgUsername: null })
+        .where(and(eq(users.tgUserId, String(tgUserId)), sql`id != ${userId}`));
+      // 更新目标用户
+      await db.update(users).set({
+        tgUserId: String(tgUserId),
+        tgUsername: tgUsername || null,
+      }).where(eq(users.id, Number(userId)));
+      res.json({ success: true, userId, tgUserId });
+    } catch (e: any) {
+      console.error("[Engine API] update-user-tgid error:", e);
       res.status(500).json({ error: e.message });
     }
   });

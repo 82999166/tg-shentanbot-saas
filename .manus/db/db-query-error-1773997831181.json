@@ -1,0 +1,8 @@
+{
+  "query": "SELECT key_name, value FROM system_config WHERE key_name IN ('bot_token', 'support_account', 'official_channel') LIMIT 5;\nSELECT id, email, tgUserId, botChatId FROM user WHERE id = 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user Egqgwtf2w1Dcuzo.bde3d0a5cfff --database 8SLf4cmVRTfEoV2e8JcGKB --execute SELECT key_name, value FROM system_config WHERE key_name IN ('bot_token', 'support_account', 'official_channel') LIMIT 5;\nSELECT id, email, tgUserId, botChatId FROM user WHERE id = 3;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'key_name' in 'where clause'"
+  ]
+}

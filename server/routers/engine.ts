@@ -59,13 +59,11 @@ export const engineRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-      // hitRecords schema: tgAccountId, monitorGroupId, keywordId are required
-      // Engine provides simplified data; use 0 as placeholder for required FK fields
       await db.insert(hitRecords).values({
         userId: input.userId,
         tgAccountId: input.monitorAccountId,
-        monitorGroupId: 0,   // placeholder - engine doesn't have DB group ID
-        keywordId: 0,        // placeholder - engine doesn't have DB keyword ID
+        monitorGroupId: 0,
+        keywordId: 0,
         senderTgId: input.senderTgId,
         senderUsername: input.senderUsername || null,
         senderFirstName: input.senderName || null,
@@ -108,7 +106,6 @@ export const engineRouter = router({
         .set({ status: "sent", sentAt: new Date() })
         .where(eq(dmQueue.id, input.id));
 
-      // 同步更新命中记录的 DM 状态
       const queueItem = await db
         .select()
         .from(dmQueue)
@@ -122,7 +119,6 @@ export const engineRouter = router({
           .where(eq(hitRecords.id, queueItem[0].hitRecordId));
       }
 
-      // 更新账号今日发信计数
       if (queueItem[0]?.senderAccountId) {
         await db
           .update(tgAccounts)
@@ -299,13 +295,12 @@ export const engineRouter = router({
       return { success: true, serverTime: Date.now() };
     }),
 
-  // ── Bot API：通过 TG 用户 ID 查找用户（先查 users.tgUserId，再查 tgAccounts） ──
+  // ── Bot API：通过 TG 用户 ID 查找用户 ──────────────────────
   botGetUserByTgId: engineProcedure
     .input(z.object({ tgUserId: z.string() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
-      // 优先从 users 表直接查
       const directUser = await db.select().from(users)
         .where(eq(users.tgUserId, input.tgUserId))
         .limit(1);
@@ -313,7 +308,6 @@ export const engineRouter = router({
         const u = directUser[0];
         return { id: u.id, name: u.name, email: u.email, planId: u.planId, planExpiresAt: u.planExpiresAt, tgUsername: u.tgUsername, tgFirstName: u.tgFirstName };
       }
-      // 兼容旧逻辑：通过 tgAccounts 表找
       const account = await db
         .select({ userId: tgAccounts.userId })
         .from(tgAccounts)
@@ -336,12 +330,10 @@ export const engineRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      // 检查是否已存在
       const existing = await db.select().from(users)
         .where(eq(users.tgUserId, input.tgUserId))
         .limit(1);
       if (existing[0]) {
-        // 更新用户名（可能改变）
         await db.update(users).set({
           tgUsername: input.tgUsername || existing[0].tgUsername,
           tgFirstName: input.tgFirstName || existing[0].tgFirstName,
@@ -349,7 +341,6 @@ export const engineRouter = router({
         const u = existing[0];
         return { isNew: false, id: u.id, name: u.name || input.tgFirstName || 'User', planId: u.planId, planExpiresAt: u.planExpiresAt };
       }
-      // 创建新用户
       const displayName = [input.tgFirstName, input.tgLastName].filter(Boolean).join(' ') || `tg_${input.tgUserId}`;
       const result = await db.insert(users).values({
         tgUserId: input.tgUserId,
@@ -371,7 +362,6 @@ export const engineRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      // 检查是否已有模板
       const existing = await db.select().from(messageTemplates)
         .where(and(eq(messageTemplates.userId, input.userId), eq(messageTemplates.isActive, true)))
         .limit(1);
@@ -439,14 +429,11 @@ export const engineRouter = router({
       const u = user[0];
       const kwCount = await db.select({ count: sql<number>`count(*)` }).from(keywords)
         .where(and(eq(keywords.userId, input.userId), eq(keywords.isActive, true)));
-      const groupCount = await db.select({ count: sql<number>`count(*)` }).from(monitorGroups)
-        .where(and(eq(monitorGroups.userId, input.userId), eq(monitorGroups.isActive, true)));
       const antiban = await db.select().from(antibanSettings)
         .where(eq(antibanSettings.userId, input.userId)).limit(1);
-      const senderAccounts = await db.select().from(tgAccounts)
-        .where(and(eq(tgAccounts.userId, input.userId), eq(tgAccounts.isActive, true),
-          inArray(tgAccounts.accountRole, ['sender', 'both']))).limit(1);
-      // 套餐限制
+      // 获取公共群组数量
+      const publicGroupCount = await db.select({ count: sql<number>`count(*)` })
+        .from(publicMonitorGroups).where(eq(publicMonitorGroups.isActive, true));
       const PLAN_LIMITS: Record<string, { maxKeywords: number; maxDailyDm: number; maxTgAccounts: number }> = {
         free: { maxKeywords: 10, maxDailyDm: 5, maxTgAccounts: 1 },
         basic: { maxKeywords: 50, maxDailyDm: 30, maxTgAccounts: 3 },
@@ -460,39 +447,32 @@ export const engineRouter = router({
         planId: u.planId,
         planExpiresAt: u.planExpiresAt,
         keywordCount: Number(kwCount[0]?.count || 0),
-        groupCount: Number(groupCount[0]?.count || 0),
+        // 新模式：显示公共群组数量而非私有群组数量
+        groupCount: Number(publicGroupCount[0]?.count || 0),
         dmEnabled: antiban[0]?.dmEnabled ?? false,
-        hasSenderAccount: senderAccounts.length > 0,
-        senderPhone: senderAccounts[0]?.phone || null,
+        hasSenderAccount: true, // 平台统一提供发信账号
         limits,
         dailyDmSent: u.dailyDmSent,
       };
     }),
 
-  // ── Bot API：添加监控群组 ──────────────────────────────────
+  // ── Bot API：添加监控群组（旧模式兼容，新模式不使用） ──────
   botAddGroup: engineProcedure
     .input(z.object({ userId: z.number(), groupId: z.string(), groupTitle: z.string().optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      // 检查是否已存在
       const existing = await db.select().from(monitorGroups)
         .where(and(eq(monitorGroups.userId, input.userId), eq(monitorGroups.groupId, input.groupId)))
         .limit(1);
       if (existing[0]) {
-        // 重新激活
         await db.update(monitorGroups).set({ isActive: true, monitorStatus: 'active' })
           .where(eq(monitorGroups.id, existing[0].id));
         return { success: true, isNew: false };
       }
-      // 需要一个 tgAccountId，找用户的第一个账号
-      const account = await db.select().from(tgAccounts)
-        .where(and(eq(tgAccounts.userId, input.userId), eq(tgAccounts.isActive, true)))
-        .limit(1);
-      const tgAccountId = account[0]?.id || 0;
       await db.insert(monitorGroups).values({
         userId: input.userId,
-        tgAccountId,
+        tgAccountId: 0,
         groupId: input.groupId,
         groupTitle: input.groupTitle || input.groupId,
         monitorStatus: 'active',
@@ -573,16 +553,17 @@ export const engineRouter = router({
       return { success: true };
     }),
 
-  // ── Bot API：获取监控群组列表 ─────────────────────────────
+  // ── Bot API：获取监控群组列表（新模式返回公共群组） ─────────
   botGetGroups: engineProcedure
     .input(z.object({ userId: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
-      return db.select().from(monitorGroups)
-        .where(and(eq(monitorGroups.userId, input.userId), eq(monitorGroups.isActive, true)))
-        .orderBy(desc(monitorGroups.createdAt))
-        .limit(20);
+      // 新模式：返回公共群组池（所有会员共享）
+      return db.select().from(publicMonitorGroups)
+        .where(eq(publicMonitorGroups.isActive, true))
+        .orderBy(desc(publicMonitorGroups.createdAt))
+        .limit(50);
     }),
 
   // ── Bot API：获取推送群组 ─────────────────────────────────
@@ -648,23 +629,19 @@ export const engineRouter = router({
         .limit(1);
       if (!code[0]) return { success: false, message: "卡密无效或已使用" };
       const rc = code[0];
-      // 检查卡密是否过期
       if (rc.expiresAt && rc.expiresAt < new Date()) {
         return { success: false, message: "卡密已过期" };
       }
-      // 计算套餐到期时间
       const user = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
       if (!user[0]) return { success: false, message: "用户不存在" };
       const now = new Date();
       const base = user[0].planExpiresAt && user[0].planExpiresAt > now ? user[0].planExpiresAt : now;
       const newExpiry = new Date(base);
       newExpiry.setMonth(newExpiry.getMonth() + rc.durationMonths);
-      // 更新用户套餐
       await db.update(users).set({
         planId: rc.planId,
         planExpiresAt: newExpiry,
       }).where(eq(users.id, input.userId));
-      // 标记卡密已使用
       await db.update(redeemCodes).set({
         status: "used",
         usedByUserId: input.userId,
@@ -679,10 +656,10 @@ export const engineRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      // 在 tg_accounts 中找到该用户的账号并更新 tgUserId
-      // 同时在 users 表中记录（如果有字段）
-      // 这里我们在 system_settings 中存储 tgUserId -> userId 映射
-      // 实际上通过 tgAccounts 表的 tgUserId 字段来关联
+      await db.update(users).set({
+        tgUserId: input.tgUserId,
+        tgUsername: input.tgUsername || null,
+      }).where(eq(users.id, input.userId));
       return { success: true };
     }),
 
@@ -711,6 +688,7 @@ export const engineRouter = router({
       }
       return result;
     }),
+
   // ── Bot API：获取公共监控群组列表（管理员配置，所有会员共享）──
   botGetPublicGroups: engineProcedure
     .input(z.object({}).optional())
@@ -723,56 +701,68 @@ export const engineRouter = router({
     }),
 });
 
-// ── 配置查询（独立函数，避免循环引用） ──────────────────────
+// ── 配置查询（独立函数，避免循环引用） ──────────────────────────────────────────────────────────────
 function engineRouter_config() {
   return engineProcedure.query(async () => {
     const db = await getDb();
-    if (!db) return { accounts: [], userConfigs: {} };
+    if (!db) return { accounts: [], userConfigs: {}, publicGroups: [] };
 
-    // 获取所有激活的监控账号
-      const accounts = await db
-        .select()
-        .from(tgAccounts)
-        .where(
-          and(
-            eq(tgAccounts.isActive, true),
-            inArray(tgAccounts.accountRole, ["monitor", "both"])
-          )
-        );
+    // 获取所有激活的平台监控账号（系统账号，不属于特定会员）
+    const accounts = await db
+      .select()
+      .from(tgAccounts)
+      .where(
+        and(
+          eq(tgAccounts.isActive, true),
+          inArray(tgAccounts.accountRole, ["monitor", "both"])
+        )
+      );
 
-    // 为每个账号的用户构建监控配置
-    const userIdArr = accounts.map((a) => a.userId);
-    const userIds: number[] = userIdArr.filter((v, i, arr) => arr.indexOf(v) === i);
+    // 获取公共监控群组池
+    const publicGroupRows = await db
+      .select()
+      .from(publicMonitorGroups)
+      .where(eq(publicMonitorGroups.isActive, true));
+
+    // 新模式：所有有活跃关键词的用户都加入 userConfigs（不依赖 tgAccounts）
+    const allKeywordUsers = await db
+      .selectDistinct({ userId: keywords.userId })
+      .from(keywords)
+      .where(eq(keywords.isActive, true));
+
+    // 合并：有 tgAccounts 的用户 + 有关键词的用户
+    const accountUserIds = accounts.map((a) => a.userId);
+    const keywordUserIds = allKeywordUsers.map((r) => r.userId);
+    const allUserIds = Array.from(new Set([...accountUserIds, ...keywordUserIds]));
+
     const userConfigs: Record<string, any> = {};
 
-    for (const userId of userIds) {
-      // 获取该用户的监控群组
-      const groups = await db
+    for (const userId of allUserIds) {
+      // 获取该用户的全局关键词（新模式：对所有公共群组生效）
+      const globalKws = await db
+        .select()
+        .from(keywords)
+        .where(and(eq(keywords.userId, userId), eq(keywords.isActive, true)));
+
+      const kwMapper = (k: typeof globalKws[0]) => ({
+        id: k.id,
+        pattern: k.keyword,
+        matchType: k.matchType,
+        subKeywords: Array.isArray(k.subKeywords) ? k.subKeywords : [],
+        caseSensitive: k.caseSensitive,
+        isActive: k.isActive,
+      });
+
+      // 旧模式兼容：私有群组（如果有的话）
+      const privateGroups = await db
         .select()
         .from(monitorGroups)
         .where(and(eq(monitorGroups.userId, userId), eq(monitorGroups.isActive, true)));
 
-      // 为每个群组获取关键词
-      const groupsWithKeywords = await Promise.all(
-        groups.map(async (group) => {
-          const kws = await db
-            .select()
-            .from(keywords)
-            .where(and(eq(keywords.userId, userId), eq(keywords.isActive, true)));
-
-          return {
-            ...group,
-            keywords: kws.map((k) => ({
-              id: k.id,
-              pattern: k.keyword,
-              matchType: k.matchType,
-              subKeywords: Array.isArray(k.subKeywords) ? k.subKeywords : [],
-              caseSensitive: k.caseSensitive,
-              isActive: k.isActive,
-            })),
-          };
-        })
-      );
+      const groupsWithKeywords = privateGroups.map((group) => ({
+        ...group,
+        keywords: globalKws.map(kwMapper),
+      }));
 
       // 获取消息模板
       const templates = await db
@@ -787,17 +777,17 @@ function engineRouter_config() {
         .where(eq(antibanSettings.userId, userId))
         .limit(1);
 
-      // 获取发信账号
+      // 获取平台发信账号（新模式：所有会员共用平台发信账号）
       const senderAccounts = await db
         .select()
         .from(tgAccounts)
         .where(
           and(
-            eq(tgAccounts.userId, userId),
             eq(tgAccounts.isActive, true),
             inArray(tgAccounts.accountRole, ["sender", "both"])
           )
-        );
+        )
+        .limit(1);
 
       const antibanConfig = antiban[0] || {};
       const senderAccount = senderAccounts[0];
@@ -814,6 +804,9 @@ function engineRouter_config() {
 
       userConfigs[String(userId)] = {
         botChatId,
+        // 新模式：全局关键词（对所有公共群组生效）
+        globalKeywords: globalKws.map(kwMapper),
+        // 旧模式兼容：私有群组关键词
         groups: groupsWithKeywords,
         dmTemplates: templates.map((t) => ({
           id: t.id,
@@ -837,16 +830,23 @@ function engineRouter_config() {
       };
     }
 
-      return {
-        accounts: accounts.map((a) => ({
-          id: a.id,
-          userId: a.userId,
-          sessionString: a.sessionString,
-          isActive: a.isActive,
-          role: a.accountRole,
-          status: a.sessionStatus,
-        })),
+    return {
+      accounts: accounts.map((a) => ({
+        id: a.id,
+        userId: a.userId,
+        sessionString: a.sessionString,
+        isActive: a.isActive,
+        role: a.accountRole,
+        status: a.sessionStatus,
+      })),
       userConfigs,
+      // 公共监控群组池（所有会员共享）
+      publicGroups: publicGroupRows.map((pg) => ({
+        id: pg.id,
+        groupId: pg.groupId,
+        groupTitle: pg.groupTitle,
+        isActive: pg.isActive,
+      })),
     };
   });
 }

@@ -4,16 +4,15 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Activity,
-  Bot,
-  CheckCircle2,
+  ArrowRight,
   Clock,
   Hash,
-  MessageSquare,
-  Monitor,
+  Key,
+  MessageCircle,
   Send,
   TrendingUp,
   Users,
-  Zap,
+  Globe,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import {
@@ -96,20 +95,13 @@ export default function Dashboard() {
     <AppLayout title="仪表盘">
       <div className="p-6 space-y-6">
         {/* 统计卡片 */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
             icon={Activity}
             label="今日命中"
             value={isLoading ? "—" : stats?.todayHits ?? 0}
             color="bg-blue-600"
             onClick={() => navigate("/records")}
-          />
-          <StatCard
-            icon={Send}
-            label="今日发信"
-            value={isLoading ? "—" : stats?.todayDmSent ?? 0}
-            color="bg-emerald-600"
-            onClick={() => navigate("/queue")}
           />
           <StatCard
             icon={TrendingUp}
@@ -119,27 +111,91 @@ export default function Dashboard() {
             onClick={() => navigate("/records")}
           />
           <StatCard
-            icon={Monitor}
-            label="活跃群组"
-            value={isLoading ? "—" : stats?.activeGroups ?? 0}
-            color="bg-cyan-600"
-            onClick={() => navigate("/monitor")}
-          />
-          <StatCard
-            icon={Bot}
-            label="活跃账号"
-            value={isLoading ? "—" : stats?.activeAccounts ?? 0}
-            color="bg-indigo-600"
-            onClick={() => navigate("/accounts")}
+            icon={Send}
+            label="今日私信"
+            value={isLoading ? "—" : stats?.todayDmSent ?? 0}
+            color="bg-emerald-600"
+            onClick={() => navigate("/queue")}
           />
           <StatCard
             icon={Clock}
             label="待发队列"
             value={isLoading ? "—" : stats?.pendingQueue ?? 0}
-            sub={`发信成功率 ${stats?.dmSuccessRate ?? 0}%`}
+            sub={`私信成功率 ${stats?.dmSuccessRate ?? 0}%`}
             color="bg-amber-600"
             onClick={() => navigate("/queue")}
           />
+        </div>
+
+        {/* 快速入口卡片：引导用户完成核心设置 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card
+            className="bg-card border-border hover:border-primary/40 transition-all cursor-pointer group"
+            onClick={() => navigate("/keywords")}
+          >
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-600/20 flex items-center justify-center">
+                  <Key className="w-5 h-5 text-blue-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">1. 设置关键词</p>
+                  <p className="text-xs text-muted-foreground">定义您要监控的内容</p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                添加关键词后，系统会自动匹配所有公共监控群组中的相关消息
+              </p>
+              <div className="flex items-center gap-1 mt-3 text-primary text-sm group-hover:gap-2 transition-all">
+                <span>立即设置</span>
+                <ArrowRight className="w-4 h-4" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            className="bg-card border-border hover:border-primary/40 transition-all cursor-pointer group"
+            onClick={() => navigate("/push-settings")}
+          >
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-emerald-600/20 flex items-center justify-center">
+                  <MessageCircle className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">2. 设置推送群组</p>
+                  <p className="text-xs text-muted-foreground">命中消息发到哪里</p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                配置您的 Telegram 目标推送群组，命中内容将自动转发到该群
+              </p>
+              <div className="flex items-center gap-1 mt-3 text-primary text-sm group-hover:gap-2 transition-all">
+                <span>立即配置</span>
+                <ArrowRight className="w-4 h-4" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card border-border">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-purple-600/20 flex items-center justify-center">
+                  <Globe className="w-5 h-5 text-purple-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">3. 自动监控</p>
+                  <p className="text-xs text-muted-foreground">平台全自动处理</p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                平台系统账号已加入海量公共群组，实时监控并按您的关键词自动推送
+              </p>
+              <div className="flex items-center gap-1 mt-3 text-emerald-400 text-sm">
+                <span>已开启监控</span>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* 图表区域 */}
@@ -264,7 +320,7 @@ export default function Dashboard() {
               <div className="py-12 text-center text-muted-foreground text-sm">
                 <Activity className="w-8 h-8 mx-auto mb-3 opacity-30" />
                 <p>暂无命中记录</p>
-                <p className="text-xs mt-1">添加监控群组和关键词后开始监控</p>
+                <p className="text-xs mt-1">设置关键词和推送群组后，系统将自动监控并推送命中消息</p>
               </div>
             )}
           </CardContent>

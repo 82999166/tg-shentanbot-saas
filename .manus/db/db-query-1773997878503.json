@@ -1,0 +1,24 @@
+{
+  "query": "SELECT id, email, tgUserId, tgUsername, role FROM users LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user Egqgwtf2w1Dcuzo.bde3d0a5cfff --database 8SLf4cmVRTfEoV2e8JcGKB --execute SELECT id, email, tgUserId, tgUsername, role FROM users LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "email": "82999166@qq.com",
+      "tgUserId": "NULL",
+      "tgUsername": "NULL",
+      "role": "admin"
+    },
+    {
+      "id": "270052",
+      "email": "admin@tgmonitor.pro",
+      "tgUserId": "NULL",
+      "tgUsername": "NULL",
+      "role": "admin"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\ttgUserId\ttgUsername\trole\n1\t82999166@qq.com\tNULL\tNULL\tadmin\n270052\tadmin@tgmonitor.pro\tNULL\tNULL\tadmin\n",
+  "stderr": "",
+  "execution_time_ms": 1622
+}
