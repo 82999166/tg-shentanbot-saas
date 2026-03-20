@@ -500,32 +500,38 @@ def create_message_handler(account_id: int, user_id: int):
                     }
                     await api.post("/engine/dm-queue/add", dm_data)
 
-            # ── 公共群组匹配检查 ─────────────────────────────────────────────
+            # ── 公共群组匹配检查 ───────────────────────────────────────────────────────────────────
             # 如果消息来自公共群组，则对所有用户应用其关键词规则
-            is_public_group = any(
-                str(pg.get("groupId")) == chat_id
-                for pg in public_groups
-                if pg.get("isActive")
+            matched_public_group = next(
+                (pg for pg in public_groups if str(pg.get("groupId")) == chat_id),
+                None
             )
-            if is_public_group:
+            if matched_public_group:
                 sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
+                # 获取公共群组独立关键词（若为空则使用用户自己的关键词）
+                public_group_keywords = matched_public_group.get("keywords", [])
+                # 去重：记录本条消息已通知的用户（防止同一用户收到两次推送）
+                notified_users_for_msg: set = set()
                 # 遍历所有用户的配置，匹配其关键词
                 for uid_str, uconfig in monitor_config.items():
                     uid = int(uid_str)
-                    if uid == user_id:
-                        continue  # 当前用户已经处理过了
+                    if uid in notified_users_for_msg:
+                        continue  # 去重：该用户已被通知
                     u_push_settings = uconfig.get("pushSettings", {})
                     if not u_push_settings.get("pushEnabled", True):
                         continue
                     u_blocked_ids = set(uconfig.get("blockedTgIds", []))
                     if sender_tg_id in u_blocked_ids:
                         continue
-                    # 匹配该用户的全局关键词（所有群组的关键词）
-                    all_keywords = []
-                    for g in uconfig.get("groups", []):
-                        if g.get("isActive"):
-                            all_keywords.extend([k for k in g.get("keywords", []) if k.get("isActive")])
-                    u_matched_keywords = [kw for kw in all_keywords if match_keyword(text, kw)]
+                    # 优先使用公共群组独立关键词，若为空则使用用户自己的关键词
+                    if public_group_keywords:
+                        u_matched_keywords = [kw for kw in public_group_keywords if match_keyword(text, kw)]
+                    else:
+                        all_keywords = []
+                        for g in uconfig.get("groups", []):
+                            if g.get("isActive"):
+                                all_keywords.extend([k for k in g.get("keywords", []) if k.get("isActive")])
+                        u_matched_keywords = [kw for kw in all_keywords if match_keyword(text, kw)]
                     if not u_matched_keywords:
                         continue
 
@@ -549,6 +555,7 @@ def create_message_handler(account_id: int, user_id: int):
                         "messageId": str(message.id),
                     }
                     u_hit_result = await api.post("/engine/hit", hit_data)
+                    notified_users_for_msg.add(uid)  # 去重标记
 
                     # Bot 推送命中通知给用户
                     u_bot_chat_id = uconfig.get("botChatId")
@@ -654,27 +661,47 @@ async def stop_account(account_id: int):
             logger.warning(f"[Account {account_id}] 停止时异常: {e}")
 # ── 公共群组加入 ───────────────────────────────────────────────────
 async def join_public_groups(client: Client, account_id: int):
-    """账号启动后自动加入所有公共监控群组"""
+    """账号启动后自动加入所有公共监控群组，并上报加群状态"""
     if not public_groups:
         return
     for pg in public_groups:
-        if not pg.get("isActive"):
-            continue
+        pg_id = pg.get("id")  # 公共群组数据库 ID
         group_id = pg.get("groupId", "")
         if not group_id:
             continue
         try:
-            # 尝试加入群组（如果已是成员则跳过）
+            chat_id_val = int(group_id) if group_id.lstrip("-").isdigit() else group_id
             try:
-                chat_id = int(group_id) if group_id.lstrip("-").isdigit() else group_id
-                await client.join_chat(chat_id)
+                await client.join_chat(chat_id_val)
                 logger.info(f"[Account {account_id}] 已加入公共群组 {group_id}")
+                # 上报加群成功状态
+                if pg_id:
+                    await api.post("/engine/public-group/join-status", {
+                        "publicGroupId": pg_id,
+                        "monitorAccountId": account_id,
+                        "status": "joined",
+                    })
             except Exception as join_err:
                 err_str = str(join_err).lower()
                 if "already" in err_str or "user_already" in err_str or "you are already" in err_str:
                     logger.debug(f"[Account {account_id}] 已是公共群组 {group_id} 的成员")
+                    # 上报已在群状态
+                    if pg_id:
+                        await api.post("/engine/public-group/join-status", {
+                            "publicGroupId": pg_id,
+                            "monitorAccountId": account_id,
+                            "status": "joined",
+                        })
                 else:
                     logger.warning(f"[Account {account_id}] 加入公共群组 {group_id} 失败: {join_err}")
+                    # 上报失败状态
+                    if pg_id:
+                        await api.post("/engine/public-group/join-status", {
+                            "publicGroupId": pg_id,
+                            "monitorAccountId": account_id,
+                            "status": "failed",
+                            "errorMsg": str(join_err)[:200],
+                        })
             await asyncio.sleep(2)  # 防封延迟
         except Exception as e:
             logger.warning(f"[Account {account_id}] 处理公共群组 {group_id} 异常: {e}")

@@ -19,6 +19,8 @@ import {
   pushSettings,
   users,
   publicMonitorGroups,
+  publicGroupKeywords,
+  publicGroupJoinStatus,
 } from "../drizzle/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 
@@ -151,11 +153,32 @@ export function registerEngineRestRoutes(app: Router) {
         };
       }
 
-      // 获取公共监控群组
+      // 获取公共监控群组（含独立关键词）
       const publicGroups = await db
         .select()
         .from(publicMonitorGroups)
         .where(eq(publicMonitorGroups.isActive, true));
+
+      const publicGroupsWithKeywords = await Promise.all(
+        publicGroups.map(async (g) => {
+          const kws = await db
+            .select()
+            .from(publicGroupKeywords)
+            .where(and(eq(publicGroupKeywords.publicGroupId, g.id), eq(publicGroupKeywords.isActive, true)));
+          return {
+            id: g.id,
+            groupId: g.groupId,
+            groupTitle: g.groupTitle,
+            groupType: g.groupType,
+            // 独立关键词（若为空则使用用户自己的关键词规则）
+            keywords: kws.map((k) => ({
+              id: k.id,
+              pattern: k.pattern,
+              matchType: k.matchType,
+            })),
+          };
+        })
+      );
 
       return res.json({
         accounts: accounts.map((a) => ({
@@ -167,12 +190,7 @@ export function registerEngineRestRoutes(app: Router) {
           status: a.sessionStatus,
         })),
         userConfigs,
-        publicGroups: publicGroups.map((g) => ({
-          id: g.id,
-          groupId: g.groupId,
-          groupTitle: g.groupTitle,
-          groupType: g.groupType,
-        })),
+        publicGroups: publicGroupsWithKeywords,
       });
     } catch (e: any) {
       console.error("[Engine API] config error:", e);
@@ -442,5 +460,56 @@ export function registerEngineRestRoutes(app: Router) {
   app.post("/api/engine/heartbeat", async (req: Request, res: Response) => {
     if (!checkSecret(req, res)) return;
     res.json({ success: true, serverTime: Date.now() });
+  });
+
+  // POST /api/engine/public-group/join-status - 上报监控账号加入公共群组的状态
+  app.post("/api/engine/public-group/join-status", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB unavailable" });
+
+      const { publicGroupId, monitorAccountId, status, errorMsg } = req.body;
+      if (!publicGroupId || !monitorAccountId) {
+        return res.status(400).json({ error: "publicGroupId and monitorAccountId are required" });
+      }
+
+      // upsert: 如果已有记录则更新，否则新建
+      const existing = await db
+        .select()
+        .from(publicGroupJoinStatus)
+        .where(
+          and(
+            eq(publicGroupJoinStatus.publicGroupId, publicGroupId),
+            eq(publicGroupJoinStatus.monitorAccountId, monitorAccountId)
+          )
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        await db
+          .update(publicGroupJoinStatus)
+          .set({
+            status: status || "joined",
+            errorMsg: errorMsg || null,
+            joinedAt: status === "joined" ? new Date() : existing[0].joinedAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(publicGroupJoinStatus.id, existing[0].id));
+      } else {
+        await db.insert(publicGroupJoinStatus).values({
+          publicGroupId,
+          monitorAccountId,
+          status: status || "joined",
+          errorMsg: errorMsg || null,
+          joinedAt: status === "joined" ? new Date() : null,
+        });
+      }
+
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("[Engine API] public-group/join-status error:", e);
+      res.status(500).json({ error: e.message });
+    }
   });
 }

@@ -2,7 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
-import { systemConfig, publicMonitorGroups } from "../../drizzle/schema";
+import { systemConfig, publicMonitorGroups, publicGroupKeywords, publicGroupJoinStatus, tgAccounts } from "../../drizzle/schema";
+import { and } from "drizzle-orm";
 import { adminProcedure, publicProcedure, router } from "../_core/trpc";
 
 // 默认配置键列表
@@ -210,6 +211,121 @@ export const systemConfigRouter = router({
       if (input.isActive !== undefined) updates.isActive = input.isActive;
       await db.update(publicMonitorGroups).set(updates)
         .where(eq(publicMonitorGroups.id, input.id));
+      return { success: true };
+    }),
+
+  // ── 公共群组关键词管理 ──────────────────────────────────────────────────────
+  // 获取某公共群组的关键词列表
+  getPublicGroupKeywords: adminProcedure
+    .input(z.object({ publicGroupId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(publicGroupKeywords)
+        .where(and(
+          eq(publicGroupKeywords.publicGroupId, input.publicGroupId),
+          eq(publicGroupKeywords.isActive, true)
+        ))
+        .orderBy(publicGroupKeywords.createdAt);
+    }),
+
+  // 添加公共群组关键词
+  addPublicGroupKeyword: adminProcedure
+    .input(z.object({
+      publicGroupId: z.number(),
+      pattern: z.string().min(1).max(256),
+      matchType: z.enum(["contains", "exact", "regex"]).default("contains"),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.insert(publicGroupKeywords).values({
+        publicGroupId: input.publicGroupId,
+        pattern: input.pattern,
+        matchType: input.matchType,
+        isActive: true,
+      });
+      return { success: true };
+    }),
+
+  // 删除公共群组关键词（软删除）
+  removePublicGroupKeyword: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(publicGroupKeywords)
+        .set({ isActive: false })
+        .where(eq(publicGroupKeywords.id, input.id));
+      return { success: true };
+    }),
+
+  // ── 监控账号加群状态查询 ────────────────────────────────────────────────────
+  // 获取某公共群组的加群状态（各监控账号是否已加入）
+  getPublicGroupJoinStatus: adminProcedure
+    .input(z.object({ publicGroupId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const accounts = await db.select({
+        id: tgAccounts.id,
+        phone: tgAccounts.phone,
+        tgUsername: tgAccounts.tgUsername,
+        tgFirstName: tgAccounts.tgFirstName,
+        sessionStatus: tgAccounts.sessionStatus,
+      }).from(tgAccounts).where(eq(tgAccounts.isActive, true));
+
+      const statusRecords = await db.select().from(publicGroupJoinStatus)
+        .where(eq(publicGroupJoinStatus.publicGroupId, input.publicGroupId));
+
+      const statusMap = new Map(statusRecords.map(r => [r.monitorAccountId, r]));
+
+      return accounts.map(acc => ({
+        accountId: acc.id,
+        phone: acc.phone,
+        tgUsername: acc.tgUsername,
+        tgFirstName: acc.tgFirstName,
+        sessionStatus: acc.sessionStatus,
+        joinStatus: statusMap.get(acc.id)?.status ?? "pending",
+        errorMsg: statusMap.get(acc.id)?.errorMsg ?? null,
+        joinedAt: statusMap.get(acc.id)?.joinedAt ?? null,
+      }));
+    }),
+
+  // Engine REST API：上报加群状态（供 main.py 调用）
+  reportJoinStatus: publicProcedure
+    .input(z.object({
+      publicGroupId: z.number(),
+      monitorAccountId: z.number(),
+      status: z.enum(["joined", "failed"]),
+      errorMsg: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const existing = await db.select().from(publicGroupJoinStatus)
+        .where(and(
+          eq(publicGroupJoinStatus.publicGroupId, input.publicGroupId),
+          eq(publicGroupJoinStatus.monitorAccountId, input.monitorAccountId)
+        )).limit(1);
+
+      if (existing.length > 0) {
+        await db.update(publicGroupJoinStatus)
+          .set({
+            status: input.status,
+            errorMsg: input.errorMsg ?? null,
+            joinedAt: input.status === "joined" ? new Date() : existing[0].joinedAt,
+          })
+          .where(eq(publicGroupJoinStatus.id, existing[0].id));
+      } else {
+        await db.insert(publicGroupJoinStatus).values({
+          publicGroupId: input.publicGroupId,
+          monitorAccountId: input.monitorAccountId,
+          status: input.status,
+          errorMsg: input.errorMsg ?? null,
+          joinedAt: input.status === "joined" ? new Date() : null,
+        });
+      }
       return { success: true };
     }),
 });

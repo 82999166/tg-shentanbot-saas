@@ -10,6 +10,7 @@ import {
   varchar,
   decimal,
   index,
+  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 // ============================================================
@@ -611,3 +612,39 @@ export const publicMonitorGroups = mysqlTable("public_monitor_groups", {
 ]);
 export type PublicMonitorGroup = typeof publicMonitorGroups.$inferSelect;
 export type InsertPublicMonitorGroup = typeof publicMonitorGroups.$inferInsert;
+
+// ============================================================
+// 公共群组关键词表（管理员为每个公共群组配置全局关键词）
+// ============================================================
+export const publicGroupKeywords = mysqlTable("public_group_keywords", {
+  id: int("id").autoincrement().primaryKey(),
+  publicGroupId: int("publicGroupId").notNull(),                     // 关联 public_monitor_groups.id
+  pattern: varchar("pattern", { length: 256 }).notNull(),           // 关键词内容
+  matchType: varchar("matchType", { length: 32 }).default("contains"), // contains / exact / regex
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("idx_pgk_groupId").on(t.publicGroupId),
+  index("idx_pgk_isActive").on(t.isActive),
+]);
+export type PublicGroupKeyword = typeof publicGroupKeywords.$inferSelect;
+export type InsertPublicGroupKeyword = typeof publicGroupKeywords.$inferInsert;
+
+// ============================================================
+// 监控账号加群状态表（记录每个监控账号是否已加入公共群组）
+// ============================================================
+export const publicGroupJoinStatus = mysqlTable("public_group_join_status", {
+  id: int("id").autoincrement().primaryKey(),
+  publicGroupId: int("publicGroupId").notNull(),                     // 关联 public_monitor_groups.id
+  monitorAccountId: int("monitorAccountId").notNull(),               // 关联 tg_accounts.id
+  status: varchar("status", { length: 32 }).default("pending").notNull(), // pending / joined / failed
+  errorMsg: varchar("errorMsg", { length: 512 }),                   // 失败原因
+  joinedAt: timestamp("joinedAt"),                                   // 成功加入时间
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("idx_pgjs_groupId").on(t.publicGroupId),
+  index("idx_pgjs_accountId").on(t.monitorAccountId),
+  uniqueIndex("idx_pgjs_unique").on(t.publicGroupId, t.monitorAccountId),
+]);
+export type PublicGroupJoinStatus = typeof publicGroupJoinStatus.$inferSelect;
+export type InsertPublicGroupJoinStatus = typeof publicGroupJoinStatus.$inferInsert;
