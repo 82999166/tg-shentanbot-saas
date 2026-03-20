@@ -53,15 +53,17 @@ export const templatesRouter = router({
       weight: z.number().min(1).max(100).default(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      // 检查套餐配额
-      const plans = await getAllPlans();
-      const userPlan = plans.find((p) => p.id === ctx.user.planId) ?? plans.find((p) => p.id === "free");
-      const templates = await getTemplatesByUserId(ctx.user.id);
-      if (userPlan && templates.length >= userPlan.maxTemplates) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: `当前套餐最多支持 ${userPlan.maxTemplates} 个消息模板，请升级套餐`,
-        });
+      // 管理员不受套餐配额限制
+      if (ctx.user.role !== "admin") {
+        const plans = await getAllPlans();
+        const userPlan = plans.find((p) => p.id === ctx.user.planId) ?? plans.find((p) => p.id === "free");
+        const templates = await getTemplatesByUserId(ctx.user.id);
+        if (userPlan && templates.length >= userPlan.maxTemplates) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `当前套餐最多支持 ${userPlan.maxTemplates} 个消息模板，请升级套餐`,
+          });
+        }
       }
 
       const id = await createTemplate({

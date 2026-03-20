@@ -148,18 +148,21 @@ export const tgAccountsRouter = router({
       })).min(1, "至少导入一个 Session").max(100, "单次最多导入 100 个 Session"),
     }))
     .mutation(async ({ ctx, input }) => {
-      const plans = await getAllPlans();
-      const userPlan = plans.find((p) => p.id === (ctx.user as any).planId) ?? plans.find((p) => p.id === "free");
-      const existing = await getTgAccountsByUserId(ctx.user.id);
-      const maxAllowed = userPlan?.maxTgAccounts ?? 3;
-      const remaining = maxAllowed - existing.length;
-
-      if (remaining <= 0) {
-        throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐账号配额已满（${maxAllowed} 个），请升级套餐` });
+      // 管理员不受套餐配额限制
+      let toImport = input.sessions;
+      let skipped = 0;
+      if ((ctx.user as any).role !== "admin") {
+        const plans = await getAllPlans();
+        const userPlan = plans.find((p) => p.id === (ctx.user as any).planId) ?? plans.find((p) => p.id === "free");
+        const existing = await getTgAccountsByUserId(ctx.user.id);
+        const maxAllowed = userPlan?.maxTgAccounts ?? 3;
+        const remaining = maxAllowed - existing.length;
+        if (remaining <= 0) {
+          throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐账号配额已满（${maxAllowed} 个），请升级套餐` });
+        }
+        toImport = input.sessions.slice(0, remaining);
+        skipped = input.sessions.length - toImport.length;
       }
-
-      const toImport = input.sessions.slice(0, remaining);
-      const skipped = input.sessions.length - toImport.length;
       const results: { index: number; success: boolean; accountId?: number; error?: string }[] = [];
 
       for (let i = 0; i < toImport.length; i++) {
@@ -347,11 +350,14 @@ export const tgAccountsRouter = router({
 
 // ─── 保存账号到数据库（检查配额）─────────────────────────────────────────
 async function saveAccount(user: any, phone: string, sessionString: string) {
-  const plans = await getAllPlans();
-  const userPlan = plans.find((p: any) => p.id === user.planId) ?? plans.find((p: any) => p.id === "free");
-  const accounts = await getTgAccountsByUserId(user.id);
-  if (userPlan && accounts.length >= (userPlan as any).maxTgAccounts) {
-    throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐最多支持 ${(userPlan as any).maxTgAccounts} 个TG账号，请升级套餐` });
+  // 管理员不受套餐配额限制
+  if (user.role !== "admin") {
+    const plans = await getAllPlans();
+    const userPlan = plans.find((p: any) => p.id === user.planId) ?? plans.find((p: any) => p.id === "free");
+    const accounts = await getTgAccountsByUserId(user.id);
+    if (userPlan && accounts.length >= (userPlan as any).maxTgAccounts) {
+      throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐最多支持 ${(userPlan as any).maxTgAccounts} 个TG账号，请升级套餐` });
+    }
   }
 
   const id = await createTgAccount({

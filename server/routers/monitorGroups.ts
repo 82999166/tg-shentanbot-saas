@@ -35,15 +35,17 @@ export const monitorGroupsRouter = router({
       keywordIds: z.array(z.number()).default([]),
     }))
     .mutation(async ({ ctx, input }) => {
-      // 检查套餐配额
-      const plans = await getAllPlans();
-      const userPlan = plans.find((p) => p.id === ctx.user.planId) ?? plans.find((p) => p.id === "free");
-      const count = await countMonitorGroupsByUserId(ctx.user.id);
-      if (userPlan && count >= userPlan.maxMonitorGroups) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: `当前套餐最多支持 ${userPlan.maxMonitorGroups} 个监控群组，请升级套餐`,
-        });
+      // 管理员不受套餐配额限制
+      if (ctx.user.role !== "admin") {
+        const plans = await getAllPlans();
+        const userPlan = plans.find((p) => p.id === ctx.user.planId) ?? plans.find((p) => p.id === "free");
+        const count = await countMonitorGroupsByUserId(ctx.user.id);
+        if (userPlan && count >= userPlan.maxMonitorGroups) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `当前套餐最多支持 ${userPlan.maxMonitorGroups} 个监控群组，请升级套餐`,
+          });
+        }
       }
 
       const id = await createMonitorGroup({
@@ -100,16 +102,21 @@ export const monitorGroupsRouter = router({
       })).min(1, "至少选择一个群组"),
     }))
     .mutation(async ({ ctx, input }) => {
-      const plans = await getAllPlans();
-      const userPlan = plans.find((p) => p.id === ctx.user.planId) ?? plans.find((p) => p.id === "free");
-      const count = await countMonitorGroupsByUserId(ctx.user.id);
-      const maxAllowed = userPlan?.maxMonitorGroups ?? 10;
-      const remaining = maxAllowed - count;
-      if (remaining <= 0) {
-        throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐监控群组配额已满（${maxAllowed} 个），请升级套餐` });
+      // 管理员不受套餐配额限制
+      let toCreate = input.groups;
+      let skipped = 0;
+      if (ctx.user.role !== "admin") {
+        const plans = await getAllPlans();
+        const userPlan = plans.find((p) => p.id === ctx.user.planId) ?? plans.find((p) => p.id === "free");
+        const count = await countMonitorGroupsByUserId(ctx.user.id);
+        const maxAllowed = userPlan?.maxMonitorGroups ?? 10;
+        const remaining = maxAllowed - count;
+        if (remaining <= 0) {
+          throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐监控群组配额已满（${maxAllowed} 个），请升级套餐` });
+        }
+        toCreate = input.groups.slice(0, remaining);
+        skipped = input.groups.length - toCreate.length;
       }
-      const toCreate = input.groups.slice(0, remaining);
-      const skipped = input.groups.length - toCreate.length;
       const results: { groupId: string; success: boolean; id?: number; error?: string }[] = [];
       for (const g of toCreate) {
         try {

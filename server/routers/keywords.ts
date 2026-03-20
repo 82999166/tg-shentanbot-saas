@@ -82,15 +82,17 @@ export const keywordsRouter = router({
       groupId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      // 检查套餐配额
-      const plans = await getAllPlans();
-      const userPlan = plans.find((p) => p.id === ctx.user.planId) ?? plans.find((p) => p.id === "free");
-      const count = await countKeywordsByUserId(ctx.user.id);
-      if (userPlan && count >= userPlan.maxKeywords) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: `当前套餐最多支持 ${userPlan.maxKeywords} 个关键词，请升级套餐`,
-        });
+      // 管理员不受套餐配额限制
+      if (ctx.user.role !== "admin") {
+        const plans = await getAllPlans();
+        const userPlan = plans.find((p) => p.id === ctx.user.planId) ?? plans.find((p) => p.id === "free");
+        const count = await countKeywordsByUserId(ctx.user.id);
+        if (userPlan && count >= userPlan.maxKeywords) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `当前套餐最多支持 ${userPlan.maxKeywords} 个关键词，请升级套餐`,
+          });
+        }
       }
 
       // 正则表达式验证

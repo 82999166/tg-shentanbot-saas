@@ -201,6 +201,45 @@ async def handle_test_session(request):
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
+async def handle_get_dialogs(request):
+    """获取账号的群组/频道列表"""
+    try:
+        body = await request.json()
+        session_string = body.get("session_string", "").strip()
+        if not session_string:
+            return web.json_response({"success": False, "error": "session_string 不能为空"}, status=400)
+
+        client = Client(
+            name="get_dialogs",
+            api_id=TG_API_ID,
+            api_hash=TG_API_HASH,
+            session_string=session_string,
+            in_memory=True,
+        )
+        await client.start()
+        dialogs = []
+        async for dialog in client.get_dialogs():
+            chat = dialog.chat
+            if chat.type.name not in ("GROUP", "SUPERGROUP", "CHANNEL"):
+                continue
+            dialogs.append({
+                "id": str(chat.id),
+                "title": chat.title or "",
+                "username": chat.username or "",
+                "type": chat.type.name.lower(),
+                "members_count": getattr(chat, "members_count", None),
+            })
+        await client.stop()
+        logger.info(f"[GetDialogs] 获取到 {len(dialogs)} 个群组/频道")
+        return web.json_response({
+            "success": True,
+            "dialogs": dialogs,
+        })
+    except Exception as e:
+        logger.error(f"[GetDialogs] 错误: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
 async def handle_health(request):
     return web.json_response({"status": "ok"})
 
@@ -211,6 +250,7 @@ def main():
     app.router.add_post("/verify_code", handle_verify_code)
     app.router.add_post("/verify_2fa", handle_verify_2fa)
     app.router.add_post("/test_session", handle_test_session)
+    app.router.add_post("/get_dialogs", handle_get_dialogs)
     app.router.add_get("/health", handle_health)
 
     port = int(os.environ.get("LOGIN_SERVICE_PORT", "5050"))

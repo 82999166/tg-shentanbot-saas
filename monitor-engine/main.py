@@ -65,6 +65,7 @@ TG_API_HASH = os.getenv("TG_API_HASH", "")
 active_clients: dict[int, Client] = {}   # account_id -> Client
 monitor_config: dict = {}                 # 从 API 拉取的完整配置
 public_groups: list = []                  # 管理员设置的公共监控群组（所有用户共享）
+public_group_real_ids: dict = {}          # groupId(URL/ID) -> 真实数字 chat_id（加入后记录）
 sent_dm_cache: dict[str, float] = {}      # "account_id:target_id" -> timestamp（去重）
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")   # Bot Token，用于向用户推送命中通知
 
@@ -507,10 +508,20 @@ def create_message_handler(account_id: int, user_id: int):
 
             # ── 公共群组匹配检查 ───────────────────────────────────────────────────────────────────
             # 如果消息来自公共群组，则对所有用户应用其关键词规则
-            matched_public_group = next(
-                (pg for pg in public_groups if str(pg.get("groupId")) == chat_id),
-                None
-            )
+            # 匹配公共群组：支持数字 ID 和 URL 两种格式
+            # 先检查真实数字 ID 映射，再检查原始 groupId
+            matched_public_group = None
+            for pg in public_groups:
+                pg_group_id = str(pg.get("groupId", ""))
+                # 检查真实数字 ID（加入群组后记录的）
+                real_id = public_group_real_ids.get(pg_group_id)
+                if real_id and str(real_id) == chat_id:
+                    matched_public_group = pg
+                    break
+                # 检查原始 groupId（可能是数字字符串）
+                if pg_group_id == chat_id:
+                    matched_public_group = pg
+                    break
             if matched_public_group:
                 sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
                 # 新模式：公共群组不再有独立关键词，每个会员使用自己的全局关键词匹配
@@ -671,6 +682,7 @@ async def stop_account(account_id: int):
 # ── 公共群组加入 ───────────────────────────────────────────────────
 async def join_public_groups(client: Client, account_id: int):
     """账号启动后自动加入所有公共监控群组，并上报加群状态"""
+    global public_group_real_ids
     if not public_groups:
         return
     for pg in public_groups:
@@ -681,8 +693,13 @@ async def join_public_groups(client: Client, account_id: int):
         try:
             chat_id_val = int(group_id) if group_id.lstrip("-").isdigit() else group_id
             try:
-                await client.join_chat(chat_id_val)
-                logger.info(f"[Account {account_id}] 已加入公共群组 {group_id}")
+                chat = await client.join_chat(chat_id_val)
+                # 记录真实数字 ID（用于消息匹配）
+                if hasattr(chat, 'id'):
+                    public_group_real_ids[group_id] = chat.id
+                    logger.info(f"[Account {account_id}] 已加入公共群组 {group_id} -> 真实ID: {chat.id}")
+                else:
+                    logger.info(f"[Account {account_id}] 已加入公共群组 {group_id}")
                 # 上报加群成功状态
                 if pg_id:
                     await api.post("/engine/public-group/join-status", {
