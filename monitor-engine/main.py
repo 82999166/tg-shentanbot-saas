@@ -64,6 +64,7 @@ TG_API_HASH = os.getenv("TG_API_HASH", "")
 # ── 全局状态 ─────────────────────────────────────────────────
 active_clients: dict[int, Client] = {}   # account_id -> Client
 monitor_config: dict = {}                 # 从 API 拉取的完整配置
+public_groups: list = []                  # 管理员设置的公共监控群组（所有用户共享）
 sent_dm_cache: dict[str, float] = {}      # "account_id:target_id" -> timestamp（去重）
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")   # Bot Token，用于向用户推送命中通知
 
@@ -499,6 +500,85 @@ def create_message_handler(account_id: int, user_id: int):
                     }
                     await api.post("/engine/dm-queue/add", dm_data)
 
+            # ── 公共群组匹配检查 ─────────────────────────────────────────────
+            # 如果消息来自公共群组，则对所有用户应用其关键词规则
+            is_public_group = any(
+                str(pg.get("groupId")) == chat_id
+                for pg in public_groups
+                if pg.get("isActive")
+            )
+            if is_public_group:
+                sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
+                # 遍历所有用户的配置，匹配其关键词
+                for uid_str, uconfig in monitor_config.items():
+                    uid = int(uid_str)
+                    if uid == user_id:
+                        continue  # 当前用户已经处理过了
+                    u_push_settings = uconfig.get("pushSettings", {})
+                    if not u_push_settings.get("pushEnabled", True):
+                        continue
+                    u_blocked_ids = set(uconfig.get("blockedTgIds", []))
+                    if sender_tg_id in u_blocked_ids:
+                        continue
+                    # 匹配该用户的全局关键词（所有群组的关键词）
+                    all_keywords = []
+                    for g in uconfig.get("groups", []):
+                        if g.get("isActive"):
+                            all_keywords.extend([k for k in g.get("keywords", []) if k.get("isActive")])
+                    u_matched_keywords = [kw for kw in all_keywords if match_keyword(text, kw)]
+                    if not u_matched_keywords:
+                        continue
+
+                    logger.info(
+                        f"[PUBLIC_MATCH] user={uid} public_group={message.chat.title} "
+                        f"sender={sender.username or sender.id} "
+                        f"keywords={[k['pattern'] for k in u_matched_keywords]}"
+                    )
+
+                    # 上报命中记录
+                    hit_data = {
+                        "userId": uid,
+                        "monitorAccountId": account_id,
+                        "tgGroupId": chat_id,
+                        "groupName": message.chat.title,
+                        "senderTgId": sender_tg_id,
+                        "senderUsername": sender.username,
+                        "senderName": sender_name,
+                        "messageText": text[:1000],
+                        "matchedKeywords": [k["pattern"] for k in u_matched_keywords],
+                        "messageId": str(message.id),
+                    }
+                    u_hit_result = await api.post("/engine/hit", hit_data)
+
+                    # Bot 推送命中通知给用户
+                    u_bot_chat_id = uconfig.get("botChatId")
+                    if u_bot_chat_id and BOT_TOKEN:
+                        await send_bot_notification(
+                            bot_chat_id=u_bot_chat_id,
+                            sender_username=sender.username,
+                            sender_tg_id=sender_tg_id,
+                            matched_keyword=u_matched_keywords[0]["pattern"],
+                            group_name=message.chat.title or chat_id,
+                            message_text=text,
+                            dm_status="disabled",
+                        )
+
+                    # 协作群推送
+                    u_collab_chat_id = u_push_settings.get("collabChatId")
+                    if u_collab_chat_id:
+                        try:
+                            notify_text = (
+                                f"🔔 **公共群组关键词命中**\n"
+                                f"👤 用户: {('@' + sender.username) if sender.username else sender_tg_id}\n"
+                                f"💬 群组: {message.chat.title}\n"
+                                f"🔑 关键词: {', '.join(k['pattern'] for k in u_matched_keywords)}\n"
+                                f"📝 内容: {text[:100]}{'...' if len(text) > 100 else ''}\n"
+                                f"⏰ 时间: {datetime.now().strftime('%H:%M:%S')}"
+                            )
+                            await client.send_message(int(u_collab_chat_id), notify_text)
+                        except Exception as e:
+                            logger.warning(f"[PUBLIC_COLLAB] 推送协作群失败: {e}")
+
         except Exception as e:
             logger.error(f"[Handler] 消息处理异常: {e}")
 
@@ -572,23 +652,56 @@ async def stop_account(account_id: int):
             logger.info(f"[Account {account_id}] 已停止")
         except Exception as e:
             logger.warning(f"[Account {account_id}] 停止时异常: {e}")
+# ── 公共群组加入 ───────────────────────────────────────────────────
+async def join_public_groups(client: Client, account_id: int):
+    """账号启动后自动加入所有公共监控群组"""
+    if not public_groups:
+        return
+    for pg in public_groups:
+        if not pg.get("isActive"):
+            continue
+        group_id = pg.get("groupId", "")
+        if not group_id:
+            continue
+        try:
+            # 尝试加入群组（如果已是成员则跳过）
+            try:
+                chat_id = int(group_id) if group_id.lstrip("-").isdigit() else group_id
+                await client.join_chat(chat_id)
+                logger.info(f"[Account {account_id}] 已加入公共群组 {group_id}")
+            except Exception as join_err:
+                err_str = str(join_err).lower()
+                if "already" in err_str or "user_already" in err_str or "you are already" in err_str:
+                    logger.debug(f"[Account {account_id}] 已是公共群组 {group_id} 的成员")
+                else:
+                    logger.warning(f"[Account {account_id}] 加入公共群组 {group_id} 失败: {join_err}")
+            await asyncio.sleep(2)  # 防封延迟
+        except Exception as e:
+            logger.warning(f"[Account {account_id}] 处理公共群组 {group_id} 异常: {e}")
 
 
-# ── 配置同步 ─────────────────────────────────────────────────
+# ── 配置同步 ─────────────────────────────────────────────────────
 async def sync_config():
     """从 API 拉取最新配置，启停账号"""
-    global monitor_config
+    global monitor_config, public_groups
 
     while True:
         try:
             data = await api.get("/engine/config")
             if not data:
-                logger.warning("[Config] 无法获取配置，稍后重试")
+                logger.warning("[Config] 无法获取配置，程后重试")
                 await asyncio.sleep(POLL_INTERVAL)
                 continue
 
             monitor_config = data.get("userConfigs", {})
             accounts = data.get("accounts", [])
+
+            # 更新公共群组列表
+            new_public_groups = data.get("publicGroups", [])
+            public_groups_changed = new_public_groups != public_groups
+            public_groups = new_public_groups
+            if public_groups:
+                logger.info(f"[Config] 公共群组: {len([g for g in public_groups if g.get('isActive')])} 个活跃")
 
             # 需要激活的账号 ID 集合
             target_ids = {
@@ -610,18 +723,24 @@ async def sync_config():
                     client = await start_account(account)
                     if client:
                         active_clients[account["id"]] = client
+                        # 新账号启动后自动加入公共群组
+                        asyncio.create_task(join_public_groups(client, account["id"]))
+
+            # 公共群组发生变化时，让所有活跃账号重新加入
+            if public_groups_changed and public_groups:
+                logger.info("[Config] 公共群组列表已更新，所有账号重新加入公共群组...")
+                for aid, client in active_clients.items():
+                    asyncio.create_task(join_public_groups(client, aid))
 
             logger.info(
                 f"[Config] 同步完成 活跃账号={len(active_clients)} "
-                f"监控用户={len(monitor_config)}"
+                f"监控用户={len(monitor_config)} 公共群组={len(public_groups)}"
             )
 
         except Exception as e:
             logger.error(f"[Config] 同步异常: {e}")
 
         await asyncio.sleep(POLL_INTERVAL)
-
-
 # ── 心跳上报 ─────────────────────────────────────────────────
 async def heartbeat():
     """每分钟上报引擎状态"""
