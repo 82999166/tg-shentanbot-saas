@@ -90,6 +90,7 @@ export const tgAccountsRouter = router({
       const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
       // 从数据库读取 TG API 凭证
       const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '数据库未初始化' });
       const rows = await db.select().from(systemSettings)
         .where(sql`${systemSettings.key} IN ('tg_api_id', 'tg_api_hash')`);
       const map: Record<string, string> = {};
