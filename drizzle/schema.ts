@@ -72,7 +72,7 @@ export const tgAccounts = mysqlTable("tg_accounts", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   // TG 账号信息
-  phone: varchar("phone", { length: 32 }),
+  phone: varchar("phone", { length: 32 }).unique(),       // 手机号唯一约束，防止重复添加
   tgUserId: varchar("tgUserId", { length: 32 }),         // TG 用户 ID
   tgUsername: varchar("tgUsername", { length: 128 }),    // TG 用户名
   tgFirstName: varchar("tgFirstName", { length: 128 }),
@@ -104,7 +104,10 @@ export const tgAccounts = mysqlTable("tg_accounts", {
   lastAlertAt: timestamp("lastAlertAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (t) => [index("idx_tg_accounts_userId").on(t.userId)]);
+}, (t) => [
+  index("idx_tg_accounts_userId").on(t.userId),
+  uniqueIndex("uq_tg_accounts_phone").on(t.phone),
+]);
 
 export type TgAccount = typeof tgAccounts.$inferSelect;
 export type InsertTgAccount = typeof tgAccounts.$inferInsert;

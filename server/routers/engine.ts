@@ -878,6 +878,10 @@ export const engineRouter = router({
       // 保存账号到数据库
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未初始化" });
+      // 检查手机号是否已存在（防止重复添加）
+      const existingAcc = await db.select({ id: tgAccounts.id }).from(tgAccounts)
+        .where(eq(tgAccounts.phone, phone)).limit(1);
+      if (existingAcc.length > 0) throw new TRPCError({ code: "CONFLICT", message: `手机号 ${phone} 已存在，请勿重复添加` });
       await db.insert(tgAccounts).values({
         userId: input.userId,
         phone,
@@ -910,6 +914,10 @@ export const engineRouter = router({
       if (!data.session_string) throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "二步验证失败" });
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未初始化" });
+      // 检查手机号是否已存在（防止重复添加）
+      const existing2fa = await db.select({ id: tgAccounts.id }).from(tgAccounts)
+        .where(eq(tgAccounts.phone, phone)).limit(1);
+      if (existing2fa.length > 0) throw new TRPCError({ code: "CONFLICT", message: `手机号 ${phone} 已存在，请勿重复添加` });
       await db.insert(tgAccounts).values({
         userId: input.userId,
         phone,

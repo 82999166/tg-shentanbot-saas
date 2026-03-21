@@ -78,6 +78,13 @@
       "when": 1774080381826,
       "tag": "0010_stale_iron_fist",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1774112618893,
+      "tag": "0011_pale_paladin",
+      "breakpoints": true
     }
   ]
 }

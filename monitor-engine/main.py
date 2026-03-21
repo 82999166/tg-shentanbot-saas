@@ -525,10 +525,11 @@ def create_message_handler(account_id: int, user_id: int):
                     continue
 
                 # ── 全局去重：防止多个监控账号重复处理同一条消息 ──────────────────────
-                dedup_key = f"{chat_id}:{message.id}:{user_id}"
+                # key 只用 chat_id:message_id，不含 user_id，确保跨账号去重有效
+                dedup_key = f"{chat_id}:{message.id}"
                 if dedup_key in processed_messages:
                     logger.debug(f"[DEDUP] 跳过重复消息: {dedup_key}")
-                    break  # 该用户的这条消息已处理，跳出循环
+                    break  # 该消息已被其他账号处理，跳出循环
                 processed_messages[dedup_key] = time.time()
 
                 sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
