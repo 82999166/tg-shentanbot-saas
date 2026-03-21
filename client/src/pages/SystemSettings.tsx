@@ -168,6 +168,17 @@ function PublicGroupsTab() {
     onSuccess: () => { toast.success("状态已更新"); refetch(); },
     onError: (e) => toast.error(e.message),
   });
+  const syncMutation = trpc.sysConfig.syncPrivateToPublic.useMutation({
+    onSuccess: (res: { added: number; skipped: number }) => {
+      if (res.added > 0) {
+        toast.success(`同步完成：新增 ${res.added} 个群组，跳过 ${res.skipped} 个（已存在）`);
+      } else {
+        toast.info(`没有新群组需要同步（${res.skipped} 个已存在）`);
+      }
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   return (
     <div className="space-y-4">
@@ -229,9 +240,24 @@ function PublicGroupsTab() {
               </div>
             </div>
           ) : (
-            <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => setAdding(true)}>
-              <Plus className="w-3.5 h-3.5 mr-1" />添加公共群组
-            </Button>
+            <div className="flex gap-2 flex-wrap">
+              <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => setAdding(true)}>
+                <Plus className="w-3.5 h-3.5 mr-1" />添加公共群组
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-gray-600 text-gray-300 hover:bg-gray-700"
+                disabled={syncMutation.isPending}
+                onClick={() => {
+                  if (confirm("将「群组监控」中的所有私有群组一键同步到公共群组池？\n已存在的群组将自动跳过。")) {
+                    syncMutation.mutate();
+                  }
+                }}
+              >
+                {syncMutation.isPending ? "同步中..." : "⇪ 一键同步私有群组"}
+              </Button>
+            </div>
           )}
 
           <div className="space-y-2">
