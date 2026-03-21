@@ -21,7 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, XCircle, Users, Eye } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, XCircle, Users, Eye, ArrowUpFromLine } from "lucide-react";
 
 export default function AdminGroups() {
   const [addDialog, setAddDialog] = useState(false);
@@ -68,6 +68,18 @@ export default function AdminGroups() {
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
+  const syncPrivate = trpc.sysConfig.syncPrivateToPublic.useMutation({
+    onSuccess: (res: { added: number; skipped: number }) => {
+      utils.sysConfig.getPublicGroups.invalidate();
+      if (res.added > 0) {
+        toast.success(`同步完成：新增 ${res.added} 个群组，跳过 ${res.skipped} 个（已存在）`);
+      } else {
+        toast.info(`没有新群组需要同步（${res.skipped} 个已存在）`);
+      }
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+
   const activeGroups = groups.filter((g: { isActive: boolean }) => g.isActive);
   const inactiveGroups = groups.filter((g: { isActive: boolean }) => !g.isActive);
 
@@ -89,6 +101,19 @@ export default function AdminGroups() {
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="w-4 h-4 mr-1" />
               刷新
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (confirm("将「群组监控」中的所有私有群组一键同步到公共群组池？\n已存在的群组将自动跳过。")) {
+                  syncPrivate.mutate();
+                }
+              }}
+              disabled={syncPrivate.isPending}
+            >
+              <ArrowUpFromLine className="w-4 h-4 mr-1" />
+              {syncPrivate.isPending ? "同步中..." : "一键同步私有群组"}
             </Button>
             <Button size="sm" onClick={() => setAddDialog(true)}>
               <Plus className="w-4 h-4 mr-1" />
@@ -220,7 +245,7 @@ export default function AdminGroups() {
                             variant="ghost"
                             size="sm"
                             onClick={() => {
-                              if (confirm(`确认从公共池移除群组 ${group.groupTitle || group.groupId}？`)) {
+                              if (confirm(`确认删除公共群组「${group.groupTitle || group.groupId}」？\n此操作不可恢复，关联的关键词配置也将一并删除。`)) {
                                 removeGroup.mutate({ id: group.id });
                               }
                             }}

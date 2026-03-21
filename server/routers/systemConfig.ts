@@ -2,7 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db";
-import { systemConfig, publicMonitorGroups, publicGroupKeywords, publicGroupJoinStatus, tgAccounts } from "../../drizzle/schema";
+import { systemConfig, publicMonitorGroups, publicGroupKeywords, publicGroupJoinStatus, tgAccounts, monitorGroups } from "../../drizzle/schema";
+import { inArray } from "drizzle-orm";
 import { and } from "drizzle-orm";
 import { adminProcedure, publicProcedure, router } from "../_core/trpc";
 
@@ -182,16 +183,63 @@ export const systemConfigRouter = router({
       return { success: true, isNew: true };
     }),
 
-  // 删除/禁用公共群组
+  // 删除公共群组（真正删除记录）
   removePublicGroup: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      await db.update(publicMonitorGroups)
-        .set({ isActive: false })
-        .where(eq(publicMonitorGroups.id, input.id));
+      // 先删除关联的关键词和加群状态记录
+      await db.delete(publicGroupKeywords).where(eq(publicGroupKeywords.publicGroupId, input.id));
+      await db.delete(publicGroupJoinStatus).where(eq(publicGroupJoinStatus.publicGroupId, input.id));
+      // 再删除公共群组本身
+      await db.delete(publicMonitorGroups).where(eq(publicMonitorGroups.id, input.id));
       return { success: true };
+    }),
+
+  // 一键同步私有群组到公共群组
+  syncPrivateToPublic: adminProcedure
+    .mutation(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      // 获取所有私有群组（monitor_groups）
+      const privateGroups = await db.select({
+        groupId: monitorGroups.groupId,
+        groupTitle: monitorGroups.groupTitle,
+        groupType: monitorGroups.groupType,
+        memberCount: monitorGroups.memberCount,
+      }).from(monitorGroups)
+        .where(eq(monitorGroups.isActive, true));
+
+      if (privateGroups.length === 0) {
+        return { success: true, added: 0, skipped: 0 };
+      }
+
+      // 获取已存在的公共群组 groupId 列表
+      const existingPublic = await db.select({ groupId: publicMonitorGroups.groupId })
+        .from(publicMonitorGroups);
+      const existingIds = new Set(existingPublic.map((g: { groupId: string }) => g.groupId));
+
+      // 过滤出尚未添加到公共群组的私有群组
+      const toAdd = privateGroups.filter((g: { groupId: string }) => !existingIds.has(g.groupId));
+      const skipped = privateGroups.length - toAdd.length;
+
+      if (toAdd.length > 0) {
+        await db.insert(publicMonitorGroups).values(
+          toAdd.map((g: { groupId: string; groupTitle: string | null | undefined; groupType: string | null | undefined; memberCount: number | null | undefined }) => ({
+            groupId: g.groupId,
+            groupTitle: g.groupTitle || null,
+            groupType: g.groupType || "group",
+            memberCount: g.memberCount || 0,
+            isActive: true,
+            addedBy: ctx.user.id,
+            note: "从私有群组同步",
+          }))
+        );
+      }
+
+      return { success: true, added: toAdd.length, skipped };
     }),
 
   // 更新公共群组信息

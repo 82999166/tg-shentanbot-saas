@@ -304,3 +304,11 @@
 - [x] SystemSettings.tsx Bot配置 Tab 新增健康告警阈值配置卡片（默认 40 分触发告警，冷却 1 小时）
 - [x] 告警消息包含：账号手机号、当前健康度、状态、告警原因、建议操作
 - [x] 支持告警冷却时间（同一账号冷却时间内不重复告警，防止刷屏）
+
+## v3.5 公共群组功能增强 (2026-03-22)
+
+- [x] systemConfig 路由修复 removePublicGroup 接口（改为真正删除，级联删除关联关键词和加群状态）
+- [x] systemConfig 路由添加 syncPrivateToPublic 接口（一键同步私有群组到公共群组，跳过已存在）
+- [x] AdminGroups.tsx 修复删除功能（改为真正删除并显示更清晰的确认提示）
+- [x] AdminGroups.tsx 添加「一键同步私有群组」按钮
+- [x] 部署到服务器 luxurvs.com，停止旧版本冲突进程，确认 3001 端口正常服务
