@@ -68,6 +68,10 @@ public_groups: list = []                  # 管理员设置的公共监控群组
 public_group_real_ids: dict = {}          # groupId(URL/ID) -> 真实数字 chat_id（加入后记录）
 sent_dm_cache: dict[str, float] = {}      # "account_id:target_id" -> timestamp（去重）
 collab_chat_id_cache: dict[str, int] = {}
+# 消息全局去重缓存：防止多个监控账号重复处理同一条消息
+# key: "chat_id:message_id:user_id" -> 处理时间戳
+processed_messages: dict[str, float] = {}  # 全局去重缓存
+PROCESSED_MSG_TTL = 300  # 缓存 5 分钟，防止内存泄漏
 
 # Anti-spam caches
 daily_hit_cache: dict[str, dict[str, int]] = {}
@@ -490,6 +494,13 @@ def create_message_handler(account_id: int, user_id: int):
 
             _dbg_group_ids = [g.get('groupId') for g in groups]
             logger.debug(f"[DEBUG2] chat_id={chat_id} user_id={user_id} groups_count={len(groups)} group_ids={_dbg_group_ids}")
+
+            # 清理过期的去重缓存
+            now_ts = time.time()
+            expired_keys = [k for k, v in processed_messages.items() if now_ts - v > PROCESSED_MSG_TTL]
+            for k in expired_keys:
+                del processed_messages[k]
+
             for group in groups:
                 _dbg_gid = group.get('groupId')
                 logger.debug(f"[DEBUG3] 比较 group.groupId={_dbg_gid} vs chat_id={chat_id} match={str(_dbg_gid) == chat_id}")
@@ -513,6 +524,13 @@ def create_message_handler(account_id: int, user_id: int):
                 if not matched_keywords:
                     continue
 
+                # ── 全局去重：防止多个监控账号重复处理同一条消息 ──────────────────────
+                dedup_key = f"{chat_id}:{message.id}:{user_id}"
+                if dedup_key in processed_messages:
+                    logger.debug(f"[DEDUP] 跳过重复消息: {dedup_key}")
+                    break  # 该用户的这条消息已处理，跳出循环
+                processed_messages[dedup_key] = time.time()
+
                 sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
 
                 logger.info(
@@ -521,7 +539,7 @@ def create_message_handler(account_id: int, user_id: int):
                     f"keywords={[k['pattern'] for k in matched_keywords]}"
                 )
 
-                # ── 发送者历史记录写入 ──────────────────────────
+                # ── 发送者历史记录写入 ──────────────────────
                 await api.post("/engine/sender-history", {
                     "userId": user_id,
                     "senderTgId": sender_tg_id,
@@ -648,6 +666,12 @@ def create_message_handler(account_id: int, user_id: int):
                 # 遍历所有用户的配置，匹配其关键词
                 for uid_str, uconfig in monitor_config.items():
                     uid = int(uid_str)
+                    # 全局去重：防止多账号重复处理同一条消息
+                    pub_dedup_key = f"{chat_id}:{message.id}:{uid}"
+                    if pub_dedup_key in processed_messages:
+                        logger.debug(f"[DEDUP_PUB] 跳过重复公共群组消息: {pub_dedup_key}")
+                        notified_users_for_msg.add(uid)  # 标记为已处理
+                        continue
                     if uid in notified_users_for_msg:
                         continue  # 去重：该用户已被通知
                     u_push_settings = uconfig.get("pushSettings", {})
@@ -689,6 +713,7 @@ def create_message_handler(account_id: int, user_id: int):
                     }
                     u_hit_result = await api.post("/engine/hit", hit_data)
                     notified_users_for_msg.add(uid)  # 去重标记
+                    processed_messages[pub_dedup_key] = time.time()  # 全局去重标记
 
                     # Bot 推送命中通知给用户
                     u_bot_chat_id = uconfig.get("botChatId")
