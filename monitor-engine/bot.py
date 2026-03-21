@@ -43,6 +43,7 @@ STATE_KEY = "input_state"
 STATE_KEYWORD = "wait_keyword"
 STATE_TEMPLATE = "wait_template"
 STATE_GROUP = "wait_group"
+STATE_ACTIVATE = "wait_activate"
 
 # ─── API 辅助 ─────────────────────────────────────────────────────────────────
 
@@ -106,11 +107,14 @@ def main_menu_keyboard():
             InlineKeyboardButton("🔔 自动私信开关", callback_data="menu_dm_toggle"),
         ],
         [
-            InlineKeyboardButton("⏰ 到期时间", callback_data="menu_expiry"),
+            InlineKeyboardButton("🎟 激活套餐", callback_data="menu_activate"),
             InlineKeyboardButton("📖 使用教程", callback_data="menu_tutorial"),
         ],
         [
+            InlineKeyboardButton("⏰ 到期时间", callback_data="menu_expiry"),
             InlineKeyboardButton("💬 技术支持", callback_data="menu_support"),
+        ],
+        [
             InlineKeyboardButton("📢 官方频道", callback_data="menu_channel"),
         ],
     ])
@@ -149,13 +153,32 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = result["id"]
     context.user_data["user_id"] = uid
     is_new = result.get("isNew", False)
-    status = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
-    welcome = "🎉 欢迎加入 TG Monitor Pro！\n\n" if is_new else ""
-    await msg.edit_text(
-        welcome + main_menu_text(status),
-        reply_markup=main_menu_keyboard(),
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    if is_new:
+        # 新用户显示专属欢迎引导页
+        await msg.edit_text(
+            "🎉 **欢迎使用 TG Monitor Pro！**\n\n"
+            "🔍 本工具可帮您实时监控 Telegram 群组关键词，\n"
+            "自动发现目标用户并发送私信。\n\n"
+            "🚀 **快速开始：**\n"
+            "1️⃣ 激活套餐（点击下方按鈕）\n"
+            "2️⃣ 添加监控群组\n"
+            "3️⃣ 设置关键词\n"
+            "4️⃣ 绑定推送群组\n"
+            "5️⃣ 开启自动私信\n\n"
+            "💡 如有卡密，点击「🎟 激活套餐」即可开通高级功能。",
+            reply_markup=InlineKeyboardMarkup([
+                [{"text": "🎟 激活套餐", "callback_data": "menu_activate"}],
+                [{"text": "🚀 进入主菜单", "callback_data": "menu_main"}],
+            ]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    else:
+        status = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
+        await msg.edit_text(
+            main_menu_text(status),
+            reply_markup=main_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN,
+        )
 
 # ─── /help ────────────────────────────────────────────────────────────────────
 
@@ -544,8 +567,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🔑 关键词：{s.get('keywordCount',0)}/{limits.get('maxKeywords',10)}\n"
             f"📬 每日私信：{s.get('dailyDmSent',0)}/{limits.get('maxDailyDm',5)}\n"
             f"📱 TG账号上限：{limits.get('maxTgAccounts',1)} 个\n\n"
-            f"激活套餐：`/activate 卡密`",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]),
+            f"如需升级，请点击「🎟 激活套餐」按鈕输入卡密。",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎟 激活套餐", callback_data="menu_activate")],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
+            ]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    # ── 激活套餐 ──
+    elif data == "menu_activate":
+        context.user_data[STATE_KEY] = STATE_ACTIVATE
+        await q.edit_message_text(
+            "🎟 **激活套餐**\n\n请直接发送卡密（格式：XXXX-XXXX-XXXX）：",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 取消", callback_data="menu_main")]]),
             parse_mode=ParseMode.MARKDOWN,
         )
 
@@ -563,26 +598,88 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN,
         )
 
-    # ── 命中记录操作 ──
-    elif data.startswith("hit_processed_"):
-        await q.edit_message_reply_markup(
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ 已处理", callback_data="noop")]])
-        )
-        await q.answer("✅ 已标记为已处理")
-
-    elif data.startswith("hit_block_"):
-        sender_id = data[10:]
-        await q.answer(f"🚫 已屏蔽用户 {sender_id}", show_alert=True)
-
-    # ── 到期时间 ──
+    # ── 命中记录操作（推送消息按鈕）──
+    elif data.startswith("history:"):
+        parts = data.split(":")
+        sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
+        records = await api_get("engine.botGetSenderHistory", {"userId": uid, "senderTgId": sender_tg_id_str, "limit": 10}) or []
+        if not records:
+            text = "📋 *发送者历史记录*\n\n该用户暂无命中记录"
+        else:
+            lines = []
+            for r in records:
+                kw = r.get("keyword", "")
+                grp = r.get("groupName", "")
+                t = str(r.get("createdAt", ""))[:16]
+                lines.append(f"• {t} [{kw}] {grp}")
+            cnt = len(records)
+            text = f"📋 *发送者历史命中（最近{cnt}条）*\n\n" + "\n".join(lines)
+        await q.answer()
+        try:
+            await q.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+        except Exception:
+            await context.bot.send_message(chat_id=q.message.chat_id, text=text, parse_mode=ParseMode.MARKDOWN)
+    elif data.startswith("block:"):
+        parts = data.split(":")
+        sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
+        try:
+            result = await api_post("engine.botBlockUser", {"userId": uid, "targetTgId": sender_tg_id_str})
+            if result and result.get("success"):
+                await q.answer(f"🚫 已屏蔽用户 {sender_tg_id_str}", show_alert=True)
+            else:
+                await q.answer("❌ 屏蔽失败，请重试", show_alert=True)
+        except Exception as e:
+            await q.answer(f"❌ 操作失败: {e}", show_alert=True)
+    elif data.startswith("done:"):
+        parts = data.split(":")
+        hit_id_str = parts[1] if len(parts) > 1 else "0"
+        try:
+            hit_id = int(hit_id_str)
+            result = await api_post("engine.botMarkProcessed", {"hitRecordId": hit_id, "userId": uid})
+            if result and result.get("success"):
+                await q.answer("✅ 已标记为已处理", show_alert=False)
+                try:
+                    original_markup = q.message.reply_markup
+                    if original_markup:
+                        new_rows = []
+                        for row in original_markup.inline_keyboard:
+                            new_row = [btn for btn in row if getattr(btn, "callback_data", None) != data]
+                            if new_row:
+                                new_rows.append(new_row)
+                        await q.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(new_rows))
+                except Exception:
+                    pass
+            else:
+                await q.answer("❌ 操作失败，请重试", show_alert=True)
+        except Exception as e:
+            await q.answer(f"❌ 操作失败: {e}", show_alert=True)
+    elif data.startswith("delete:"):
+        parts = data.split(":")
+        hit_id_str = parts[1] if len(parts) > 1 else "0"
+        try:
+            hit_id = int(hit_id_str)
+            result = await api_post("engine.botDeleteHit", {"hitRecordId": hit_id, "userId": uid})
+            if result and result.get("success"):
+                await q.answer("🗑️ 记录已删除", show_alert=False)
+                try:
+                    await q.message.delete()
+                except Exception:
+                    await q.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🗑️ 已删除", callback_data="noop")]]))
+            else:
+                await q.answer("❌ 删除失败，请重试", show_alert=True)
+        except Exception as e:
+            await q.answer(f"❌ 操作失败: {e}", show_alert=True)
     elif data == "menu_expiry":
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
         plan = PLAN_NAMES.get(s.get("planId", "free"), "免费版")
         exp = str(s.get("planExpiresAt", ""))[:10] or "永久有效"
         await q.edit_message_text(
             f"⏰ **套餐到期时间**\n\n当前套餐：**{plan}**\n到期时间：**{exp}**\n\n"
-            f"如需续费或升级，请联系客服或使用 `/activate 卡密` 激活。",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]),
+            f"如需续费或升级，请点击「🎟 激活套餐」输入卡密。",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎟 激活套餐", callback_data="menu_activate")],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
+            ]),
             parse_mode=ParseMode.MARKDOWN,
         )
     # ── 使用教程 ──
@@ -699,6 +796,27 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ 添加失败，请检查格式")
 
+    elif state == STATE_ACTIVATE:
+        context.user_data[STATE_KEY] = None
+        code = text.strip()
+        uid_val = context.user_data.get("user_id")
+        r = await api_post("engine.botActivateCode", {"userId": uid_val, "code": code})
+        if r and r.get("success"):
+            plan = PLAN_NAMES.get(r.get("planId", ""), "未知")
+            exp = str(r.get("expiresAt", ""))[:10]
+            await update.message.reply_text(
+                f"🎉 **激活成功！**\n\n套餐：**{plan}**\n有效期至：{exp or '永久'}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 主菜单", callback_data="menu_main")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            msg = r.get("message", "卡密无效") if r else "激活失败"
+            await update.message.reply_text(
+                f"❌ {msg}\n\n请检查卡密格式是否正确（XXXX-XXXX-XXXX）",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🎟 重新输入", callback_data="menu_activate"), InlineKeyboardButton("◀️ 主菜单", callback_data="menu_main")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+
     else:
         # 默认显示主菜单
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
@@ -709,36 +827,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ─── 命中通知推送（由监控引擎调用）──────────────────────────────────────────
-
-async def send_hit_notification(app, bot_chat_id: int, sender_username: str,
-                                sender_tg_id: str, matched_keyword: str,
-                                group_name: str, message_text: str, dm_status: str = "pending"):
-    dm_icon = {
-        "sent": "✅ 私信已发送", "queued": "⏳ 私信排队中",
-        "failed": "❌ 私信发送失败", "skipped": "⏭️ 已跳过",
-        "pending": "⏳ 等待处理",
-    }.get(dm_status, "❓")
-    sender_link = f"@{sender_username}" if sender_username else f"ID: {sender_tg_id}"
-    text = (
-        "🎯 **关键词命中**\n\n"
-        f"📍 群组：**{group_name}**\n"
-        f"🔑 关键词：`{matched_keyword}`\n"
-        f"👤 发送者：{sender_link}\n"
-        f"💬 消息：\n`{message_text[:200]}{'...' if len(message_text) > 200 else ''}`\n\n"
-        f"📬 私信：{dm_icon}"
-    )
-    url = f"https://t.me/{sender_username}" if sender_username else f"tg://user?id={sender_tg_id}"
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💬 私聊TA", url=url),
-         InlineKeyboardButton("✅ 已处理", callback_data=f"hit_processed_{sender_tg_id}")],
-        [InlineKeyboardButton("🚫 屏蔽", callback_data=f"hit_block_{sender_tg_id}")],
-    ])
-    try:
-        await app.bot.send_message(chat_id=bot_chat_id, text=text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
-    except Exception as e:
-        logger.error(f"send_hit_notification error: {e}")
-
-# ─── 主入口 ───────────────────────────────────────────────────────────────────
 
 async def post_init(app):
     cmds = [

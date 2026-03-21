@@ -9,6 +9,9 @@ import {
   getTgAccountsByUserId,
   updateTgAccount,
 } from "../db";
+import { getDb } from "../db";
+import { systemSettings } from "../../drizzle/schema";
+import { sql } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 
 // ─── Pyrogram 登录服务地址（本地 Python HTTP 服务）─────────────────────────
@@ -85,7 +88,18 @@ export const tgAccountsRouter = router({
     }))
     .mutation(async ({ input }) => {
       const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
-      const data = await callLoginService("/send_code", { phone });
+      // 从数据库读取 TG API 凭证
+      const db = await getDb();
+      const rows = await db.select().from(systemSettings)
+        .where(sql`${systemSettings.key} IN ('tg_api_id', 'tg_api_hash')`);
+      const map: Record<string, string> = {};
+      for (const r of rows) map[r.key] = r.value ?? "";
+      const apiId = parseInt(map["tg_api_id"] || "0");
+      const apiHash = map["tg_api_hash"] || "";
+      if (!apiId || !apiHash) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "请先在系统设置中配置 TG API ID 和 API Hash" });
+      }
+      const data = await callLoginService("/send_code", { phone, api_id: apiId, api_hash: apiHash });
       return {
         success: true,
         message: data.message ?? `验证码已发送至 ${phone}，请在 Telegram 中查收`,

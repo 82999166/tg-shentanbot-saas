@@ -20,6 +20,7 @@ import {
   pushSettings,
   systemConfig,
   publicMonitorGroups,
+  blacklist,
 } from "../../drizzle/schema";
 import { eq, and, inArray, sql, desc, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -618,6 +619,57 @@ export const engineRouter = router({
         .limit(input.limit);
     }),
 
+  // ── Bot API：标记命中记录为已处理 ─────────────────────────
+  botMarkProcessed: engineProcedure
+    .input(z.object({ hitRecordId: z.number(), userId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { success: false };
+      await db.update(hitRecords)
+        .set({ isProcessed: true })
+        .where(and(eq(hitRecords.id, input.hitRecordId), eq(hitRecords.userId, input.userId)));
+      return { success: true };
+    }),
+  // ── Bot API：屏蔽发送者（加入黑名单）────────────────────────
+  botBlockUser: engineProcedure
+    .input(z.object({ userId: z.number(), targetTgId: z.string(), targetUsername: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { success: false };
+      const existing = await db.select().from(blacklist)
+        .where(and(eq(blacklist.userId, input.userId), eq(blacklist.targetTgId, input.targetTgId)))
+        .limit(1);
+      if (existing.length === 0) {
+        await db.insert(blacklist).values({
+          userId: input.userId,
+          targetTgId: input.targetTgId,
+          targetUsername: input.targetUsername || null,
+          reason: "Bot 屏蔽",
+        });
+      }
+      return { success: true };
+    }),
+  // ── Bot API：删除命中记录 ─────────────────────────────────
+  botDeleteHit: engineProcedure
+    .input(z.object({ hitRecordId: z.number(), userId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { success: false };
+      await db.delete(hitRecords)
+        .where(and(eq(hitRecords.id, input.hitRecordId), eq(hitRecords.userId, input.userId)));
+      return { success: true };
+    }),
+  // ── Bot API：获取发送者历史命中记录 ───────────────────────
+  botGetSenderHistory: engineProcedure
+    .input(z.object({ userId: z.number(), senderTgId: z.string(), limit: z.number().default(10) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(hitRecords)
+        .where(and(eq(hitRecords.userId, input.userId), eq(hitRecords.senderTgId, input.senderTgId)))
+        .orderBy(desc(hitRecords.createdAt))
+        .limit(input.limit);
+    }),
   // ── Bot API：激活卡密 ─────────────────────────────────────
   botActivateCode: engineProcedure
     .input(z.object({ userId: z.number(), code: z.string() }))
@@ -723,6 +775,19 @@ function engineRouter_config() {
       .select()
       .from(publicMonitorGroups)
       .where(eq(publicMonitorGroups.isActive, true));
+    // 读取全局刷词过滤配置
+    const sysConfigRows = await db.select().from(systemConfig);
+    const sysConfigMap: Record<string, string> = {};
+    for (const row of sysConfigRows) {
+      sysConfigMap[row.configKey] = row.configValue || "";
+    }
+    const globalAntiSpam = {
+      dailyLimit: parseInt(sysConfigMap["anti_spam_daily_limit"] || "10", 10),
+      rateWindow: parseInt(sysConfigMap["anti_spam_rate_window"] || "60", 10),
+      rateLimit: parseInt(sysConfigMap["anti_spam_rate_limit"] || "3", 10),
+      minMsgLen: parseInt(sysConfigMap["anti_spam_min_msg_len"] || "0", 10),
+      enabled: sysConfigMap["anti_spam_enabled"] !== "false",
+    };
 
     // 新模式：所有有活跃关键词的用户都加入 userConfigs（不依赖 tgAccounts）
     const allKeywordUsers = await db
@@ -847,6 +912,8 @@ function engineRouter_config() {
         groupTitle: pg.groupTitle,
         isActive: pg.isActive,
       })),
+      // 全局刷词过滤配置
+      globalAntiSpam,
     };
   });
 }

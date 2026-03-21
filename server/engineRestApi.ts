@@ -135,7 +135,9 @@ export function registerEngineRestRoutes(app: Router) {
         // 获取用户的 tgUserId（用于 Bot 推送命中通知）
         const userRow = await db.select({ tgUserId: users.tgUserId }).from(users)
           .where(eq(users.id, userId)).limit(1);
-        const botChatId = userRow[0]?.tgUserId || null;
+        // 优先使用绑定的推送群组 ID，没有群组时才用个人 TG ID
+        const collaborationGroupId = pushConfig.collaborationGroupId || null;
+        const botChatId = collaborationGroupId || userRow[0]?.tgUserId || null;
 
         userConfigs[String(userId)] = {
           botChatId,

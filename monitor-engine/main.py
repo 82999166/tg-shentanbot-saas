@@ -67,6 +67,11 @@ monitor_config: dict = {}                 # 从 API 拉取的完整配置
 public_groups: list = []                  # 管理员设置的公共监控群组（所有用户共享）
 public_group_real_ids: dict = {}          # groupId(URL/ID) -> 真实数字 chat_id（加入后记录）
 sent_dm_cache: dict[str, float] = {}      # "account_id:target_id" -> timestamp（去重）
+collab_chat_id_cache: dict[str, int] = {}
+
+# Anti-spam caches
+daily_hit_cache: dict[str, dict[str, int]] = {}
+rate_hit_cache: dict[str, list] = {}  # 邀请链接/用户名 -> 真实数字 chat_id 缓存
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")   # Bot Token，用于向用户推送命中通知
 
 
@@ -100,6 +105,44 @@ class ApiClient:
 api = ApiClient(API_BASE, ENGINE_SECRET)
 
 
+# ── 解析协作群/推送目标的真实 chat_id ──────────────────────
+async def resolve_collab_chat_id(client, chat_id_str: str) -> int | None:
+    """
+    将邀请链接（https://t.me/+xxx）或用户名（@xxx）解析为真实数字 chat_id。
+    结果缓存到 collab_chat_id_cache，避免重复解析。
+    """
+    global collab_chat_id_cache
+    if not chat_id_str:
+        return None
+    # 已经是数字 ID
+    try:
+        return int(chat_id_str)
+    except (ValueError, TypeError):
+        pass
+    # 检查缓存
+    if chat_id_str in collab_chat_id_cache:
+        return collab_chat_id_cache[chat_id_str]
+    # 解析邀请链接或用户名
+    try:
+        chat = await client.get_chat(chat_id_str)
+        real_id = chat.id
+        collab_chat_id_cache[chat_id_str] = real_id
+        logger.info(f"[Resolve] {chat_id_str} -> {real_id} ({chat.title})")
+        return real_id
+    except Exception as e:
+        logger.warning(f"[Resolve] 无法解析 {chat_id_str}: {e}")
+        # 如果是邀请链接，尝试加入群组后获取 ID
+        if 't.me/+' in str(chat_id_str) or 't.me/joinchat' in str(chat_id_str):
+            try:
+                chat = await client.join_chat(chat_id_str)
+                real_id = chat.id
+                collab_chat_id_cache[chat_id_str] = real_id
+                logger.info(f"[Resolve] 加入群组后获取 ID: {chat_id_str} -> {real_id}")
+                return real_id
+            except Exception as e2:
+                logger.warning(f"[Resolve] 加入群组失败 {chat_id_str}: {e2}")
+        return None
+
 # ── Bot 通知推送 ───────────────────────────────────────────
 async def send_bot_notification(
     bot_chat_id: str,
@@ -107,31 +150,72 @@ async def send_bot_notification(
     sender_tg_id: str,
     matched_keyword: str,
     group_name: str,
+    group_username: Optional[str],
     message_text: str,
+    sender_name: str = "",
+    hit_record_id: Optional[int] = None,
     dm_status: str = "disabled",
 ):
     """通过 Telegram Bot API 向用户推送关键词命中通知"""
     if not BOT_TOKEN:
         return
     try:
-        sender_display = f"@{sender_username}" if sender_username else f"ID:{sender_tg_id}"
-        dm_icon = "📨" if dm_status == "queued" else "⏸️"
-        dm_text = "自动私信已入队" if dm_status == "queued" else "自动私信未开启"
+        # 用户显示名称
+        if sender_name:
+            user_display = sender_name
+        elif sender_username:
+            user_display = f"@{sender_username}"
+        else:
+            user_display = f"ID:{sender_tg_id}"
+
+        # 来源：群组名称（如有 username 则做超链接）
+        if group_username:
+            source_display = f'<a href="https://t.me/{group_username}">{group_name}</a>'
+        else:
+            source_display = group_name
+
+        # 内容：将命中的关键词高亮为 #关键词 格式
+        highlighted_text = message_text[:200]
+        if matched_keyword and matched_keyword in highlighted_text:
+            highlighted_text = highlighted_text.replace(
+                matched_keyword,
+                f"<b>#{matched_keyword}</b>"
+            )
+        if len(message_text) > 200:
+            highlighted_text += "..."
+
+        # 时间
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         text = (
-            f"🔔 **关键词命中**\n"
-            f"————————————————————\n"
-            f"🔑 关键词: `{matched_keyword}`\n"
-            f"👤 发送者: {sender_display}\n"
-            f"💬 群组: {group_name}\n"
-            f"📝 内容: {message_text[:150]}{'...' if len(message_text) > 150 else ''}\n"
-            f"⏰ 时间: {datetime.now().strftime('%H:%M:%S')}\n"
-            f"{dm_icon} {dm_text}"
+            f"用户：{user_display}\n"
+            f"来源：{source_display}\n"
+            f"内容：{highlighted_text}\n"
+            f"时间：{now_str}"
         )
+
+        # 操作按钮（Inline Keyboard）- 去掉图标，缩短宽度
+        # callback_data 格式: action:hit_record_id:sender_tg_id
+        rid = str(hit_record_id) if hit_record_id else "0"
+        inline_keyboard = [
+            [
+                {"text": "历史", "callback_data": f"history:{rid}:{sender_tg_id}"},
+                {"text": "屏蔽", "callback_data": f"block:{rid}:{sender_tg_id}"},
+                {"text": "处理", "callback_data": f"done:{rid}:{sender_tg_id}"},
+            ],
+            [
+                {"text": "删除", "callback_data": f"delete:{rid}:{sender_tg_id}"},
+                {"text": "私聊", "url": f"https://t.me/{sender_username}" if sender_username else f"https://t.me/+{sender_tg_id}"},
+            ]
+        ]
+
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         payload = {
             "chat_id": bot_chat_id,
             "text": text,
-            "parse_mode": "Markdown",
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+            "reply_markup": {"inline_keyboard": inline_keyboard},
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as r:
@@ -318,6 +402,39 @@ def is_likely_spam(sender, text: str) -> bool:
         return True
     return False
 
+def check_anti_spam(sender_tg_id: str, text: str, anti_spam_cfg: dict):
+    import time as _time
+    from datetime import date as _date
+    if not anti_spam_cfg.get('enabled', True):
+        return False, ''
+    min_len = int(anti_spam_cfg.get('minMsgLen', 0))
+    if min_len > 0 and len(text.strip()) < min_len:
+        return True, f'msg too short ({len(text.strip())} < {min_len})'
+    daily_limit = int(anti_spam_cfg.get('dailyLimit', 10))
+    rate_window = int(anti_spam_cfg.get('rateWindow', 60))
+    rate_limit_n = int(anti_spam_cfg.get('rateLimit', 3))
+    today = _date.today().isoformat()
+    now = _time.time()
+    if sender_tg_id not in daily_hit_cache:
+        daily_hit_cache[sender_tg_id] = {}
+    day_counts = daily_hit_cache[sender_tg_id]
+    for d in list(day_counts.keys()):
+        if d != today:
+            del day_counts[d]
+    today_count = day_counts.get(today, 0)
+    if today_count >= daily_limit:
+        return True, f'daily limit {today_count}/{daily_limit}'
+    if sender_tg_id not in rate_hit_cache:
+        rate_hit_cache[sender_tg_id] = []
+    timestamps = rate_hit_cache[sender_tg_id]
+    timestamps[:] = [t for t in timestamps if now - t < rate_window]
+    if len(timestamps) >= rate_limit_n:
+        return True, f'rate limit {len(timestamps)}/{rate_limit_n} in {rate_window}s'
+    day_counts[today] = today_count + 1
+    timestamps.append(now)
+    return False, ''
+
+
 
 # ── 消息处理器 ───────────────────────────────────────────────
 def create_message_handler(account_id: int, user_id: int):
@@ -325,7 +442,7 @@ def create_message_handler(account_id: int, user_id: int):
 
     async def handle_message(client: Client, message: Message):
         try:
-            logger.info(f"[DEBUG] 收到消息: chat_type={message.chat.type.name if message.chat else None} chat_id={message.chat.id if message.chat else None} from_user={message.from_user.id if message.from_user else None} is_bot={message.from_user.is_bot if message.from_user else None} text={repr((message.text or message.caption or "")[:50])}")
+            logger.debug(f"[DEBUG] 收到消息: chat_type={message.chat.type.name if message.chat else None} chat_id={message.chat.id if message.chat else None} from_user={message.from_user.id if message.from_user else None} is_bot={message.from_user.is_bot if message.from_user else None} text={repr((message.text or message.caption or "")[:50])}")
             # 只处理群组/频道消息
             if not message.chat or message.chat.type.name not in ("GROUP", "SUPERGROUP"):
                 return
@@ -360,13 +477,19 @@ def create_message_handler(account_id: int, user_id: int):
             if push_settings.get("filterAds", False) and is_likely_spam(sender, text):
                 logger.debug(f"[SPAM] 过滤疑似广告用户 {sender_tg_id}: {text[:50]}")
                 return
+            # Anti-spam rate filter
+            anti_spam_cfg = config.get("globalAntiSpam", {})
+            is_spam_hit, spam_reason = check_anti_spam(sender_tg_id, text, anti_spam_cfg)
+            if is_spam_hit:
+                logger.info(f"[ANTI_SPAM] 过滤刷词 {sender_tg_id}: {spam_reason}")
+                return
 
-            logger.info(f"[DEBUG2] chat_id={chat_id} user_id={user_id} groups_count={len(groups)} group_ids={[g.get("groupId") for g in groups]}")
+            logger.debug(f"[DEBUG2] chat_id={chat_id} user_id={user_id} groups_count={len(groups)} group_ids={[g.get("groupId") for g in groups]}")
             for group in groups:
-                logger.info(f"[DEBUG3] 比较 group.groupId={group.get("groupId")} vs chat_id={chat_id} match={str(group.get("groupId")) == chat_id}")
+                logger.debug(f"[DEBUG3] 比较 group.groupId={group.get("groupId")} vs chat_id={chat_id} match={str(group.get("groupId")) == chat_id}")
                 if str(group.get("groupId")) != chat_id:
                     continue
-                logger.info(f"[DEBUG4] 群组匹配！isActive={group.get("isActive")} keywords={[k.get("pattern") for k in group.get("keywords", [])]}")
+                logger.debug(f"[DEBUG4] 群组匹配！isActive={group.get("isActive")} keywords={[k.get("pattern") for k in group.get("keywords", [])]}")
                 if not group.get("isActive"):
                     continue
 
@@ -435,6 +558,11 @@ def create_message_handler(account_id: int, user_id: int):
                 # ── Bot 推送命中通知给用户 ──────────────────────
                 bot_chat_id = config.get("botChatId")
                 if bot_chat_id and BOT_TOKEN:
+                    # 如果是邀请链接，先解析为真实 chat_id
+                    if str(bot_chat_id).startswith("http") or str(bot_chat_id).startswith("t.me"):
+                        resolved_id = await resolve_collab_chat_id(client, bot_chat_id)
+                        if resolved_id:
+                            bot_chat_id = str(resolved_id)
                     dm_will_send = bool(config.get("dmEnabled") and config.get("dmTemplates"))
                     await send_bot_notification(
                         bot_chat_id=bot_chat_id,
@@ -442,31 +570,14 @@ def create_message_handler(account_id: int, user_id: int):
                         sender_tg_id=sender_tg_id,
                         matched_keyword=matched_keywords[0]["pattern"],
                         group_name=message.chat.title or chat_id,
+                        group_username=getattr(message.chat, 'username', None),
                         message_text=text,
+                        sender_name=sender_name,
+                        hit_record_id=hit_record_id,
                         dm_status="queued" if dm_will_send else "disabled",
                     )
 
-                # ── 协作群推送通知 ──────────────────────────────
-                collab_chat_id = push_settings.get("collabChatId")
-                if collab_chat_id:
-                    try:
-                        notify_text = (
-                            f"🔔 **关键词命中**\n"
-                            f"👤 用户: {('@' + sender.username) if sender.username else sender_tg_id}\n"
-                            f"💬 群组: {message.chat.title}\n"
-                            f"🔑 关键词: {', '.join(k['pattern'] for k in matched_keywords)}\n"
-                            f"📝 内容: {text[:100]}{'...' if len(text) > 100 else ''}\n"
-                            f"⏰ 时间: {datetime.now().strftime('%H:%M:%S')}"
-                        )
-                        # 支持群组 ID（数字）和邀请链接两种格式
-                        try:
-                            target = int(collab_chat_id)
-                        except (ValueError, TypeError):
-                            target = collab_chat_id  # 邀请链接或用户名格式
-                        await client.send_message(target, notify_text)
-                        logger.info(f"[COLLAB] 已推送到协作群 {collab_chat_id}")
-                    except Exception as e:
-                        logger.warning(f"[COLLAB] 推送协作群失败: {e}")
+
 
                 # ── 关键词命中统计 ──────────────────────────────
                 for kw in matched_keywords:
@@ -574,37 +685,27 @@ def create_message_handler(account_id: int, user_id: int):
 
                     # Bot 推送命中通知给用户
                     u_bot_chat_id = uconfig.get("botChatId")
+                    u_hit_record_id = u_hit_result.get("id") if u_hit_result else None
                     if u_bot_chat_id and BOT_TOKEN:
+                        # 如果是邀请链接，先解析为真实 chat_id
+                        if str(u_bot_chat_id).startswith("http") or str(u_bot_chat_id).startswith("t.me"):
+                            resolved_id = await resolve_collab_chat_id(client, u_bot_chat_id)
+                            if resolved_id:
+                                u_bot_chat_id = str(resolved_id)
                         await send_bot_notification(
                             bot_chat_id=u_bot_chat_id,
                             sender_username=sender.username,
                             sender_tg_id=sender_tg_id,
                             matched_keyword=u_matched_keywords[0]["pattern"],
                             group_name=message.chat.title or chat_id,
+                            group_username=getattr(message.chat, 'username', None),
                             message_text=text,
+                            sender_name=sender_name,
+                            hit_record_id=u_hit_record_id,
                             dm_status="disabled",
                         )
 
-                    # 协作群推送
-                    u_collab_chat_id = u_push_settings.get("collabChatId")
-                    if u_collab_chat_id:
-                        try:
-                            notify_text = (
-                                f"🔔 **公共群组关键词命中**\n"
-                                f"👤 用户: {('@' + sender.username) if sender.username else sender_tg_id}\n"
-                                f"💬 群组: {message.chat.title}\n"
-                                f"🔑 关键词: {', '.join(k['pattern'] for k in u_matched_keywords)}\n"
-                                f"📝 内容: {text[:100]}{'...' if len(text) > 100 else ''}\n"
-                                f"⏰ 时间: {datetime.now().strftime('%H:%M:%S')}"
-                            )
-                            # 支持群组 ID（数字）和邀请链接两种格式
-                            try:
-                                u_target = int(u_collab_chat_id)
-                            except (ValueError, TypeError):
-                                u_target = u_collab_chat_id  # 邀请链接或用户名格式
-                            await client.send_message(u_target, notify_text)
-                        except Exception as e:
-                            logger.warning(f"[PUBLIC_COLLAB] 推送协作群失败: {e}")
+
 
         except Exception as e:
             logger.error(f"[Handler] 消息处理异常: {e}")

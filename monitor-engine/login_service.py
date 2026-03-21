@@ -20,8 +20,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("login-service")
 
 # TG API 凭证（与 main.py 保持一致）
-TG_API_ID = int(os.environ.get("TG_API_ID", "20621684"))
-TG_API_HASH = os.environ.get("TG_API_HASH", "a9e5c7b0d3f8e1a2b4c6d8e0f2a4b6c8")
+TG_API_ID = int(os.environ.get("TG_API_ID", "0"))  # 必须通过请求体或环境变量传入
+TG_API_HASH = os.environ.get("TG_API_HASH", "")  # 必须通过请求体或环境变量传入
 
 # 登录会话缓存 key: phone
 login_sessions: dict = {}
@@ -32,6 +32,11 @@ async def handle_send_code(request):
     try:
         body = await request.json()
         phone = body.get("phone", "").strip()
+        # 优先使用请求体中的 api_id/api_hash，否则回退到环境变量
+        api_id = int(body.get("api_id", 0) or TG_API_ID)
+        api_hash = str(body.get("api_hash", "") or TG_API_HASH)
+        if not api_id or not api_hash:
+            return web.json_response({"success": False, "error": "请先在系统设置中配置 TG API ID 和 API Hash"}, status=400)
         if not phone:
             return web.json_response({"success": False, "error": "手机号不能为空"}, status=400)
 
@@ -47,8 +52,8 @@ async def handle_send_code(request):
 
         client = Client(
             name=f"login_{phone.replace('+', '')}",
-            api_id=TG_API_ID,
-            api_hash=TG_API_HASH,
+            api_id=api_id,
+            api_hash=api_hash,
             in_memory=True,
         )
         await client.connect()
@@ -57,6 +62,8 @@ async def handle_send_code(request):
         login_sessions[phone] = {
             "client": client,
             "phone_code_hash": sent.phone_code_hash,
+            "api_id": api_id,
+            "api_hash": api_hash,
         }
         logger.info(f"[SendCode] {phone} 验证码已发送")
         return web.json_response({
