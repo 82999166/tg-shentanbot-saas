@@ -43,6 +43,7 @@ import {
   ChevronDown,
   ChevronRight,
   Shield,
+  AlertTriangle,
 } from "lucide-react";
 // ── 公共监控群组 Tab ──────────────────────────────────────────────
 // 公共群组关键词子面板
@@ -907,6 +908,16 @@ function BotConfigTab() {
   const [botToken, setBotToken] = useState("");
   const [channelId, setChannelId] = useState("");
   const [showToken, setShowToken] = useState(false);
+  // 健康告警配置
+  const { data: alertCfg, refetch: refetchAlert } = trpc.sysConfig.getAll.useQuery();
+  const [alertThreshold, setAlertThreshold] = useState("");
+  const [alertCooldown, setAlertCooldown] = useState("");
+  const saveAlertMutation = trpc.sysConfig.updateBatch.useMutation({
+    onSuccess: () => { toast.success("健康告警配置已保存"); refetchAlert(); },
+    onError: (e) => toast.error(e.message),
+  });
+  // 初始化告警配置表单值
+  const alertCfgMap = alertCfg ? Object.fromEntries(alertCfg.map((r: any) => [r.configKey, r.configValue ?? ""])) : {};
 
   const saveMutation = trpc.settings.saveBotConfig.useMutation({
     onSuccess: () => {
@@ -1006,6 +1017,60 @@ function BotConfigTab() {
         </CardContent>
       </Card>
 
+      {/* 健康告警阈值配置 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400" />
+            账号健康告警配置
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
+            当账号健康度下降到阈值以下时，Bot 会自动向账号所属用户发送告警通知。冷却时间内同一账号不重复告警。
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-gray-400 text-xs mb-1.5 block">告警阈值（健康度分）</Label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                placeholder={alertCfgMap["health_alert_threshold"] || "40"}
+                value={alertThreshold}
+                onChange={(e) => setAlertThreshold(e.target.value)}
+                className="bg-gray-900 border-gray-600 text-white"
+              />
+              <p className="text-gray-500 text-xs mt-1">当前设置：{alertCfgMap["health_alert_threshold"] || "40"} 分</p>
+            </div>
+            <div>
+              <Label className="text-gray-400 text-xs mb-1.5 block">告警冷却时间（小时）</Label>
+              <Input
+                type="number"
+                min={1}
+                max={24}
+                placeholder={alertCfgMap["health_alert_cooldown_hours"] || "1"}
+                value={alertCooldown}
+                onChange={(e) => setAlertCooldown(e.target.value)}
+                className="bg-gray-900 border-gray-600 text-white"
+              />
+              <p className="text-gray-500 text-xs mt-1">当前设置：{alertCfgMap["health_alert_cooldown_hours"] || "1"} 小时</p>
+            </div>
+          </div>
+          <Button
+            className="w-full bg-amber-600 hover:bg-amber-700"
+            onClick={() => saveAlertMutation.mutate({ configs: [
+              { key: "health_alert_threshold", value: alertThreshold || alertCfgMap["health_alert_threshold"] || "40" },
+              { key: "health_alert_cooldown_hours", value: alertCooldown || alertCfgMap["health_alert_cooldown_hours"] || "1" },
+            ] })}
+            disabled={saveAlertMutation.isPending || (!alertThreshold && !alertCooldown)}
+          >
+            <Save className="w-4 h-4 mr-2" />
+            {saveAlertMutation.isPending ? "保存中..." : "保存告警配置"}
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* 说明 */}
       <Card className="bg-gray-800/50 border-gray-700">
         <CardHeader className="pb-3">
@@ -1015,6 +1080,7 @@ function BotConfigTab() {
           <p>1. 创建 Bot 后，将 Bot 添加到目标频道/群组并设为管理员（需要发送消息权限）。</p>
           <p>2. 频道 ID 可通过将频道转发消息给 @userinfobot 获取，格式为负数（如 -1001234567890）。</p>
           <p>3. 配置后，每次关键词命中时 Bot 会自动推送包含发送者信息和消息内容的通知。</p>
+          <p>4. 健康告警：当账号健康度低于阈值时，Bot 会向账号所属用户发送告警，并在冷却时间内不重复告警。</p>
         </CardContent>
       </Card>
     </div>

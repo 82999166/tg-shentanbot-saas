@@ -100,6 +100,8 @@ export const tgAccounts = mysqlTable("tg_accounts", {
   // 备注
   notes: text("notes"),
   isActive: boolean("isActive").default(true).notNull(),
+  // 健康告警冷却（防止刷屏）
+  lastAlertAt: timestamp("lastAlertAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (t) => [index("idx_tg_accounts_userId").on(t.userId)]);

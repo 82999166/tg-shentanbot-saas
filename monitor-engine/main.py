@@ -288,10 +288,13 @@ def render_template(template: str, variables: dict) -> str:
 
 
 # ── 账号健康度更新 ───────────────────────────────────────────
-async def update_account_health(account_id: int, delta: int, status: str = None):
+async def update_account_health(account_id: int, delta: int, status: str = None, reason: str = None):
+    """更新账号健康度。当 delta < 0 且健康度低于阈值时，服务器会自动触发 Bot 告警。"""
     data = {"accountId": account_id, "delta": delta}
     if status:
         data["status"] = status
+    if reason:
+        data["reason"] = reason
     await api.post("/engine/account/health", data)
 
 
@@ -351,13 +354,13 @@ async def process_dm_queue():
 
                 except FloodWait as e:
                     logger.warning(f"[DM] FloodWait {e.value}s for account {account_id}")
-                    await update_account_health(account_id, -5)
+                    await update_account_health(account_id, -5, reason="flood")
                     await api.post("/engine/dm-queue/retry", {"id": queue_id, "retryAfter": e.value})
                     await asyncio.sleep(e.value)
 
                 except PeerFlood:
                     logger.error(f"[DM] PeerFlood for account {account_id} - 暂停该账号发信")
-                    await update_account_health(account_id, -20, "limited")
+                    await update_account_health(account_id, -20, "limited", reason="limited")
                     await api.post("/engine/dm-queue/fail", {"id": queue_id, "error": "peer_flood"})
 
                 except UserPrivacyRestricted:
@@ -374,7 +377,7 @@ async def process_dm_queue():
 
                 except Exception as e:
                     logger.error(f"[DM] 发送失败: {e}")
-                    await update_account_health(account_id, -2)
+                    await update_account_health(account_id, -2, reason="error")
                     await api.post("/engine/dm-queue/fail", {"id": queue_id, "error": str(e)[:200]})
 
         except Exception as e:
@@ -442,7 +445,8 @@ def create_message_handler(account_id: int, user_id: int):
 
     async def handle_message(client: Client, message: Message):
         try:
-            logger.debug(f"[DEBUG] 收到消息: chat_type={message.chat.type.name if message.chat else None} chat_id={message.chat.id if message.chat else None} from_user={message.from_user.id if message.from_user else None} is_bot={message.from_user.is_bot if message.from_user else None} text={repr((message.text or message.caption or "")[:50])}")
+            _dbg_text = (message.text or message.caption or "")[:50]
+            logger.debug(f"[DEBUG] 收到消息: chat_type={message.chat.type.name if message.chat else None} chat_id={message.chat.id if message.chat else None} from_user={message.from_user.id if message.from_user else None} is_bot={message.from_user.is_bot if message.from_user else None} text={repr(_dbg_text)}")
             # 只处理群组/频道消息
             if not message.chat or message.chat.type.name not in ("GROUP", "SUPERGROUP"):
                 return
@@ -484,12 +488,15 @@ def create_message_handler(account_id: int, user_id: int):
                 logger.info(f"[ANTI_SPAM] 过滤刷词 {sender_tg_id}: {spam_reason}")
                 return
 
-            logger.debug(f"[DEBUG2] chat_id={chat_id} user_id={user_id} groups_count={len(groups)} group_ids={[g.get("groupId") for g in groups]}")
+            _dbg_group_ids = [g.get('groupId') for g in groups]
+            logger.debug(f"[DEBUG2] chat_id={chat_id} user_id={user_id} groups_count={len(groups)} group_ids={_dbg_group_ids}")
             for group in groups:
-                logger.debug(f"[DEBUG3] 比较 group.groupId={group.get("groupId")} vs chat_id={chat_id} match={str(group.get("groupId")) == chat_id}")
+                _dbg_gid = group.get('groupId')
+                logger.debug(f"[DEBUG3] 比较 group.groupId={_dbg_gid} vs chat_id={chat_id} match={str(_dbg_gid) == chat_id}")
                 if str(group.get("groupId")) != chat_id:
                     continue
-                logger.debug(f"[DEBUG4] 群组匹配！isActive={group.get("isActive")} keywords={[k.get("pattern") for k in group.get("keywords", [])]}")
+                _dbg_kws = [k.get('pattern') for k in group.get('keywords', [])]
+                logger.debug(f"[DEBUG4] 群组匹配！isActive={group.get('isActive')} keywords={_dbg_kws}")
                 if not group.get("isActive"):
                     continue
 
@@ -762,12 +769,12 @@ async def start_account(account: dict) -> Optional[Client]:
 
     except SessionPasswordNeeded:
         logger.error(f"[Account {account_id}] 需要二步验证密码")
-        await update_account_health(account_id, -10, "needs_2fa")
+        await update_account_health(account_id, -10, "needs_2fa", reason="needs_2fa")
         return None
 
     except Exception as e:
         logger.error(f"[Account {account_id}] 启动失败: {e}")
-        await update_account_health(account_id, -15, "error")
+        await update_account_health(account_id, -15, "error", reason="error")
         return None
 
 

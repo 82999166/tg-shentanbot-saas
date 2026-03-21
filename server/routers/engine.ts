@@ -230,31 +230,106 @@ export const engineRouter = router({
       return { success: true };
     }),
 
-  // ── 更新账号健康度 ───────────────────────────────────────
+  // ── 更新账号健康度（并在健康度低于阈值时自动发送 Bot 告警）───────────────────────────────────────────
   accountHealth: engineProcedure
     .input(
       z.object({
         accountId: z.number(),
         delta: z.number(),
         status: z.string().optional(),
+        reason: z.string().optional(), // 健康度下降原因（用于告警消息）
       })
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
+      // 先读取当前账号信息
+      const accountRow = await db.select({
+        id: tgAccounts.id,
+        healthScore: tgAccounts.healthScore,
+        phone: tgAccounts.phone,
+        tgUsername: tgAccounts.tgUsername,
+        userId: tgAccounts.userId,
+        lastAlertAt: tgAccounts.lastAlertAt,
+      }).from(tgAccounts).where(eq(tgAccounts.id, input.accountId)).limit(1);
+      const account = accountRow[0];
+
       const updates: Record<string, any> = {
         healthScore: sql`GREATEST(0, LEAST(100, ${tgAccounts.healthScore} + ${input.delta}))`,
         lastActiveAt: new Date(),
       };
-      if (input.status) {
-        updates.status = input.status;
-      }
-
+      if (input.status) updates.sessionStatus = input.status;
       await db.update(tgAccounts).set(updates).where(eq(tgAccounts.id, input.accountId));
+
+      // 健康告警逻辑：当 delta < 0 且新健康度低于阈值时发送告警
+      if (account && input.delta < 0) {
+        const newScore = Math.max(0, Math.min(100, (account.healthScore ?? 80) + input.delta));
+        // 读取告警阈值配置
+        const cfgRows = await db.select().from(systemConfig)
+          .where(sql`${systemConfig.configKey} IN ('health_alert_threshold', 'health_alert_cooldown_hours', 'bot_token')`);
+        const cfgMap: Record<string, string> = {};
+        for (const r of cfgRows) cfgMap[r.configKey] = r.configValue ?? "";
+        const alertThreshold = parseInt(cfgMap["health_alert_threshold"] ?? "40");
+        const cooldownHours = parseInt(cfgMap["health_alert_cooldown_hours"] ?? "1");
+        if (newScore <= alertThreshold) {
+          // 检查冷却时间（防止刷屏）
+          const lastAlert = account.lastAlertAt ? new Date(account.lastAlertAt).getTime() : 0;
+          const cooldownMs = cooldownHours * 3600 * 1000;
+          if (Date.now() - lastAlert >= cooldownMs) {
+            // 更新最近告警时间
+            await db.update(tgAccounts).set({ lastAlertAt: new Date() }).where(eq(tgAccounts.id, input.accountId));
+            // 获取用户 tgUserId 用于 Bot 推送
+            if (account.userId) {
+              const userRow = await db.select({ tgUserId: users.tgUserId })
+                .from(users).where(eq(users.id, account.userId)).limit(1);
+              const botChatId = userRow[0]?.tgUserId;
+              const botToken = cfgMap["bot_token"];
+              if (botChatId && botToken) {
+                const phoneDisplay = account.phone || (account.tgUsername ? `@${account.tgUsername}` : `ID:${input.accountId}`);
+                const reasonMap: Record<string, string> = {
+                  needs_2fa: "需要二步验证",
+                  error: "账号连接异常",
+                  limited: "发信受限",
+                  flood: "触发限流保护",
+                  banned: "账号已被封禁",
+                };
+                const reasonText = input.reason ? (reasonMap[input.reason] || input.reason) : "健康度下降";
+                const statusMap: Record<string, string> = { active: "运行中", limited: "受限", banned: "已封禁", needs_2fa: "需二步验证", error: "异常" };
+                const statusText = input.status ? (statusMap[input.status] || input.status) : "未知";
+                const alertText = [
+                  `⚠️ <b>账号健康告警</b>`,
+                  ``,
+                  `📱 账号：${phoneDisplay}`,
+                  `📊 健康度：<b>${newScore}</b> / 100（告警阈值 ${alertThreshold}）`,
+                  `🔴 状态：${statusText}`,
+                  `⚡ 原因：${reasonText}`,
+                  ``,
+                  `💡 建议：请到账号管理页面检查并处理该账号`,
+                ].join("\n");
+                // 异步发送 Bot 消息（fire-and-forget，不阻塞主流程）
+                fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    chat_id: botChatId,
+                    text: alertText,
+                    parse_mode: "HTML",
+                    disable_web_page_preview: true,
+                    reply_markup: {
+                      inline_keyboard: [[
+                        { text: "📱 账号管理", url: `${process.env.VITE_OAUTH_PORTAL_URL || "https://t.me"}/tg-accounts` },
+                      ]]
+                    },
+                  }),
+                }).catch((e: any) => console.error("[HealthAlert] Bot push failed:", e));
+              }
+            }
+          }
+        }
+      }
       return { success: true };
     }),
-
   // ── 更新账号状态 ─────────────────────────────────────────
   accountStatus: engineProcedure
     .input(

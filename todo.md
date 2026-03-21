@@ -295,3 +295,12 @@
 ### 同步部署
 - [ ] 构建并同步所有代码到服务器
 - [ ] 重启服务验证
+
+## v3.2 账号健康监控告警 (2026-03-21)
+
+- [x] engine.ts 升级 accountHealth 接口：健康度低于阈值时自动向用户 Bot 推送告警
+- [x] drizzle/schema.ts 新增 lastAlertAt 字段（告警冷却防刷屏），并推送 DB migration
+- [x] main.py 升级 update_account_health 函数，所有调用处传递 reason 参数
+- [x] SystemSettings.tsx Bot配置 Tab 新增健康告警阈值配置卡片（默认 40 分触发告警，冷却 1 小时）
+- [x] 告警消息包含：账号手机号、当前健康度、状态、告警原因、建议操作
+- [x] 支持告警冷却时间（同一账号冷却时间内不重复告警，防止刷屏）
