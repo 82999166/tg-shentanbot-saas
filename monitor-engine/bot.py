@@ -44,6 +44,9 @@ STATE_KEYWORD = "wait_keyword"
 STATE_TEMPLATE = "wait_template"
 STATE_GROUP = "wait_group"
 STATE_ACTIVATE = "wait_activate"
+STATE_SENDER_PHONE = "wait_sender_phone"
+STATE_SENDER_CODE = "wait_sender_code"
+STATE_SENDER_2FA = "wait_sender_2fa"
 
 # ─── API 辅助 ─────────────────────────────────────────────────────────────────
 
@@ -523,16 +526,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         phone = s.get("senderPhone", "")
         if has:
             text = f"📱 **私信账号**\n\n✅ 已绑定：`{phone}`\n\n此账号将用于自动发送私信。"
-            btns = [[InlineKeyboardButton("🔄 更换账号", callback_data="sender_guide")],
-                    [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
+            btns = [
+                [InlineKeyboardButton("➕ 添加新账号", callback_data="sender_add_bot")],
+                [InlineKeyboardButton("🌐 网页管理", url=f"{WEB_SITE_URL}/tg-accounts" if WEB_SITE_URL else "https://t.me")],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
+            ]
         else:
             text = ("📱 **私信账号**\n\n⚠️ 尚未绑定私信账号\n\n"
                     "绑定后，系统将使用此账号自动向关键词命中的用户发送私信。\n\n"
-                    "请在 Web 管理后台完成账号登录绑定：")
-            btns = [[InlineKeyboardButton("🌐 前往绑定", url=f"{WEB_SITE_URL}/tg-accounts" if WEB_SITE_URL else "https://t.me")],
-                    [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
+                    "请选择绑定方式：")
+            btns = [
+                [InlineKeyboardButton("📱 Bot 内添加账号", callback_data="sender_add_bot")],
+                [InlineKeyboardButton("🌐 网页管理后台", url=f"{WEB_SITE_URL}/tg-accounts" if WEB_SITE_URL else "https://t.me")],
+                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
+            ]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
-
+    elif data == "sender_add_bot":
+        # Bot 内添加账号：引导输入手机号
+        context.user_data[STATE_KEY] = STATE_SENDER_PHONE
+        await q.edit_message_text(
+            "📱 **Bot 内添加私信账号**\n\n"
+            "请输入手机号（含国家代码，如 +8613800138000）：",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 取消", callback_data="menu_sender")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
     elif data == "sender_guide":
         await q.edit_message_text(
             "📱 **更换私信账号**\n\n"
@@ -813,7 +830,98 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = r.get("message", "卡密无效") if r else "激活失败"
             await update.message.reply_text(
                 f"❌ {msg}\n\n请检查卡密格式是否正确（XXXX-XXXX-XXXX）",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🎟 重新输入", callback_data="menu_activate"), InlineKeyboardButton("◀️ 主菜单", callback_data="menu_main")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏟 重新输入", callback_data="menu_activate"), InlineKeyboardButton("◀️ 主菜单", callback_data="menu_main")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+
+    # ── Bot 内添加私信账号：第一步 - 输入手机号 ──────────────────────────────
+    elif state == STATE_SENDER_PHONE:
+        phone = text.strip()
+        if not phone.startswith("+"):
+            phone = "+" + phone
+        await update.message.reply_text("⏳ 正在发送验证码，请稍候...")
+        r = await api_post("engine.botSendCode", {"userId": uid, "phone": phone})
+        if r and r.get("success"):
+            context.user_data[STATE_KEY] = STATE_SENDER_CODE
+            context.user_data["sender_phone"] = phone
+            context.user_data["phone_code_hash"] = r.get("phoneCodeHash", "")
+            await update.message.reply_text(
+                f"✅ 验证码已发送至 `{phone}`\n\n请输入收到的验证码：",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 取消", callback_data="menu_sender")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            context.user_data[STATE_KEY] = None
+            err = r.get("message", "发送失败") if r else "发送失败"
+            await update.message.reply_text(
+                f"❌ {err}\n\n请检查手机号格式是否正确（如 +8613800138000）",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_sender")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+
+    # ── Bot 内添加私信账号：第二步 - 输入验证码 ──────────────────────────────
+    elif state == STATE_SENDER_CODE:
+        code = text.strip()
+        phone = context.user_data.get("sender_phone", "")
+        phone_code_hash = context.user_data.get("phone_code_hash", "")
+        await update.message.reply_text("⏳ 正在验证，请稍候...")
+        r = await api_post("engine.botVerifyCode", {
+            "userId": uid,
+            "phone": phone,
+            "phoneCodeHash": phone_code_hash,
+            "code": code,
+        })
+        if r and r.get("success"):
+            if r.get("needs2FA"):
+                context.user_data[STATE_KEY] = STATE_SENDER_2FA
+                await update.message.reply_text(
+                    "🔐 **需要二步验证**\n\n请输入二步验证密码：",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 取消", callback_data="menu_sender")]]),
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+            else:
+                context.user_data[STATE_KEY] = None
+                context.user_data.pop("sender_phone", None)
+                context.user_data.pop("phone_code_hash", None)
+                await update.message.reply_text(
+                    f"✅ **账号添加成功！**\n\n手机号：`{phone}`\n账号已保存并设为发信账号。",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📱 查看账号", callback_data="menu_sender"), InlineKeyboardButton("◀️ 主菜单", callback_data="menu_main")]]),
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+        else:
+            context.user_data[STATE_KEY] = None
+            err = r.get("message", "验证失败") if r else "验证失败"
+            await update.message.reply_text(
+                f"❌ {err}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_sender")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+
+    # ── Bot 内添加私信账号：第三步 - 二步验证密码 ──────────────────────────────
+    elif state == STATE_SENDER_2FA:
+        password = text.strip()
+        phone = context.user_data.get("sender_phone", "")
+        await update.message.reply_text("⏳ 正在验证二步密码，请稍候...")
+        r = await api_post("engine.botVerify2FA", {
+            "userId": uid,
+            "phone": phone,
+            "password": password,
+        })
+        if r and r.get("success"):
+            context.user_data[STATE_KEY] = None
+            context.user_data.pop("sender_phone", None)
+            context.user_data.pop("phone_code_hash", None)
+            await update.message.reply_text(
+                f"✅ **账号添加成功！**\n\n手机号：`{phone}`\n账号已保存并设为发信账号。",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📱 查看账号", callback_data="menu_sender"), InlineKeyboardButton("◀️ 主菜单", callback_data="menu_main")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            context.user_data[STATE_KEY] = None
+            err = r.get("message", "二步验证失败") if r else "二步验证失败"
+            await update.message.reply_text(
+                f"❌ {err}\n\n请检查密码是否正确",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_sender")]]),
                 parse_mode=ParseMode.MARKDOWN,
             )
 

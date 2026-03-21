@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Download,
+  Edit2,
   Eye,
   EyeOff,
   Loader2,
@@ -63,6 +64,10 @@ export default function TgAccounts() {
 
   const [addMode, setAddMode] = useState<AddMode>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+
+  // 编辑账号状态
+  const [editAccount, setEditAccount] = useState<{ id: number; accountRole: string; notes: string } | null>(null);
+  const updateAccount = trpc.tgAccounts.update.useMutation();
 
   // 手机号登录状态
   const [phoneStep, setPhoneStep] = useState<PhoneStep>("phone");
@@ -282,6 +287,10 @@ export default function TgAccounts() {
                             title={account.isActive ? "停用" : "启用"}
                             onClick={async () => { await toggleActive.mutateAsync({ id: account.id, isActive: !account.isActive }); refresh(); toast.success(account.isActive ? "账号已停用" : "账号已启用"); }}>
                             {account.isActive ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                          </Button>
+                          <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-blue-400" title="编辑"
+                            onClick={() => setEditAccount({ id: account.id, accountRole: account.accountRole ?? "both", notes: account.notes ?? "" })}>
+                            <Edit2 className="w-4 h-4" />
                           </Button>
                           <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-red-400" title="删除" onClick={() => setDeleteId(account.id)}>
                             <Trash2 className="w-4 h-4" />
@@ -574,7 +583,63 @@ export default function TgAccounts() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── 删除确认 ─────────────────────────────────────────────────────── */}
+        {/* ─── 编辑账号 Dialog ────────────────────────────────────────────────── */}
+      <Dialog open={editAccount !== null} onOpenChange={(o) => { if (!o) setEditAccount(null); }}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Edit2 className="w-5 h-5 text-blue-400" /> 编辑账号</DialogTitle>
+            <DialogDescription className="text-slate-400">修改账号角色和备注</DialogDescription>
+          </DialogHeader>
+          {editAccount && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-slate-300">账号角色</Label>
+                <Select value={editAccount.accountRole} onValueChange={(v) => setEditAccount((a) => a ? { ...a, accountRole: v } : a)}>
+                  <SelectTrigger className="bg-slate-800 border-slate-600 text-white"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-600">
+                    <SelectItem value="both">监控 + 发信（推荐）</SelectItem>
+                    <SelectItem value="monitor">仅监控</SelectItem>
+                    <SelectItem value="sender">仅发信</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-slate-300">备注（可选）</Label>
+                <Input
+                  placeholder="输入备注信息..."
+                  value={editAccount.notes}
+                  onChange={(e) => setEditAccount((a) => a ? { ...a, notes: e.target.value } : a)}
+                  className="bg-slate-800 border-slate-600 text-white placeholder-slate-500"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setEditAccount(null)} className="text-slate-400 hover:text-white">取消</Button>
+            <Button
+              onClick={async () => {
+                if (!editAccount) return;
+                try {
+                  await updateAccount.mutateAsync({
+                    id: editAccount.id,
+                    accountRole: editAccount.accountRole as "monitor" | "sender" | "both",
+                    notes: editAccount.notes || undefined,
+                  });
+                  setEditAccount(null);
+                  refresh();
+                  toast.success("账号信息已更新");
+                } catch (e: any) { toast.error(e.message ?? "更新失败"); }
+              }}
+              disabled={updateAccount.isPending}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {updateAccount.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />} 保存修改
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── 删除确认 ───────────────────────────────────────────────────── */}
       <Dialog open={deleteId !== null} onOpenChange={(o) => { if (!o) setDeleteId(null); }}>
         <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-sm">
           <DialogHeader>

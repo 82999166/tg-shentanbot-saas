@@ -751,6 +751,102 @@ export const engineRouter = router({
         .where(eq(publicMonitorGroups.isActive, true))
         .orderBy(publicMonitorGroups.createdAt);
     }),
+
+  // ── Bot 内添加私信账号：第一步 - 发送验证码 ──────────────────────────────
+  botSendCode: engineProcedure
+    .input(z.object({
+      userId: z.number(),
+      phone: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未初始化" });
+      const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
+      // 读取系统 API 配置
+      const rows = await db.select().from(systemConfig)
+        .where(sql`${systemConfig.configKey} IN ('tg_api_id', 'tg_api_hash')`);
+      const cfgMap: Record<string, string> = {};
+      for (const r of rows) cfgMap[r.configKey] = r.configValue ?? "";
+      const apiId = parseInt(cfgMap["tg_api_id"] || "0");
+      const apiHash = cfgMap["tg_api_hash"] || "";
+      if (!apiId || !apiHash) throw new TRPCError({ code: "BAD_REQUEST", message: "请先在系统设置中配置 TG API ID 和 API Hash" });
+      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5050";
+      const resp = await fetch(`${LOGIN_SERVICE_URL}/send_code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, api_id: apiId, api_hash: apiHash }),
+      });
+      const data = await resp.json() as any;
+      if (!data.phone_code_hash) throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "发送验证码失败" });
+      return { success: true, phoneCodeHash: data.phone_code_hash as string };
+    }),
+
+  // ── Bot 内添加私信账号：第二步 - 验证码登录 ──────────────────────────────
+  botVerifyCode: engineProcedure
+    .input(z.object({
+      userId: z.number(),
+      phone: z.string(),
+      phoneCodeHash: z.string(),
+      code: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
+      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5050";
+      const resp = await fetch(`${LOGIN_SERVICE_URL}/verify_code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, code: input.code, phone_code_hash: input.phoneCodeHash }),
+      });
+      const data = await resp.json() as any;
+      if (data.needs_2fa) return { success: true, needs2FA: true, sessionString: null };
+      if (!data.session_string) throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "验证失败" });
+      // 保存账号到数据库
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未初始化" });
+      await db.insert(tgAccounts).values({
+        userId: input.userId,
+        phone,
+        sessionString: data.session_string,
+        sessionStatus: "active",
+        accountRole: "sender",
+        healthScore: 80,
+        healthStatus: "healthy",
+        notes: "Bot内添加",
+      });
+      return { success: true, needs2FA: false, sessionString: data.session_string as string };
+    }),
+
+  // ── Bot 内添加私信账号：第三步 - 二步验证 ──────────────────────────────────
+  botVerify2FA: engineProcedure
+    .input(z.object({
+      userId: z.number(),
+      phone: z.string(),
+      password: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
+      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5050";
+      const resp = await fetch(`${LOGIN_SERVICE_URL}/verify_2fa`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, password: input.password }),
+      });
+      const data = await resp.json() as any;
+      if (!data.session_string) throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "二步验证失败" });
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未初始化" });
+      await db.insert(tgAccounts).values({
+        userId: input.userId,
+        phone,
+        sessionString: data.session_string,
+        sessionStatus: "active",
+        accountRole: "sender",
+        healthScore: 80,
+        healthStatus: "healthy",
+        notes: "Bot内添加",
+      });
+      return { success: true };
+    }),
 });
 
 // ── 配置查询（独立函数，避免循环引用） ──────────────────────────────────────────────────────────────
