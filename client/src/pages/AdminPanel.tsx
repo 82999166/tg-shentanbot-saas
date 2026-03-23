@@ -353,6 +353,9 @@ export default function AdminPanel() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const [userSearch, setUserSearch] = useState("");
+  const [userSearchInput, setUserSearchInput] = useState("");
+  const [userPage, setUserPage] = useState(1);
+  const USER_PAGE_SIZE = 20;
   const [viewUserId, setViewUserId] = useState<number | null>(null);
   const [deleteAccountId, setDeleteAccountId] = useState<number | null>(null);
 
@@ -362,7 +365,14 @@ export default function AdminPanel() {
 
   const utils = trpc.useUtils();
   const { data: stats, isLoading: statsLoading } = trpc.admin.stats.useQuery();
-  const { data: users = [], isLoading: usersLoading } = trpc.admin.users.useQuery({ limit: 50 });
+  const { data: usersData, isLoading: usersLoading } = trpc.admin.users.useQuery({
+    page: userPage,
+    pageSize: USER_PAGE_SIZE,
+    search: userSearch || undefined,
+  });
+  const users = usersData?.users ?? [];
+  const usersTotal = usersData?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(usersTotal / USER_PAGE_SIZE));
   const { data: allAccounts = [], isLoading: accountsLoading } = trpc.admin.allTgAccounts.useQuery();
 
   const updatePlanMut = trpc.admin.updateUserPlan.useMutation({
@@ -382,9 +392,7 @@ export default function AdminPanel() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const filteredUsers = (users as any[]).filter((u) =>
-    !userSearch || u.name?.toLowerCase().includes(userSearch.toLowerCase()) || u.email?.toLowerCase().includes(userSearch.toLowerCase())
-  );
+  const filteredUsers = users as any[];
 
   const healthColor = (score: number) => {
     if (score >= 80) return "text-green-400";
@@ -573,10 +581,30 @@ export default function AdminPanel() {
             <div className="flex items-center gap-3">
               <div className="relative flex-1 max-w-sm">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <Input placeholder="搜索用户名或邮箱..." value={userSearch} onChange={(e) => setUserSearch(e.target.value)}
-                  className="bg-slate-800 border-slate-600 text-white pl-9 placeholder-slate-500" />
+                <Input
+                  placeholder="搜索用户名或邮箱..."
+                  value={userSearchInput}
+                  onChange={(e) => setUserSearchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setUserSearch(userSearchInput);
+                      setUserPage(1);
+                    }
+                  }}
+                  className="bg-slate-800 border-slate-600 text-white pl-9 placeholder-slate-500"
+                />
               </div>
-              <p className="text-sm text-slate-500">{filteredUsers.length} 位用户</p>
+              <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                onClick={() => { setUserSearch(userSearchInput); setUserPage(1); }}>
+                搜索
+              </Button>
+              {userSearch && (
+                <Button size="sm" variant="ghost" className="text-slate-400 hover:text-white"
+                  onClick={() => { setUserSearch(""); setUserSearchInput(""); setUserPage(1); }}>
+                  清除
+                </Button>
+              )}
+              <p className="text-sm text-slate-500 ml-auto">共 {usersTotal} 位用户</p>
             </div>
 
             {usersLoading ? (
@@ -694,6 +722,39 @@ export default function AdminPanel() {
                     </div>
                   )}
                 </div>
+                {/* 分页控件 */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-slate-700">
+                    <p className="text-xs text-slate-500">
+                      第 {(userPage - 1) * USER_PAGE_SIZE + 1}–{Math.min(userPage * USER_PAGE_SIZE, usersTotal)} 条，共 {usersTotal} 条
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="outline" className="h-7 px-2 border-slate-600 text-slate-300 hover:bg-slate-700 disabled:opacity-40"
+                        disabled={userPage <= 1} onClick={() => setUserPage(p => p - 1)}>
+                        上一页
+                      </Button>
+                      {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                        const start = Math.max(1, Math.min(userPage - 2, totalPages - 4));
+                        const p = start + i;
+                        return p <= totalPages ? (
+                          <Button key={p} size="sm" variant={p === userPage ? "default" : "outline"}
+                            className={`h-7 w-7 p-0 text-xs ${
+                              p === userPage
+                                ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
+                                : "border-slate-600 text-slate-300 hover:bg-slate-700"
+                            }`}
+                            onClick={() => setUserPage(p)}>
+                            {p}
+                          </Button>
+                        ) : null;
+                      })}
+                      <Button size="sm" variant="outline" className="h-7 px-2 border-slate-600 text-slate-300 hover:bg-slate-700 disabled:opacity-40"
+                        disabled={userPage >= totalPages} onClick={() => setUserPage(p => p + 1)}>
+                        下一页
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </Card>
             )}
           </TabsContent>

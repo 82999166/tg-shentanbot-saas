@@ -89,10 +89,27 @@ export async function getUserById(id: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function getAllUsers(limit = 50, offset = 0) {
+export async function getAllUsers(limit = 50, offset = 0, search?: string) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(users).orderBy(desc(users.createdAt)).limit(limit).offset(offset);
+  const condition = search
+    ? or(like(users.name, `%${search}%`), like(users.email, `%${search}%`))
+    : undefined;
+  return condition
+    ? db.select().from(users).where(condition).orderBy(desc(users.createdAt)).limit(limit).offset(offset)
+    : db.select().from(users).orderBy(desc(users.createdAt)).limit(limit).offset(offset);
+}
+
+export async function countAllUsers(search?: string) {
+  const db = await getDb();
+  if (!db) return 0;
+  const condition = search
+    ? or(like(users.name, `%${search}%`), like(users.email, `%${search}%`))
+    : undefined;
+  const result = condition
+    ? await db.select({ cnt: sql<number>`count(*)` }).from(users).where(condition)
+    : await db.select({ cnt: sql<number>`count(*)` }).from(users);
+  return Number(result[0]?.cnt ?? 0);
 }
 
 export async function updateUserPlan(userId: number, planId: "free" | "basic" | "pro" | "enterprise", expiresAt?: Date) {

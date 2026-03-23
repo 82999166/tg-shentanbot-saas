@@ -21,7 +21,7 @@ import {
   upsertAntibanSettings,
 } from "../db";
 import { protectedProcedure, router, adminProcedure } from "../_core/trpc";
-import { getAllUsers, getDb } from "../db";
+import { getAllUsers, countAllUsers, getDb } from "../db";
 import { users, tgAccounts, keywords, monitorGroups, hitRecords } from "../../drizzle/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 
@@ -224,14 +224,18 @@ export const dashboardRouter = router({
 export const adminRouter = router({
   users: adminProcedure
     .input(z.object({
-      limit: z.number().default(100),
-      offset: z.number().default(0),
+      page: z.number().min(1).default(1),
+      pageSize: z.number().min(1).max(100).default(20),
+      search: z.string().optional(),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return [];
-      const userList = await getAllUsers(input.limit, input.offset);
-      if (!userList.length) return [];
+      if (!db) return { users: [], total: 0 };
+      const { page, pageSize, search } = input;
+      const offset = (page - 1) * pageSize;
+      const userList = await getAllUsers(pageSize, offset, search);
+      const total = await countAllUsers(search);
+      if (!userList.length) return { users: [], total };
 
       // 批量聚合每个用户的关键词数和命中数
       const userIds = userList.map((u) => u.id);
@@ -260,12 +264,15 @@ export const adminRouter = router({
       const hitMap = new Map(hitCounts.map((r) => [r.userId, Number(r.cnt)]));
       const todayHitMap = new Map(todayHitCounts.map((r) => [r.userId, Number(r.cnt)]));
 
-      return userList.map((u) => ({
-        ...u,
-        keywordCount: kwMap.get(u.id) ?? 0,
-        totalHits: hitMap.get(u.id) ?? 0,
-        todayHits: todayHitMap.get(u.id) ?? 0,
-      }));
+      return {
+        users: userList.map((u) => ({
+          ...u,
+          keywordCount: kwMap.get(u.id) ?? 0,
+          totalHits: hitMap.get(u.id) ?? 0,
+          todayHits: todayHitMap.get(u.id) ?? 0,
+        })),
+        total,
+      };
     }),
 
   updateUserPlan: adminProcedure
