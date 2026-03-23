@@ -1,5 +1,6 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,8 @@ const DM_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 
 export default function HitRecords() {
   const utils = trpc.useUtils();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [search, setSearch] = useState("");
   const [dmFilter, setDmFilter] = useState("all");
   const [page, setPage] = useState(1);
@@ -34,18 +37,24 @@ export default function HitRecords() {
   const totalPages = Math.ceil(total / 20);
 
   const handleExport = () => {
+    const headers = isAdmin
+      ? ["ID", "所属用户", "发送者", "用户名", "关键词", "消息内容", "私信状态", "时间"]
+      : ["ID", "发送者", "用户名", "关键词", "消息内容", "私信状态", "时间"];
     const csv = [
-      ["ID", "发送者", "用户名", "关键词", "群组", "消息内容", "私信状态", "时间"].join(","),
-      ...records.map((r) => [
-        r.id,
-        r.senderTgId,
-        r.senderUsername ?? "",
-        r.matchedKeyword,
-        "",
-        `"${(r.messageContent ?? "").replace(/"/g, '""')}"`,
-        r.dmStatus,
-        new Date(r.createdAt).toLocaleString("zh-CN"),
-      ].join(","))
+      headers.join(","),
+      ...records.map((r: any) => {
+        const base = [
+          r.id,
+          r.senderTgId,
+          r.senderUsername ?? "",
+          r.matchedKeyword,
+          `"${(r.messageContent ?? "").replace(/"/g, '""')}"`,
+          r.dmStatus,
+          new Date(r.createdAt).toLocaleString("zh-CN"),
+        ];
+        if (isAdmin) base.splice(1, 0, r.ownerName ?? "");
+        return base.join(",");
+      })
     ].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -92,6 +101,7 @@ export default function HitRecords() {
         {/* 总数 */}
         <div className="text-sm text-muted-foreground">
           共 <span className="text-foreground font-medium">{total}</span> 条记录
+          {isAdmin && <span className="ml-2 text-xs text-amber-400">（管理员视图·全平台数据）</span>}
         </div>
 
         {/* 列表 */}
@@ -101,7 +111,7 @@ export default function HitRecords() {
           </div>
         ) : records.length > 0 ? (
           <div className="space-y-2">
-            {records.map((r) => {
+            {records.map((r: any) => {
               const dmSt = DM_STATUS_CONFIG[r.dmStatus] ?? DM_STATUS_CONFIG.none;
               return (
                 <div key={r.id} className="flex items-start gap-4 p-4 bg-card border border-border rounded-xl hover:border-primary/30 transition-colors">
@@ -117,7 +127,11 @@ export default function HitRecords() {
                         {r.matchedKeyword}
                       </Badge>
                       <Badge className={`text-xs border-0 ${dmSt.color}`}>{dmSt.label}</Badge>
-
+                      {isAdmin && r.ownerName && (
+                        <Badge className="text-xs bg-amber-900/40 text-amber-300 border-0">
+                          {r.ownerName}
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-2">{r.messageContent}</p>
                   </div>

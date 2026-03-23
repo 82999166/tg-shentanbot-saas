@@ -23,7 +23,7 @@ import {
 import { protectedProcedure, router, adminProcedure } from "../_core/trpc";
 import { getAllUsers, countAllUsers, getDb } from "../db";
 import { users, tgAccounts, keywords, monitorGroups, hitRecords } from "../../drizzle/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, or, like, gte, lt, inArray } from "drizzle-orm";
 
 // ============================================================
 // 命中记录路由
@@ -39,24 +39,68 @@ export const hitRecordsRouter = router({
       startDate: z.string().optional(),
       endDate: z.string().optional(),
       search: z.string().optional(),
+      filterUserId: z.number().optional(), // admin 按用户筛选
     }))
     .query(async ({ ctx, input }) => {
-      const { limit, offset, keywordId, monitorGroupId, dmStatus, startDate, endDate, search } = input;
-      const records = await getHitRecords(ctx.user.id, {
-        limit,
-        offset,
-        keywordId,
-        monitorGroupId,
-        dmStatus,
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-        search,
-      });
-      const total = await countHitRecords(ctx.user.id, {
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-      });
-      return { records, total };
+      const db = await getDb();
+      if (!db) return { records: [], total: 0 };
+      const isAdmin = ctx.user.role === "admin";
+      const { limit, offset, keywordId, monitorGroupId, dmStatus, startDate, endDate, search, filterUserId } = input;
+
+      // 构建查询条件
+      const conditions: any[] = [];
+      // admin 可查全平台，普通用户只能查自己
+      if (isAdmin) {
+        if (filterUserId) conditions.push(eq(hitRecords.userId, filterUserId));
+      } else {
+        conditions.push(eq(hitRecords.userId, ctx.user.id));
+      }
+      if (keywordId) conditions.push(eq(hitRecords.keywordId, keywordId));
+      if (monitorGroupId) conditions.push(eq(hitRecords.monitorGroupId, monitorGroupId));
+      if (dmStatus) conditions.push(eq(hitRecords.dmStatus, dmStatus as any));
+      if (startDate) conditions.push(gte(hitRecords.createdAt, new Date(startDate)));
+      if (endDate) conditions.push(lt(hitRecords.createdAt, new Date(endDate)));
+      if (search) conditions.push(
+        or(
+          like(hitRecords.senderUsername, `%${search}%`),
+          like(hitRecords.messageContent, `%${search}%`),
+          like(hitRecords.matchedKeyword, `%${search}%`)
+        )!
+      );
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const records = await db
+        .select()
+        .from(hitRecords)
+        .where(whereClause)
+        .orderBy(desc(hitRecords.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const [{ count }] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(hitRecords)
+        .where(whereClause);
+
+      // admin 时附加用户信息
+      let enrichedRecords: any[] = records;
+      if (isAdmin) {
+        const userIds = [...new Set(records.map(r => r.userId))];
+        let userMap: Map<number, string> = new Map();
+        if (userIds.length > 0) {
+          const userRows = await db.select({ id: users.id, name: users.name, email: users.email })
+            .from(users)
+            .where(inArray(users.id, userIds));
+          userMap = new Map(userRows.map(u => [u.id, u.name ?? u.email ?? `#${u.id}`]));
+        }
+        enrichedRecords = records.map(r => ({
+          ...r,
+          ownerName: userMap.get(r.userId) ?? `用户 #${r.userId}`,
+        }));
+      }
+
+      return { records: enrichedRecords, total: Number(count) };
     }),
 
   markProcessed: protectedProcedure
@@ -414,4 +458,68 @@ export const adminRouter = router({
         .where(and(eq(keywords.id, input.keywordId), eq(keywords.userId, input.userId)));
       return { success: true };
     }),
+
+  // ── 全平台汇总统计（管理员仪表盘用）──────────────────────
+  platformStats: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return {
+      todayHits: 0, totalHits: 0, todayDmSent: 0,
+      activeGroups: 0, activeAccounts: 0, pendingQueue: 0,
+      totalUsers: 0, dmSuccessRate: 0, weeklyHits: [], topKeywords: [], recentHits: [],
+    };
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const [todayHitsRow] = await db.select({ count: sql`count(*)` }).from(hitRecords)
+      .where(sql`${hitRecords.createdAt} >= ${today}`);
+    const [totalHitsRow] = await db.select({ count: sql`count(*)` }).from(hitRecords);
+    const [todayDmRow] = await db.select({ count: sql`count(*)` }).from(hitRecords)
+      .where(and(eq(hitRecords.dmStatus, "sent"), sql`${hitRecords.createdAt} >= ${today}`));
+    const [activeGroupsRow] = await db.select({ count: sql`count(*)` }).from(monitorGroups)
+      .where(and(eq(monitorGroups.isActive, true), eq(monitorGroups.monitorStatus, "active")));
+    const [activeAccountsRow] = await db.select({ count: sql`count(*)` }).from(tgAccounts)
+      .where(and(eq(tgAccounts.isActive, true), eq(tgAccounts.sessionStatus, "active")));
+    const [pendingQueueRow] = await db.select({ count: sql`count(*)` }).from(hitRecords)
+      .where(eq(hitRecords.dmStatus, "pending"));
+    const [totalUsersRow] = await db.select({ count: sql`count(*)` }).from(users);
+    const [dmTotalRow] = await db.select({ count: sql`count(*)` }).from(hitRecords)
+      .where(sql`${hitRecords.dmStatus} IN ("sent","failed")`);
+    const [dmSentRow] = await db.select({ count: sql`count(*)` }).from(hitRecords)
+      .where(eq(hitRecords.dmStatus, "sent"));
+    const dmSuccessRate = Number(dmTotalRow?.count ?? 0) > 0
+      ? Math.round((Number(dmSentRow?.count ?? 0) / Number(dmTotalRow.count)) * 100) : 0;
+    const weeklyHits = await db.select({
+      date: sql`DATE(MIN(${hitRecords.createdAt}))`,
+      count: sql`count(*)`,
+    }).from(hitRecords)
+      .where(sql`${hitRecords.createdAt} >= ${weekAgo}`)
+      .groupBy(sql`DATE(${hitRecords.createdAt})`)
+      .orderBy(sql`DATE(${hitRecords.createdAt})`);
+    const topKeywords = await db.select({
+      keywordId: hitRecords.keywordId,
+      matchedKeyword: hitRecords.matchedKeyword,
+      count: sql`count(*)`,
+    }).from(hitRecords)
+      .where(sql`${hitRecords.createdAt} >= ${weekAgo}`)
+      .groupBy(hitRecords.keywordId, hitRecords.matchedKeyword)
+      .orderBy(desc(sql`count(*)`))
+      .limit(5);
+    const recentHits = await db.select().from(hitRecords)
+      .orderBy(desc(hitRecords.createdAt))
+      .limit(10);
+    return {
+      todayHits: Number(todayHitsRow?.count ?? 0),
+      totalHits: Number(totalHitsRow?.count ?? 0),
+      todayDmSent: Number(todayDmRow?.count ?? 0),
+      activeGroups: Number(activeGroupsRow?.count ?? 0),
+      activeAccounts: Number(activeAccountsRow?.count ?? 0),
+      pendingQueue: Number(pendingQueueRow?.count ?? 0),
+      totalUsers: Number(totalUsersRow?.count ?? 0),
+      dmSuccessRate,
+      weeklyHits,
+      topKeywords,
+      recentHits,
+    };
+  }),
 });
