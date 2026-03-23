@@ -9,6 +9,7 @@ import {
   keywordDailyStats,
   groupSubmissions,
   keywords,
+  users,
 } from "../../drizzle/schema";
 import { eq, and, desc, gte, sql, inArray } from "drizzle-orm";
 
@@ -214,21 +215,32 @@ export const hitMessagesRouter = router({
         dates.push(d.toISOString().split("T")[0]);
       }
 
-      const conditions = [eq(keywordDailyStats.userId, ctx.user.id)];
-      if (input.keywordId) {
-        conditions.push(eq(keywordDailyStats.keywordId, input.keywordId));
-      }
+      const isAdmin = ctx.user.role === 'admin';
+      // admin 查全平台，普通用户查自己
+      const statsConditions: any[] = [inArray(keywordDailyStats.date, dates)];
+      if (!isAdmin) statsConditions.push(eq(keywordDailyStats.userId, ctx.user.id));
+      if (input.keywordId) statsConditions.push(eq(keywordDailyStats.keywordId, input.keywordId));
 
       const stats = await db
         .select()
         .from(keywordDailyStats)
-        .where(and(...conditions, inArray(keywordDailyStats.date, dates)));
+        .where(and(...statsConditions));
 
-      // 获取关键词列表
-      const kws = await db
-        .select({ id: keywords.id, keyword: keywords.keyword, hitCount: keywords.hitCount })
+      // 获取关键词列表（admin 查全部，普通用户查自己）
+      const kwQuery = db
+        .select({
+          id: keywords.id,
+          keyword: keywords.keyword,
+          hitCount: keywords.hitCount,
+          userId: keywords.userId,
+          userName: users.name,
+          userEmail: users.email,
+        })
         .from(keywords)
-        .where(eq(keywords.userId, ctx.user.id));
+        .leftJoin(users, eq(keywords.userId, users.id));
+      const kws = isAdmin
+        ? await kwQuery
+        : await kwQuery.where(eq(keywords.userId, ctx.user.id));
 
       return { stats, dates, keywords: kws };
     }),
