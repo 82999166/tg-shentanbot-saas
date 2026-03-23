@@ -162,9 +162,19 @@ export const systemConfigRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // 规范化 groupId：去除 https://t.me/ 前缀和 @ 符号（邀请链接 +xxx 保留）
+      let normalizedGroupId = input.groupId.trim();
+      if (normalizedGroupId.startsWith('https://t.me/') && !normalizedGroupId.includes('+')) {
+        normalizedGroupId = normalizedGroupId.replace('https://t.me/', '');
+      } else if (normalizedGroupId.startsWith('http://t.me/') && !normalizedGroupId.includes('+')) {
+        normalizedGroupId = normalizedGroupId.replace('http://t.me/', '');
+      }
+      if (normalizedGroupId.startsWith('@')) {
+        normalizedGroupId = normalizedGroupId.slice(1);
+      }
       // 检查是否已存在
       const existing = await db.select().from(publicMonitorGroups)
-        .where(eq(publicMonitorGroups.groupId, input.groupId)).limit(1);
+        .where(eq(publicMonitorGroups.groupId, normalizedGroupId)).limit(1);
       if (existing[0]) {
         // 如果已存在，重新激活
         await db.update(publicMonitorGroups)
@@ -173,8 +183,8 @@ export const systemConfigRouter = router({
         return { success: true, isNew: false };
       }
       await db.insert(publicMonitorGroups).values({
-        groupId: input.groupId,
-        groupTitle: input.groupTitle || input.groupId,
+        groupId: normalizedGroupId,
+        groupTitle: input.groupTitle || normalizedGroupId,
         groupType: input.groupType || "group",
         isActive: true,
         addedBy: ctx.user.id,

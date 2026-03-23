@@ -1,0 +1,10 @@
+{
+  "query": "\nSELECT COUNT(*) as total FROM hit_records;\nSELECT COUNT(*) as today FROM hit_records WHERE created_at >= CURDATE();\nSELECT id, user_id, group_name, sender_username, matched_keywords, created_at FROM hit_records ORDER BY created_at DESC LIMIT 10;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user Egqgwtf2w1Dcuzo.bde3d0a5cfff --database 8SLf4cmVRTfEoV2e8JcGKB --execute \nSELECT COUNT(*) as total FROM hit_records;\nSELECT COUNT(*) as today FROM hit_records WHERE created_at >= CURDATE();\nSELECT id, user_id, group_name, sender_username, matched_keywords, created_at FROM hit_records ORDER BY created_at DESC LIMIT 10;\n",
+  "returncode": 1,
+  "logs": [
+    "total",
+    "0",
+    "ERROR 1054 (42S22) at line 3: Unknown column 'created_at' in 'where clause'"
+  ]
+}

@@ -582,54 +582,119 @@ export default function AdminPanel() {
             {usersLoading ? (
               <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
             ) : (
-              <div className="space-y-2">
-                {filteredUsers.map((u: any) => (
-                  <Card key={u.id} className="bg-slate-800/60 border-slate-700 hover:border-slate-500 transition-colors">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-4">
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
-                          {(u.name ?? u.email ?? "?")[0]?.toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-white text-sm">{u.name ?? `用户 #${u.id}`}</span>
-                            {u.role === "admin" && <Badge className="text-xs bg-amber-900/50 text-amber-300 border border-amber-700">管理员</Badge>}
-                            <Badge className={`text-xs border-0 ${planColors[u.planId] ?? planColors.free}`}>{u.planId ?? "free"}</Badge>
-                            {u.planExpiresAt && (
-                              <span className="text-xs text-slate-500 flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                到期: {new Date(u.planExpiresAt).toLocaleDateString()}
+              <Card className="bg-slate-800/60 border-slate-700">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-700 text-xs text-slate-400">
+                        <th className="text-left px-4 py-3 font-medium">用户</th>
+                        <th className="text-left px-4 py-3 font-medium">套餐</th>
+                        <th className="text-left px-4 py-3 font-medium">到期日期</th>
+                        <th className="text-center px-4 py-3 font-medium">关键词</th>
+                        <th className="text-center px-4 py-3 font-medium">今日命中</th>
+                        <th className="text-center px-4 py-3 font-medium">总命中</th>
+                        <th className="text-left px-4 py-3 font-medium">注册时间</th>
+                        <th className="text-left px-4 py-3 font-medium">最后登录</th>
+                        <th className="text-right px-4 py-3 font-medium">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredUsers.map((u: any) => {
+                        const isExpired = u.planExpiresAt && new Date(u.planExpiresAt) < new Date();
+                        const expiringSoon = u.planExpiresAt && !isExpired &&
+                          (new Date(u.planExpiresAt).getTime() - Date.now()) < 7 * 24 * 3600 * 1000;
+                        return (
+                          <tr key={u.id} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
+                            {/* 用户 */}
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                                  {(u.name ?? u.email ?? "?")[0]?.toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1">
+                                    <span className="font-medium text-white truncate max-w-[120px]">{u.name ?? `用户 #${u.id}`}</span>
+                                    {u.role === "admin" && <Badge className="text-xs bg-amber-900/50 text-amber-300 border border-amber-700 px-1 py-0">管理员</Badge>}
+                                  </div>
+                                  {u.email && <p className="text-xs text-slate-500 truncate max-w-[140px]">{u.email}</p>}
+                                </div>
+                              </div>
+                            </td>
+                            {/* 套餐 */}
+                            <td className="px-4 py-3">
+                              <Select value={u.planId ?? "free"}
+                                onValueChange={(v) => updatePlanMut.mutate({ userId: u.id, planId: v as any })}>
+                                <SelectTrigger className="w-24 h-7 text-xs bg-slate-700 border-slate-600 text-white">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="bg-slate-800 border-slate-600">
+                                  {["free", "basic", "pro", "enterprise"].map((p) => (
+                                    <SelectItem key={p} value={p} className="text-xs capitalize">{p}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            {/* 到期日期 */}
+                            <td className="px-4 py-3">
+                              {u.planExpiresAt ? (
+                                <span className={`text-xs flex items-center gap-1 ${
+                                  isExpired ? "text-red-400" : expiringSoon ? "text-amber-400" : "text-slate-300"
+                                }`}>
+                                  <Calendar className="w-3 h-3" />
+                                  {new Date(u.planExpiresAt).toLocaleDateString()}
+                                  {isExpired && <span className="text-red-400">(已到期)</span>}
+                                  {expiringSoon && <span className="text-amber-400">(即将到期)</span>}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-500">永久</span>
+                              )}
+                            </td>
+                            {/* 关键词数 */}
+                            <td className="px-4 py-3 text-center">
+                              <span className="inline-flex items-center justify-center gap-1 text-purple-300 font-medium">
+                                <Key className="w-3 h-3" />{u.keywordCount ?? 0}
                               </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
-                            {u.email && <span>{u.email}</span>}
-                            <span>注册: {new Date(u.createdAt).toLocaleDateString()}</span>
-                            <span>最后登录: {new Date(u.lastSignedIn).toLocaleDateString()}</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <Select value={u.planId ?? "free"}
-                            onValueChange={(v) => updatePlanMut.mutate({ userId: u.id, planId: v as any })}>
-                            <SelectTrigger className="w-28 h-8 text-xs bg-slate-700 border-slate-600 text-white">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="bg-slate-800 border-slate-600">
-                              {["free", "basic", "pro", "enterprise"].map((p) => (
-                                <SelectItem key={p} value={p} className="text-xs capitalize">{p}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-blue-400" title="查看详情"
-                            onClick={() => setViewUserId(u.id)}>
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                            </td>
+                            {/* 今日命中 */}
+                            <td className="px-4 py-3 text-center">
+                              <span className={`font-bold text-sm ${
+                                (u.todayHits ?? 0) > 0 ? "text-green-400" : "text-slate-500"
+                              }`}>{u.todayHits ?? 0}</span>
+                            </td>
+                            {/* 总命中 */}
+                            <td className="px-4 py-3 text-center">
+                              <span className={`font-medium text-sm ${
+                                (u.totalHits ?? 0) > 0 ? "text-blue-400" : "text-slate-500"
+                              }`}>{u.totalHits ?? 0}</span>
+                            </td>
+                            {/* 注册时间 */}
+                            <td className="px-4 py-3">
+                              <span className="text-xs text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</span>
+                            </td>
+                            {/* 最后登录 */}
+                            <td className="px-4 py-3">
+                              <span className="text-xs text-slate-400">{new Date(u.lastSignedIn).toLocaleDateString()}</span>
+                            </td>
+                            {/* 操作 */}
+                            <td className="px-4 py-3 text-right">
+                              <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-400 hover:text-blue-400" title="查看详情"
+                                onClick={() => setViewUserId(u.id)}>
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {filteredUsers.length === 0 && (
+                    <div className="py-12 text-center">
+                      <Users className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                      <p className="text-slate-400">暂无用户</p>
+                    </div>
+                  )}
+                </div>
+              </Card>
             )}
           </TabsContent>
         </Tabs>

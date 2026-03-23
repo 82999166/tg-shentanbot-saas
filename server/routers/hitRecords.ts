@@ -224,11 +224,48 @@ export const dashboardRouter = router({
 export const adminRouter = router({
   users: adminProcedure
     .input(z.object({
-      limit: z.number().default(50),
+      limit: z.number().default(100),
       offset: z.number().default(0),
     }))
     .query(async ({ input }) => {
-      return getAllUsers(input.limit, input.offset);
+      const db = await getDb();
+      if (!db) return [];
+      const userList = await getAllUsers(input.limit, input.offset);
+      if (!userList.length) return [];
+
+      // 批量聚合每个用户的关键词数和命中数
+      const userIds = userList.map((u) => u.id);
+
+      const kwCounts = await db
+        .select({ userId: keywords.userId, cnt: sql<number>`count(*)` })
+        .from(keywords)
+        .where(sql`${keywords.userId} IN (${sql.join(userIds.map((id) => sql`${id}`), sql`, `)})`)
+        .groupBy(keywords.userId);
+
+      const hitCounts = await db
+        .select({ userId: hitRecords.userId, cnt: sql<number>`count(*)` })
+        .from(hitRecords)
+        .where(sql`${hitRecords.userId} IN (${sql.join(userIds.map((id) => sql`${id}`), sql`, `)})`)
+        .groupBy(hitRecords.userId);
+
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayHitCounts = await db
+        .select({ userId: hitRecords.userId, cnt: sql<number>`count(*)` })
+        .from(hitRecords)
+        .where(sql`${hitRecords.userId} IN (${sql.join(userIds.map((id) => sql`${id}`), sql`, `)}) AND ${hitRecords.createdAt} >= ${todayStart}`)
+        .groupBy(hitRecords.userId);
+
+      const kwMap = new Map(kwCounts.map((r) => [r.userId, Number(r.cnt)]));
+      const hitMap = new Map(hitCounts.map((r) => [r.userId, Number(r.cnt)]));
+      const todayHitMap = new Map(todayHitCounts.map((r) => [r.userId, Number(r.cnt)]));
+
+      return userList.map((u) => ({
+        ...u,
+        keywordCount: kwMap.get(u.id) ?? 0,
+        totalHits: hitMap.get(u.id) ?? 0,
+        todayHits: todayHitMap.get(u.id) ?? 0,
+      }));
     }),
 
   updateUserPlan: adminProcedure

@@ -208,7 +208,7 @@ export function registerEngineRestRoutes(app: Router) {
       if (!db) return res.status(500).json({ error: "DB unavailable" });
 
       const input = req.body;
-      await db.insert(hitRecords).values({
+      const result = await db.insert(hitRecords).values({
         userId: input.userId,
         tgAccountId: input.monitorAccountId,
         monitorGroupId: 0,
@@ -223,7 +223,7 @@ export function registerEngineRestRoutes(app: Router) {
         messageDate: new Date(),
       });
 
-      res.json({ success: true });
+      res.json({ success: true, id: Number(result[0].insertId) });
     } catch (e: any) {
       console.error("[Engine API] hit error:", e);
       res.status(500).json({ error: e.message });
