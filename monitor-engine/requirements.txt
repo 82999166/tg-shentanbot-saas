@@ -1,4 +1,13 @@
-pyrogram==2.0.106
-TgCrypto==1.2.5
-aiohttp==3.9.5
-python-dotenv==1.0.1
+# TDLib Python 绑定（包含预编译 TDLib 1.8.x 二进制）
+pytdbot>=0.9.10
+tdjson>=1.8.60
+
+# HTTP 客户端/服务器
+aiohttp>=3.9.0
+
+# 环境变量加载
+python-dotenv>=1.0.0
+
+# Pyrogram（可选，用于 session_string 兼容性测试和群组列表获取）
+pyrogram>=2.0.106
+TgCrypto>=1.2.5

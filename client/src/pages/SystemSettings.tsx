@@ -44,7 +44,11 @@ import {
   ChevronRight,
   Shield,
   AlertTriangle,
+  Cpu,
+  UserCog,
 } from "lucide-react";
+import TdlibEngineTab from "./TdlibEngineTab";
+import UserConfigPanel from "./UserConfigPanel";
 // ── 公共监控群组 Tab ──────────────────────────────────────────────
 // 公共群组关键词子面板
 function GroupKeywordsPanel({ groupId, groupTitle }: { groupId: number; groupTitle: string }) {
@@ -1438,6 +1442,14 @@ export default function SystemSettings() {
             <Globe className="w-4 h-4 mr-1.5" />
             公共群组
           </TabsTrigger>
+          <TabsTrigger value="tdlib" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
+            <Cpu className="w-4 h-4 mr-1.5" />
+            TDLib 引擎
+          </TabsTrigger>
+          <TabsTrigger value="userconfig" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
+            <UserCog className="w-4 h-4 mr-1.5" />
+            用户参数配置
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="tgapi">
@@ -1463,6 +1475,12 @@ export default function SystemSettings() {
         </TabsContent>
         <TabsContent value="publicgroups">
           <PublicGroupsTab />
+        </TabsContent>
+        <TabsContent value="tdlib">
+          <TdlibEngineTab />
+        </TabsContent>
+        <TabsContent value="userconfig">
+          <UserConfigPanel />
         </TabsContent>
       </Tabs>
     </div>

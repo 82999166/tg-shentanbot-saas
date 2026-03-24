@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-TG Monitor Pro - Pyrogram 监控引擎
+TG Monitor Pro - TDLib 监控引擎 (基于 pytdbot + tdjson)
 功能：
   1. 从 Web API 拉取监控配置（账号、群组、关键词、消息模板）
-  2. 为每个激活的 TG 账号启动独立的 Pyrogram 客户端
-  3. 监听群组消息，匹配关键词规则
-  4. 命中后：推送通知到目标群 + 加入私信发送队列
-  5. 私信发送队列：按防封策略调度，随机延迟，频率限制
+  2. 为每个激活的 TG 账号启动独立的 TDLib 客户端（持久化 SQLite 状态）
+  3. TDLib 内置 getDifference / updates gap 处理，断线重连后自动补发漏抓消息
+  4. 监听群组消息，匹配关键词规则
+  5. 命中后：推送通知到目标群 + 加入私信发送队列
+  6. 私信发送队列：按防封策略调度，随机延迟，频率限制
+  7. 账号健康度监控与告警
 """
-
 import asyncio
 import json
 import logging
@@ -16,29 +17,19 @@ import os
 import re
 import random
 import time
+import shutil
 
-# 加载 .env 文件
 try:
     from dotenv import load_dotenv
     _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     load_dotenv(_env_path, override=True)
 except ImportError:
-    pass  # python-dotenv 未安装时直接从环境变量读取
+    pass
+
 from datetime import datetime, timedelta
 from typing import Optional
 import aiohttp
-from pyrogram import Client, filters
-from pyrogram.types import Message
-from pyrogram.errors import (
-    FloodWait,
-    PeerFlood,
-    UserPrivacyRestricted,
-    UserIsBlocked,
-    InputUserDeactivated,
-    SessionPasswordNeeded,
-)
 
-# ── 日志配置 ─────────────────────────────────────────────────
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _LOG_FILE = os.path.join(_BASE_DIR, "engine.log")
 logging.basicConfig(
@@ -51,35 +42,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger("tg-monitor")
 
-# ── 配置 ─────────────────────────────────────────────────────
 API_BASE = os.getenv("WEB_API_BASE", "http://localhost:3000/api")
 ENGINE_SECRET = os.getenv("ENGINE_SECRET", "tg-monitor-engine-secret")
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "30"))   # 每 30 秒从 API 拉取配置
-DM_WORKER_INTERVAL = int(os.getenv("DM_WORKER_INTERVAL", "10"))  # 每 10 秒处理一批私信
-
-# Telegram API 凭证（从 https://my.telegram.org 获取）
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "30"))
+DM_WORKER_INTERVAL = int(os.getenv("DM_WORKER_INTERVAL", "10"))
 TG_API_ID = int(os.getenv("TG_API_ID", "0"))
 TG_API_HASH = os.getenv("TG_API_HASH", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+TDLIB_DATA_DIR = os.getenv("TDLIB_DATA_DIR", os.path.join(_BASE_DIR, "tdlib_data"))
 
-# ── 全局状态 ─────────────────────────────────────────────────
-active_clients: dict[int, Client] = {}   # account_id -> Client
-monitor_config: dict = {}                 # 从 API 拉取的完整配置
-public_groups: list = []                  # 管理员设置的公共监控群组（所有用户共享）
-public_group_real_ids: dict = {}          # groupId(URL/ID) -> 真实数字 chat_id（加入后记录）
-sent_dm_cache: dict[str, float] = {}      # "account_id:target_id" -> timestamp（去重）
-collab_chat_id_cache: dict[str, int] = {}
-# 消息全局去重缓存：防止多个监控账号重复处理同一条消息
-# key: "chat_id:message_id:user_id" -> 处理时间戳
-processed_messages: dict[str, float] = {}  # 全局去重缓存
-PROCESSED_MSG_TTL = 300  # 缓存 5 分钟，防止内存泄漏
-
-# Anti-spam caches
-daily_hit_cache: dict[str, dict[str, int]] = {}
-rate_hit_cache: dict[str, list] = {}  # 邀请链接/用户名 -> 真实数字 chat_id 缓存
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")   # Bot Token，用于向用户推送命中通知
+active_workers: dict = {}
+monitor_config: dict = {}
+public_groups: list = []
+public_group_real_ids: dict = {}
+sent_dm_cache: dict = {}
+collab_chat_id_cache: dict = {}
+processed_messages: dict = {}
+PROCESSED_MSG_TTL = 300
+daily_hit_cache: dict = {}
+rate_hit_cache: dict = {}
 
 
-# ── API 客户端 ───────────────────────────────────────────────
 class ApiClient:
     def __init__(self, base: str, secret: str):
         self.base = base
@@ -88,7 +71,10 @@ class ApiClient:
     async def get(self, path: str) -> Optional[dict]:
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base}{path}", headers=self.headers, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                async with session.get(
+                    f"{self.base}{path}", headers=self.headers,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as r:
                     if r.status == 200:
                         return await r.json()
         except Exception as e:
@@ -98,7 +84,10 @@ class ApiClient:
     async def post(self, path: str, data: dict) -> Optional[dict]:
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(f"{self.base}{path}", headers=self.headers, json=data, timeout=aiohttp.ClientTimeout(total=10)) as r:
+                async with session.post(
+                    f"{self.base}{path}", headers=self.headers, json=data,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as r:
                     if r.status == 200:
                         return await r.json()
         except Exception as e:
@@ -109,97 +98,117 @@ class ApiClient:
 api = ApiClient(API_BASE, ENGINE_SECRET)
 
 
-# ── 解析协作群/推送目标的真实 chat_id ──────────────────────
-async def resolve_collab_chat_id(client, chat_id_str: str) -> int | None:
-    """
-    将邀请链接（https://t.me/+xxx）或用户名（@xxx）解析为真实数字 chat_id。
-    结果缓存到 collab_chat_id_cache，避免重复解析。
-    """
-    global collab_chat_id_cache
-    if not chat_id_str:
-        return None
-    # 已经是数字 ID
-    try:
-        return int(chat_id_str)
-    except (ValueError, TypeError):
-        pass
-    # 检查缓存
-    if chat_id_str in collab_chat_id_cache:
-        return collab_chat_id_cache[chat_id_str]
-    # 解析邀请链接或用户名
-    try:
-        chat = await client.get_chat(chat_id_str)
-        real_id = chat.id
-        collab_chat_id_cache[chat_id_str] = real_id
-        logger.info(f"[Resolve] {chat_id_str} -> {real_id} ({chat.title})")
-        return real_id
-    except Exception as e:
-        logger.warning(f"[Resolve] 无法解析 {chat_id_str}: {e}")
-        # 如果是邀请链接，尝试加入群组后获取 ID
-        if 't.me/+' in str(chat_id_str) or 't.me/joinchat' in str(chat_id_str):
-            try:
-                chat = await client.join_chat(chat_id_str)
-                real_id = chat.id
-                collab_chat_id_cache[chat_id_str] = real_id
-                logger.info(f"[Resolve] 加入群组后获取 ID: {chat_id_str} -> {real_id}")
-                return real_id
-            except Exception as e2:
-                logger.warning(f"[Resolve] 加入群组失败 {chat_id_str}: {e2}")
-        return None
+def match_keyword(text: str, keyword: dict) -> bool:
+    if not text:
+        return False
+    match_type = keyword.get("matchType", "contains")
+    pattern = keyword.get("pattern", "")
+    sub_keywords = keyword.get("subKeywords", [])
+    case_sensitive = keyword.get("caseSensitive", False)
+    compare_text = text if case_sensitive else text.lower()
+    compare_pattern = pattern if case_sensitive else pattern.lower()
+    if match_type in ("exact", "contains"):
+        return compare_pattern in compare_text
+    elif match_type == "regex":
+        try:
+            flags = 0 if case_sensitive else re.IGNORECASE
+            return bool(re.search(pattern, text, flags))
+        except re.error:
+            return False
+    elif match_type == "and":
+        kws = [k.strip() for k in sub_keywords if k.strip()] or [compare_pattern]
+        return all((k if case_sensitive else k.lower()) in compare_text for k in kws)
+    elif match_type == "or":
+        kws = [k.strip() for k in sub_keywords if k.strip()] or [compare_pattern]
+        return any((k if case_sensitive else k.lower()) in compare_text for k in kws)
+    elif match_type == "not":
+        return compare_pattern not in compare_text
+    return False
 
-# ── Bot 通知推送 ───────────────────────────────────────────
+
+def render_template(template: str, variables: dict) -> str:
+    result = template
+    for key, value in variables.items():
+        result = result.replace(f"{{{{{key}}}}}", str(value or ""))
+    return result
+
+
+def is_likely_spam(sender_id: int, sender_username: Optional[str], text: str) -> bool:
+    spam_patterns = [
+        r"t\.me/\+", r"t\.me/[a-zA-Z0-9_]+",
+        r"https?://", r"@[a-zA-Z0-9_]{5,}", r"\+?\d[\d\s\-\(\)]{8,}",
+    ]
+    spam_count = sum(1 for p in spam_patterns if re.search(p, text))
+    if spam_count >= 2:
+        return True
+    if sender_id > 7_000_000_000 and spam_count >= 1:
+        return True
+    return False
+
+
+def check_anti_spam(sender_tg_id: str, text: str, anti_spam_cfg: dict):
+    from datetime import date as _date
+    if not anti_spam_cfg.get("enabled", True):
+        return False, ""
+    min_len = int(anti_spam_cfg.get("minMsgLen", 0))
+    if min_len > 0 and len(text.strip()) < min_len:
+        return True, f"msg too short ({len(text.strip())} < {min_len})"
+    daily_limit = int(anti_spam_cfg.get("dailyLimit", 10))
+    rate_window = int(anti_spam_cfg.get("rateWindow", 60))
+    rate_limit_n = int(anti_spam_cfg.get("rateLimit", 3))
+    today = _date.today().isoformat()
+    now = time.time()
+    if sender_tg_id not in daily_hit_cache:
+        daily_hit_cache[sender_tg_id] = {}
+    day_counts = daily_hit_cache[sender_tg_id]
+    for d in list(day_counts.keys()):
+        if d != today:
+            del day_counts[d]
+    today_count = day_counts.get(today, 0)
+    if today_count >= daily_limit:
+        return True, f"daily limit {today_count}/{daily_limit}"
+    if sender_tg_id not in rate_hit_cache:
+        rate_hit_cache[sender_tg_id] = []
+    timestamps = rate_hit_cache[sender_tg_id]
+    timestamps[:] = [t for t in timestamps if now - t < rate_window]
+    if len(timestamps) >= rate_limit_n:
+        return True, f"rate limit {len(timestamps)}/{rate_limit_n} in {rate_window}s"
+    day_counts[today] = today_count + 1
+    timestamps.append(now)
+    return False, ""
+
+
 async def send_bot_notification(
-    bot_chat_id: str,
-    sender_username: Optional[str],
-    sender_tg_id: str,
-    matched_keyword: str,
-    group_name: str,
-    group_username: Optional[str],
-    message_text: str,
-    sender_name: str = "",
-    hit_record_id: Optional[int] = None,
+    bot_chat_id: str, sender_username: Optional[str], sender_tg_id: str,
+    matched_keyword: str, group_name: str, group_username: Optional[str],
+    message_text: str, sender_name: str = "", hit_record_id: Optional[int] = None,
     dm_status: str = "disabled",
 ):
-    """通过 Telegram Bot API 向用户推送关键词命中通知"""
     if not BOT_TOKEN:
         return
     try:
-        # 用户显示名称
         if sender_name:
             user_display = sender_name
         elif sender_username:
             user_display = f"@{sender_username}"
         else:
             user_display = f"ID:{sender_tg_id}"
-
-        # 来源：群组名称（如有 username 则做超链接）
         if group_username:
             source_display = f'<a href="https://t.me/{group_username}">{group_name}</a>'
         else:
             source_display = group_name
-
-        # 内容：将命中的关键词高亮为 #关键词 格式
         highlighted_text = message_text[:200]
         if matched_keyword and matched_keyword in highlighted_text:
-            highlighted_text = highlighted_text.replace(
-                matched_keyword,
-                f"<b>#{matched_keyword}</b>"
-            )
+            highlighted_text = highlighted_text.replace(matched_keyword, f"<b>#{matched_keyword}</b>")
         if len(message_text) > 200:
             highlighted_text += "..."
-
-        # 时间
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
         text = (
             f"用户：{user_display}\n"
             f"来源：{source_display}\n"
             f"内容：{highlighted_text}\n"
             f"时间：{now_str}"
         )
-
-        # 操作按钮（Inline Keyboard）- 去掉图标，缩短宽度
-        # callback_data 格式: action:hit_record_id:sender_tg_id
         rid = str(hit_record_id) if hit_record_id else "0"
         inline_keyboard = [
             [
@@ -212,88 +221,24 @@ async def send_bot_notification(
                 {"text": "私聊", "url": f"https://t.me/{sender_username}" if sender_username else f"https://t.me/+{sender_tg_id}"},
             ]
         ]
-
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         payload = {
-            "chat_id": bot_chat_id,
-            "text": text,
-            "parse_mode": "HTML",
+            "chat_id": bot_chat_id, "text": text, "parse_mode": "HTML",
             "disable_web_page_preview": True,
             "reply_markup": {"inline_keyboard": inline_keyboard},
         }
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as r:
+            async with session.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                json=payload, timeout=aiohttp.ClientTimeout(total=10)
+            ) as r:
                 if r.status != 200:
                     resp = await r.text()
                     logger.warning(f"[BotNotify] 推送失败 {r.status}: {resp[:100]}")
-                else:
-                    logger.info(f"[BotNotify] 已推送命中通知到 {bot_chat_id}")
     except Exception as e:
         logger.warning(f"[BotNotify] 推送异常: {e}")
 
 
-# ── 关键词匹配引擎 ───────────────────────────────────────────
-def match_keyword(text: str, keyword: dict) -> bool:
-    """
-    支持四种匹配模式：
-    - exact: 精确包含
-    - regex: 正则表达式
-    - and: 所有子关键词都包含
-    - or: 任一子关键词包含
-    """
-    if not text:
-        return False
-
-    match_type = keyword.get("matchType", "exact")
-    pattern = keyword.get("pattern", "")
-    sub_keywords = keyword.get("subKeywords", [])
-    case_sensitive = keyword.get("caseSensitive", False)
-
-    compare_text = text if case_sensitive else text.lower()
-    compare_pattern = pattern if case_sensitive else pattern.lower()
-
-    if match_type in ("exact", "contains"):
-        return compare_pattern in compare_text
-
-    elif match_type == "regex":
-        try:
-            flags = 0 if case_sensitive else re.IGNORECASE
-            return bool(re.search(pattern, text, flags))
-        except re.error:
-            return False
-
-    elif match_type == "and":
-        keywords_list = [k.strip() for k in sub_keywords if k.strip()]
-        if not keywords_list:
-            keywords_list = [compare_pattern]
-        return all(
-            (k if case_sensitive else k.lower()) in compare_text
-            for k in keywords_list
-        )
-
-    elif match_type == "or":
-        keywords_list = [k.strip() for k in sub_keywords if k.strip()]
-        if not keywords_list:
-            keywords_list = [compare_pattern]
-        return any(
-            (k if case_sensitive else k.lower()) in compare_text
-            for k in keywords_list
-        )
-
-    return False
-
-
-def render_template(template: str, variables: dict) -> str:
-    """渲染消息模板，替换变量"""
-    result = template
-    for key, value in variables.items():
-        result = result.replace(f"{{{{{key}}}}}", str(value or ""))
-    return result
-
-
-# ── 账号健康度更新 ───────────────────────────────────────────
 async def update_account_health(account_id: int, delta: int, status: str = None, reason: str = None):
-    """更新账号健康度。当 delta < 0 且健康度低于阈值时，服务器会自动触发 Bot 告警。"""
     data = {"accountId": account_id, "delta": delta}
     if status:
         data["status"] = status
@@ -302,675 +247,604 @@ async def update_account_health(account_id: int, delta: int, status: str = None,
     await api.post("/engine/account/health", data)
 
 
-# ── 私信发送队列处理器 ───────────────────────────────────────
-async def process_dm_queue():
-    """从 API 获取待发送的私信，按防封策略调度发送"""
-    while True:
-        try:
-            # 获取待发送队列（每次最多 5 条）
-            queue_data = await api.get("/engine/dm-queue?limit=5")
-            if not queue_data or not queue_data.get("items"):
-                await asyncio.sleep(DM_WORKER_INTERVAL)
-                continue
+async def process_message(
+    account_id: int, user_id: int, chat_id: str, chat_title: str,
+    chat_username: Optional[str], sender_id: int, sender_username: Optional[str],
+    sender_first_name: str, sender_last_name: str, message_id: int, text: str,
+    is_bot: bool = False,
+):
+    if not text or not text.strip() or is_bot:
+        return
+    sender_tg_id = str(sender_id)
+    sender_name = f"{sender_first_name} {sender_last_name}".strip()
+    now_ts = time.time()
+    expired_keys = [k for k, v in processed_messages.items() if now_ts - v > PROCESSED_MSG_TTL]
+    for k in expired_keys:
+        del processed_messages[k]
 
-            for item in queue_data["items"]:
-                account_id = item.get("senderAccountId")
-                target_tg_id = item.get("targetTgId")
-                target_username = item.get("targetUsername")
-                content = item.get("content")
-                queue_id = item.get("id")
+    config = monitor_config.get(str(user_id), {})
+    groups = config.get("groups", [])
+    push_settings_cfg = config.get("pushSettings", {})
 
-                # 去重检查
-                cache_key = f"{account_id}:{target_tg_id or target_username}"
-                if cache_key in sent_dm_cache:
-                    last_sent = sent_dm_cache[cache_key]
-                    cooldown = item.get("cooldownHours", 24) * 3600
-                    if time.time() - last_sent < cooldown:
-                        await api.post("/engine/dm-queue/skip", {"id": queue_id, "reason": "cooldown"})
-                        continue
-
-                # 获取发信账号的客户端
-                client = active_clients.get(account_id)
-                if not client or not client.is_connected:
-                    await api.post("/engine/dm-queue/fail", {"id": queue_id, "error": "sender_offline"})
-                    continue
-
-                # 防封延迟（高斯随机，均值 2 分钟）
-                antiban = item.get("antiban", {})
-                min_delay = antiban.get("minDelay", 60)
-                max_delay = antiban.get("maxDelay", 180)
-                delay = random.gauss((min_delay + max_delay) / 2, (max_delay - min_delay) / 6)
-                delay = max(min_delay, min(max_delay, delay))
-
-                logger.info(f"[DM] 准备发送 account={account_id} target={target_username or target_tg_id} delay={delay:.0f}s")
-                await asyncio.sleep(delay)
-
-                # 发送私信
-                try:
-                    target = target_username or int(target_tg_id)
-                    await client.send_message(target, content)
-
-                    # 标记成功
-                    sent_dm_cache[cache_key] = time.time()
-                    await api.post("/engine/dm-queue/success", {"id": queue_id})
-                    await update_account_health(account_id, 0)  # 成功不扣分
-                    logger.info(f"[DM] ✅ 发送成功 -> {target_username or target_tg_id}")
-
-                except FloodWait as e:
-                    logger.warning(f"[DM] FloodWait {e.value}s for account {account_id}")
-                    await update_account_health(account_id, -5, reason="flood")
-                    await api.post("/engine/dm-queue/retry", {"id": queue_id, "retryAfter": e.value})
-                    await asyncio.sleep(e.value)
-
-                except PeerFlood:
-                    logger.error(f"[DM] PeerFlood for account {account_id} - 暂停该账号发信")
-                    await update_account_health(account_id, -20, "limited", reason="limited")
-                    await api.post("/engine/dm-queue/fail", {"id": queue_id, "error": "peer_flood"})
-
-                except UserPrivacyRestricted:
-                    logger.info(f"[DM] 用户隐私设置限制，跳过 {target_username or target_tg_id}")
-                    await api.post("/engine/dm-queue/fail", {"id": queue_id, "error": "privacy_restricted"})
-
-                except UserIsBlocked:
-                    logger.info(f"[DM] 用户已拉黑，跳过 {target_username or target_tg_id}")
-                    await api.post("/engine/dm-queue/fail", {"id": queue_id, "error": "user_blocked"})
-
-                except InputUserDeactivated:
-                    logger.info(f"[DM] 用户账号已注销，跳过 {target_username or target_tg_id}")
-                    await api.post("/engine/dm-queue/fail", {"id": queue_id, "error": "user_deactivated"})
-
-                except Exception as e:
-                    logger.error(f"[DM] 发送失败: {e}")
-                    await update_account_health(account_id, -2, reason="error")
-                    await api.post("/engine/dm-queue/fail", {"id": queue_id, "error": str(e)[:200]})
-
-        except Exception as e:
-            logger.error(f"[DM Worker] 异常: {e}")
-
-        await asyncio.sleep(DM_WORKER_INTERVAL)
-
-
-# ── 广告用户检测 ─────────────────────────────────────────────
-def is_likely_spam(sender, text: str) -> bool:
-    """简单的广告/垃圾用户检测"""
-    spam_patterns = [
-        r"t\.me/\+", r"t\.me/[a-zA-Z0-9_]+",  # TG 链接
-        r"https?://",  # 外部链接
-        r"@[a-zA-Z0-9_]{5,}",  # @ 提及
-        r"\+?\d[\d\s\-\(\)]{8,}",  # 电话号码
-    ]
-    spam_count = sum(1 for p in spam_patterns if re.search(p, text))
-    # 无用户名且有多个垃圾特征，或 bio 为空且消息含大量链接
-    if spam_count >= 2:
-        return True
-    # 账号创建时间很新（无法直接检测，但可以通过 ID 范围粗略判断）
-    # Telegram ID > 7000000000 通常是 2023 年后注册的新账号
-    if sender.id > 7_000_000_000 and spam_count >= 1:
-        return True
-    return False
-
-def check_anti_spam(sender_tg_id: str, text: str, anti_spam_cfg: dict):
-    import time as _time
-    from datetime import date as _date
-    if not anti_spam_cfg.get('enabled', True):
-        return False, ''
-    min_len = int(anti_spam_cfg.get('minMsgLen', 0))
-    if min_len > 0 and len(text.strip()) < min_len:
-        return True, f'msg too short ({len(text.strip())} < {min_len})'
-    daily_limit = int(anti_spam_cfg.get('dailyLimit', 10))
-    rate_window = int(anti_spam_cfg.get('rateWindow', 60))
-    rate_limit_n = int(anti_spam_cfg.get('rateLimit', 3))
-    today = _date.today().isoformat()
-    now = _time.time()
-    if sender_tg_id not in daily_hit_cache:
-        daily_hit_cache[sender_tg_id] = {}
-    day_counts = daily_hit_cache[sender_tg_id]
-    for d in list(day_counts.keys()):
-        if d != today:
-            del day_counts[d]
-    today_count = day_counts.get(today, 0)
-    if today_count >= daily_limit:
-        return True, f'daily limit {today_count}/{daily_limit}'
-    if sender_tg_id not in rate_hit_cache:
-        rate_hit_cache[sender_tg_id] = []
-    timestamps = rate_hit_cache[sender_tg_id]
-    timestamps[:] = [t for t in timestamps if now - t < rate_window]
-    if len(timestamps) >= rate_limit_n:
-        return True, f'rate limit {len(timestamps)}/{rate_limit_n} in {rate_window}s'
-    day_counts[today] = today_count + 1
-    timestamps.append(now)
-    return False, ''
-
-
-
-# ── 消息处理器 ───────────────────────────────────────────────
-def create_message_handler(account_id: int, user_id: int):
-    """为每个账号创建消息处理器闭包"""
-
-    async def handle_message(client: Client, message: Message):
-        try:
-            _dbg_text = (message.text or message.caption or "")[:50]
-            logger.debug(f"[DEBUG] 收到消息: chat_type={message.chat.type.name if message.chat else None} chat_id={message.chat.id if message.chat else None} from_user={message.from_user.id if message.from_user else None} is_bot={message.from_user.is_bot if message.from_user else None} text={repr(_dbg_text)}")
-            # 只处理群组/频道消息
-            if not message.chat or message.chat.type.name not in ("GROUP", "SUPERGROUP"):
-                return
-
-            # 获取发送者信息
-            sender = message.from_user
-            if not sender or sender.is_bot:
-                return
-
-            chat_id = str(message.chat.id)
-            sender_tg_id = str(sender.id)
-            text = message.text or message.caption or ""
-            if not text.strip():
-                return
-
-            # 从配置中查找该群组的监控规则
-            config = monitor_config.get(str(user_id), {})
-            groups = config.get("groups", [])
-
-            # ── 推送总开关检查 ──────────────────────────────────
-            push_settings = config.get("pushSettings", {})
-            if not push_settings.get("pushEnabled", True):
-                return  # 推送已关闭，直接跳过
-
-            # ── 屏蔽列表检查 ────────────────────────────────────
-            blocked_ids = set(config.get("blockedTgIds", []))
-            if sender_tg_id in blocked_ids:
-                logger.debug(f"[BLOCKED] 跳过屏蔽用户 {sender_tg_id}")
-                return
-
-            # ── 广告用户过滤 ────────────────────────────────────
-            if push_settings.get("filterAds", False) and is_likely_spam(sender, text):
-                logger.debug(f"[SPAM] 过滤疑似广告用户 {sender_tg_id}: {text[:50]}")
-                return
-            # Anti-spam rate filter
-            anti_spam_cfg = config.get("globalAntiSpam", {})
-            is_spam_hit, spam_reason = check_anti_spam(sender_tg_id, text, anti_spam_cfg)
-            if is_spam_hit:
-                logger.info(f"[ANTI_SPAM] 过滤刷词 {sender_tg_id}: {spam_reason}")
-                return
-
-            _dbg_group_ids = [g.get('groupId') for g in groups]
-            logger.debug(f"[DEBUG2] chat_id={chat_id} user_id={user_id} groups_count={len(groups)} group_ids={_dbg_group_ids}")
-
-            # 清理过期的去重缓存
-            now_ts = time.time()
-            expired_keys = [k for k, v in processed_messages.items() if now_ts - v > PROCESSED_MSG_TTL]
-            for k in expired_keys:
-                del processed_messages[k]
-
-            for group in groups:
-                _dbg_gid = group.get('groupId')
-                logger.debug(f"[DEBUG3] 比较 group.groupId={_dbg_gid} vs chat_id={chat_id} match={str(_dbg_gid) == chat_id}")
-                if str(group.get("groupId")) != chat_id:
-                    continue
-                _dbg_kws = [k.get('pattern') for k in group.get('keywords', [])]
-                logger.debug(f"[DEBUG4] 群组匹配！isActive={group.get('isActive')} keywords={_dbg_kws}")
-                if not group.get("isActive"):
-                    continue
-
-                # 检查关键词规则
-                keywords = group.get("keywords", [])
-                matched_keywords = []
-
-                for kw in keywords:
-                    if not kw.get("isActive"):
-                        continue
-                    if match_keyword(text, kw):
-                        matched_keywords.append(kw)
-
-                if not matched_keywords:
-                    continue
-
-                # ── 全局去重：防止多个监控账号重复处理同一条消息 ──────────────────────
-                # key 只用 chat_id:message_id，不含 user_id，确保跨账号去重有效
-                dedup_key = f"{chat_id}:{message.id}"
-                if dedup_key in processed_messages:
-                    logger.debug(f"[DEDUP] 跳过重复消息: {dedup_key}")
-                    break  # 该消息已被其他账号处理，跳出循环
-                processed_messages[dedup_key] = time.time()
-
-                sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
-
-                logger.info(
-                    f"[MATCH] user={user_id} group={message.chat.title} "
-                    f"sender={sender.username or sender.id} "
-                    f"keywords={[k['pattern'] for k in matched_keywords]}"
-                )
-
-                # ── 发送者历史记录写入 ──────────────────────
-                await api.post("/engine/sender-history", {
-                    "userId": user_id,
-                    "senderTgId": sender_tg_id,
-                    "senderUsername": sender.username,
-                    "senderName": sender_name,
-                    "tgGroupId": chat_id,
-                    "groupName": message.chat.title,
-                    "messageContent": text[:500],
-                    "matchedKeywords": [k["pattern"] for k in matched_keywords],
-                })
-
-                # 构建变量
-                variables = {
-                    "sender_username": sender.username or "",
-                    "sender_id": sender_tg_id,
-                    "sender_name": sender_name,
-                    "group_name": message.chat.title or "",
-                    "group_id": str(message.chat.id),
-                    "message_text": text[:200],
-                    "keyword": matched_keywords[0]["pattern"],
-                    "matched_keywords": ", ".join(k["pattern"] for k in matched_keywords),
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                }
-
-                # 上报命中记录到 API
-                hit_data = {
-                    "userId": user_id,
-                    "monitorAccountId": account_id,
-                    "tgGroupId": chat_id,
-                    "groupName": message.chat.title,
-                    "senderTgId": sender_tg_id,
-                    "senderUsername": sender.username,
-                    "senderName": sender_name,
-                    "messageText": text[:1000],
-                    "matchedKeywords": [k["pattern"] for k in matched_keywords],
-                    "messageId": str(message.id),
-                }
-                hit_result = await api.post("/engine/hit", hit_data)
-                hit_record_id = hit_result.get("id") if hit_result else None
-
-                # ── Bot 推送命中通知给用户 ──────────────────────
-                bot_chat_id = config.get("botChatId")
-                if bot_chat_id and BOT_TOKEN:
-                    # 如果是邀请链接，先解析为真实 chat_id
-                    if str(bot_chat_id).startswith("http") or str(bot_chat_id).startswith("t.me"):
-                        resolved_id = await resolve_collab_chat_id(client, bot_chat_id)
-                        if resolved_id:
-                            bot_chat_id = str(resolved_id)
-                    dm_will_send = bool(config.get("dmEnabled") and config.get("dmTemplates"))
-                    await send_bot_notification(
-                        bot_chat_id=bot_chat_id,
-                        sender_username=sender.username,
-                        sender_tg_id=sender_tg_id,
-                        matched_keyword=matched_keywords[0]["pattern"],
-                        group_name=message.chat.title or chat_id,
-                        group_username=getattr(message.chat, 'username', None),
-                        message_text=text,
-                        sender_name=sender_name,
-                        hit_record_id=hit_record_id,
-                        dm_status="queued" if dm_will_send else "disabled",
-                    )
-
-
-
-                # ── 关键词命中统计 ──────────────────────────────
-                for kw in matched_keywords:
-                    await api.post("/engine/keyword-stat", {
-                        "userId": user_id,
-                        "keywordId": kw.get("id"),
-                        "senderTgId": sender_tg_id,
-                        "senderUsername": sender.username,
-                        "senderName": sender_name,
-                        "tgGroupId": chat_id,
-                        "groupName": message.chat.title,
-                        "messageContent": text[:200],
-                    })
-
-                # 如果配置了自动私信，加入发送队列
-                if config.get("dmEnabled") and config.get("dmTemplates"):
-                    templates = config["dmTemplates"]
-                    # 按权重随机选择模板
-                    template = random.choices(
-                        templates,
-                        weights=[t.get("weight", 1) for t in templates],
-                        k=1,
-                    )[0]
-
-                    dm_content = render_template(template["content"], variables)
-
-                    dm_data = {
-                        "userId": user_id,
-                        "senderAccountId": config.get("dmSenderAccountId", account_id),
-                        "targetTgId": sender_tg_id,
-                        "targetUsername": sender.username,
-                        "content": dm_content,
-                        "templateId": template.get("id"),
-                        "hitGroupId": chat_id,
-                        "matchedKeyword": matched_keywords[0]["pattern"],
-                        "hitRecordId": hit_record_id,
-                    }
-                    await api.post("/engine/dm-queue/add", dm_data)
-
-            # ── 公共群组匹配检查 ───────────────────────────────────────────────────────────────────
-            # 如果消息来自公共群组，则对所有用户应用其关键词规则
-            # 匹配公共群组：支持数字 ID 和 URL 两种格式
-            # 先检查真实数字 ID 映射，再检查原始 groupId
-            matched_public_group = None
-            for pg in public_groups:
-                pg_group_id = str(pg.get("groupId", ""))
-                # 检查真实数字 ID（加入群组后记录的）
-                real_id = public_group_real_ids.get(pg_group_id)
-                if real_id and str(real_id) == chat_id:
-                    matched_public_group = pg
-                    break
-                # 检查原始 groupId（可能是数字字符串）
-                if pg_group_id == chat_id:
-                    matched_public_group = pg
-                    break
-            if matched_public_group:
-                sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
-                # 新模式：公共群组不再有独立关键词，每个会员使用自己的全局关键词匹配
-                # 去重：记录本条消息已通知的用户（防止同一用户收到两次推送）
-                notified_users_for_msg: set = set()
-                # 遍历所有用户的配置，匹配其关键词
-                for uid_str, uconfig in monitor_config.items():
-                    uid = int(uid_str)
-                    # 全局去重：防止多账号重复处理同一条消息
-                    pub_dedup_key = f"{chat_id}:{message.id}:{uid}"
-                    if pub_dedup_key in processed_messages:
-                        logger.debug(f"[DEDUP_PUB] 跳过重复公共群组消息: {pub_dedup_key}")
-                        notified_users_for_msg.add(uid)  # 标记为已处理
-                        continue
-                    if uid in notified_users_for_msg:
-                        continue  # 去重：该用户已被通知
-                    u_push_settings = uconfig.get("pushSettings", {})
-                    if not u_push_settings.get("pushEnabled", True):
-                        continue
-                    u_blocked_ids = set(uconfig.get("blockedTgIds", []))
-                    if sender_tg_id in u_blocked_ids:
-                        continue
-                    # 新模式：使用会员的全局关键词（globalKeywords）
-                    # 兼容旧模式：若无 globalKeywords 则从 groups 中收集
-                    global_kws = uconfig.get("globalKeywords", [])
-                    if not global_kws:
-                        # 兼容旧模式：从私有群组关键词中收集
-                        for g in uconfig.get("groups", []):
-                            if g.get("isActive"):
-                                global_kws.extend([k for k in g.get("keywords", []) if k.get("isActive")])
-                    u_matched_keywords = [kw for kw in global_kws if kw.get("isActive", True) and match_keyword(text, kw)]
-                    if not u_matched_keywords:
-                        continue
-
-                    logger.info(
-                        f"[PUBLIC_MATCH] user={uid} public_group={message.chat.title} "
-                        f"sender={sender.username or sender.id} "
-                        f"keywords={[k['pattern'] for k in u_matched_keywords]}"
-                    )
-
-                    # 上报命中记录
-                    hit_data = {
-                        "userId": uid,
-                        "monitorAccountId": account_id,
-                        "tgGroupId": chat_id,
-                        "groupName": message.chat.title,
-                        "senderTgId": sender_tg_id,
-                        "senderUsername": sender.username,
-                        "senderName": sender_name,
-                        "messageText": text[:1000],
-                        "matchedKeywords": [k["pattern"] for k in u_matched_keywords],
-                        "messageId": str(message.id),
-                    }
-                    u_hit_result = await api.post("/engine/hit", hit_data)
-                    notified_users_for_msg.add(uid)  # 去重标记
-                    processed_messages[pub_dedup_key] = time.time()  # 全局去重标记
-
-                    # Bot 推送命中通知给用户
-                    u_bot_chat_id = uconfig.get("botChatId")
-                    u_hit_record_id = u_hit_result.get("id") if u_hit_result else None
-                    if u_bot_chat_id and BOT_TOKEN:
-                        # 如果是邀请链接，先解析为真实 chat_id
-                        if str(u_bot_chat_id).startswith("http") or str(u_bot_chat_id).startswith("t.me"):
-                            resolved_id = await resolve_collab_chat_id(client, u_bot_chat_id)
-                            if resolved_id:
-                                u_bot_chat_id = str(resolved_id)
-                        await send_bot_notification(
-                            bot_chat_id=u_bot_chat_id,
-                            sender_username=sender.username,
-                            sender_tg_id=sender_tg_id,
-                            matched_keyword=u_matched_keywords[0]["pattern"],
-                            group_name=message.chat.title or chat_id,
-                            group_username=getattr(message.chat, 'username', None),
-                            message_text=text,
-                            sender_name=sender_name,
-                            hit_record_id=u_hit_record_id,
-                            dm_status="disabled",
+    if push_settings_cfg.get("pushEnabled", True):
+        blocked_ids = set(config.get("blockedTgIds", []))
+        if sender_tg_id not in blocked_ids:
+            if not (push_settings_cfg.get("filterAds", False) and is_likely_spam(sender_id, sender_username, text)):
+                anti_spam_cfg = config.get("globalAntiSpam", {})
+                is_spam, spam_reason = check_anti_spam(sender_tg_id, text, anti_spam_cfg)
+                if not is_spam:
+                    for group in groups:
+                        if not group.get("isActive"):
+                            continue
+                        group_id_cfg = str(group.get("groupId", ""))
+                        if group_id_cfg != chat_id:
+                            continue
+                        dedup_key = f"{chat_id}:{message_id}:{user_id}"
+                        if dedup_key in processed_messages:
+                            continue
+                        keywords_list = [kw for kw in group.get("keywords", []) if kw.get("isActive", True)]
+                        matched_keywords = [kw for kw in keywords_list if match_keyword(text, kw)]
+                        if not matched_keywords:
+                            continue
+                        processed_messages[dedup_key] = now_ts
+                        logger.info(
+                            f"[PRIVATE_MATCH] account={account_id} user={user_id} "
+                            f"group={chat_title} sender={sender_username or sender_id} "
+                            f"keywords={[k['pattern'] for k in matched_keywords]}"
+                        )
+                        await _handle_match(
+                            account_id=account_id, user_id=user_id, config=config,
+                            chat_id=chat_id, chat_title=chat_title, chat_username=chat_username,
+                            sender_tg_id=sender_tg_id, sender_username=sender_username,
+                            sender_name=sender_name, text=text, matched_keywords=matched_keywords,
                         )
 
+    matched_public_group = None
+    for pg in public_groups:
+        pg_group_id = str(pg.get("groupId", ""))
+        real_id = public_group_real_ids.get(pg_group_id)
+        if real_id and str(real_id) == chat_id:
+            matched_public_group = pg
+            break
+        if pg_group_id == chat_id:
+            matched_public_group = pg
+            break
 
-
-        except Exception as e:
-            logger.error(f"[Handler] 消息处理异常: {e}")
-
-    return handle_message
-
-
-# ── 账号客户端管理 ───────────────────────────────────────────
-async def start_account(account: dict) -> Optional[Client]:
-    """启动单个 TG 账号的 Pyrogram 客户端"""
-    account_id = account["id"]
-    session_string = account.get("sessionString")
-
-    if not session_string:
-        logger.warning(f"[Account {account_id}] 无 Session，跳过")
-        return None
-
-    if not TG_API_ID or not TG_API_HASH:
-        logger.error("TG_API_ID 或 TG_API_HASH 未配置，无法启动客户端")
-        return None
-
-    try:
-        client = Client(
-            name=f"account_{account_id}",
-            api_id=TG_API_ID,
-            api_hash=TG_API_HASH,
-            session_string=session_string,
-            in_memory=True,
-        )
-
-        user_id = account.get("userId", 0)
-        handler = create_message_handler(account_id, user_id)
-        client.add_handler(
-            # 监听所有群组消息
-            __import__("pyrogram.handlers", fromlist=["MessageHandler"]).MessageHandler(
-                handler,
-                filters.group & ~filters.bot,
+    if matched_public_group:
+        notified_users_for_msg: set = set()
+        for uid_str, uconfig in monitor_config.items():
+            uid = int(uid_str)
+            pub_dedup_key = f"{chat_id}:{message_id}:{uid}"
+            if pub_dedup_key in processed_messages:
+                notified_users_for_msg.add(uid)
+                continue
+            if uid in notified_users_for_msg:
+                continue
+            u_push_settings = uconfig.get("pushSettings", {})
+            if not u_push_settings.get("pushEnabled", True):
+                continue
+            u_blocked_ids = set(uconfig.get("blockedTgIds", []))
+            if sender_tg_id in u_blocked_ids:
+                continue
+            if u_push_settings.get("filterAds", False) and is_likely_spam(sender_id, sender_username, text):
+                continue
+            u_anti_spam = uconfig.get("globalAntiSpam", {})
+            is_spam, _ = check_anti_spam(sender_tg_id, text, u_anti_spam)
+            if is_spam:
+                continue
+            global_kws = uconfig.get("globalKeywords", [])
+            if not global_kws:
+                for g in uconfig.get("groups", []):
+                    if g.get("isActive"):
+                        global_kws.extend([k for k in g.get("keywords", []) if k.get("isActive")])
+            u_matched_keywords = [kw for kw in global_kws if kw.get("isActive", True) and match_keyword(text, kw)]
+            if not u_matched_keywords:
+                continue
+            processed_messages[pub_dedup_key] = now_ts
+            notified_users_for_msg.add(uid)
+            logger.info(
+                f"[PUBLIC_MATCH] user={uid} public_group={chat_title} "
+                f"sender={sender_username or sender_id} "
+                f"keywords={[k['pattern'] for k in u_matched_keywords]}"
             )
+            await _handle_match(
+                account_id=account_id, user_id=uid, config=uconfig,
+                chat_id=chat_id, chat_title=chat_title, chat_username=chat_username,
+                sender_tg_id=sender_tg_id, sender_username=sender_username,
+                sender_name=sender_name, text=text, matched_keywords=u_matched_keywords,
+            )
+
+
+async def _handle_match(
+    account_id: int, user_id: int, config: dict, chat_id: str, chat_title: str,
+    chat_username: Optional[str], sender_tg_id: str, sender_username: Optional[str],
+    sender_name: str, text: str, matched_keywords: list,
+):
+    variables = {
+        "username": sender_username or "",
+        "keyword": matched_keywords[0]["pattern"] if matched_keywords else "",
+        "group_name": chat_title,
+        "message": text[:200],
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "sender_name": sender_name,
+    }
+    hit_record_id = None
+    try:
+        hit_result = await api.post("/engine/hit", {
+            "userId": user_id, "senderTgId": sender_tg_id,
+            "senderUsername": sender_username, "senderName": sender_name,
+            "tgGroupId": chat_id, "groupName": chat_title,
+            "matchedKeyword": matched_keywords[0]["pattern"],
+            "messageContent": text[:500], "keywordId": matched_keywords[0].get("id"),
+        })
+        if hit_result:
+            hit_record_id = hit_result.get("id")
+    except Exception as e:
+        logger.warning(f"[Hit] 写入命中记录失败: {e}")
+
+    dm_will_send = False
+    if config.get("dmEnabled") and config.get("dmTemplates"):
+        cache_key = f"{config.get('dmSenderAccountId', account_id)}:{sender_tg_id}"
+        antiban = config.get("antiban", {})
+        cooldown_hours = antiban.get("cooldownHours", 24)
+        last_sent = sent_dm_cache.get(cache_key, 0)
+        if time.time() - last_sent > cooldown_hours * 3600:
+            dm_will_send = True
+
+    bot_chat_id = config.get("botChatId")
+    if bot_chat_id:
+        await send_bot_notification(
+            bot_chat_id=str(bot_chat_id), sender_username=sender_username,
+            sender_tg_id=sender_tg_id, matched_keyword=matched_keywords[0]["pattern"],
+            group_name=chat_title, group_username=chat_username, message_text=text,
+            sender_name=sender_name, hit_record_id=hit_record_id,
+            dm_status="queued" if dm_will_send else "disabled",
         )
 
-        await client.start()
-        me = await client.get_me()
-        logger.info(f"[Account {account_id}] ✅ 已连接: @{me.username or me.id}")
+    push_settings_cfg = config.get("pushSettings", {})
+    collab_chat_id_str = push_settings_cfg.get("collabChatId")
+    if collab_chat_id_str:
+        worker = active_workers.get(account_id)
+        if worker and worker.is_running:
+            try:
+                real_collab_id = await worker.resolve_chat_id(collab_chat_id_str)
+                if real_collab_id:
+                    collab_text = (
+                        f"关键词命中\n"
+                        f"用户：{sender_name or sender_username or sender_tg_id}\n"
+                        f"来源：{chat_title}\n"
+                        f"关键词：{matched_keywords[0]['pattern']}\n"
+                        f"内容：{text[:200]}"
+                    )
+                    await worker.send_message(real_collab_id, collab_text)
+            except Exception as e:
+                logger.warning(f"[CollabPush] 协作群推送失败: {e}")
 
-        # 更新账号状态
-        await api.post("/engine/account/status", {
-            "accountId": account_id,
-            "status": "active",
-            "tgUserId": str(me.id),
-            "tgUsername": me.username,
+    for kw in matched_keywords:
+        await api.post("/engine/keyword-stat", {
+            "userId": user_id, "keywordId": kw.get("id"),
+            "senderTgId": sender_tg_id, "senderUsername": sender_username,
+            "senderName": sender_name, "tgGroupId": chat_id,
+            "groupName": chat_title, "messageContent": text[:200],
         })
 
-        return client
+    if dm_will_send:
+        templates = config["dmTemplates"]
+        template = random.choices(templates, weights=[t.get("weight", 1) for t in templates], k=1)[0]
+        dm_content = render_template(template["content"], variables)
+        dm_data = {
+            "userId": user_id, "senderAccountId": config.get("dmSenderAccountId", account_id),
+            "targetTgId": sender_tg_id, "targetUsername": sender_username,
+            "content": dm_content, "templateId": template.get("id"),
+            "hitGroupId": chat_id, "matchedKeyword": matched_keywords[0]["pattern"],
+            "hitRecordId": hit_record_id,
+        }
+        await api.post("/engine/dm-queue/add", dm_data)
 
-    except SessionPasswordNeeded:
-        logger.error(f"[Account {account_id}] 需要二步验证密码")
-        await update_account_health(account_id, -10, "needs_2fa", reason="needs_2fa")
-        return None
 
-    except Exception as e:
-        logger.error(f"[Account {account_id}] 启动失败: {e}")
-        await update_account_health(account_id, -15, "error", reason="error")
-        return None
+class AccountWorker:
+    """
+    封装单个 TG 账号的 TDLib 客户端生命周期。
+    TDLib 持久化 SQLite 数据库，天然支持断线重连后的 updates gap 补全。
+    每个账号独立数据目录，互不干扰。
+    """
 
+    def __init__(self, account: dict):
+        self.account_id = account["id"]
+        self.user_id = account.get("userId", 0)
+        self.session_string = account.get("sessionString", "")
+        self.phone = account.get("phone", "")
+        self.proxy = {
+            "host": account.get("proxyHost"),
+            "port": account.get("proxyPort"),
+            "type": account.get("proxyType", "socks5"),
+            "username": account.get("proxyUsername"),
+            "password": account.get("proxyPassword"),
+        }
+        self.client = None
+        self.is_running = False
+        self._task = None
+        self._chat_id_cache: dict = {}
+        self.files_directory = os.path.join(TDLIB_DATA_DIR, f"account_{self.account_id}")
+        os.makedirs(self.files_directory, exist_ok=True)
 
-async def stop_account(account_id: int):
-    """停止账号客户端"""
-    client = active_clients.pop(account_id, None)
-    if client:
+    async def start(self) -> bool:
+        if not TG_API_ID or not TG_API_HASH:
+            logger.error("TG_API_ID 或 TG_API_HASH 未配置")
+            return False
+        if not self.session_string and not self.phone:
+            logger.warning(f"[Account {self.account_id}] 无 Session 或手机号，跳过")
+            return False
         try:
-            await client.stop()
-            logger.info(f"[Account {account_id}] 已停止")
+            from pytdbot import Client as TDClient
+            self.client = TDClient(
+                api_id=TG_API_ID,
+                api_hash=TG_API_HASH,
+                files_directory=self.files_directory,
+                use_message_database=True,
+                use_chat_info_database=True,
+                use_file_database=True,
+                td_verbosity=1,
+                user_bot=True,
+            )
+
+            @self.client.on_updateNewMessage()
+            async def on_new_message(c, update):
+                await self._on_new_message(update)
+
+            @self.client.on_updateAuthorizationState()
+            async def on_auth_state(c, update):
+                await self._on_auth_state(update)
+
+            self._task = asyncio.create_task(self._run_client())
+            self.is_running = True
+            logger.info(f"[Account {self.account_id}] TDLib Worker 已启动 (数据目录: {self.files_directory})")
+            return True
         except Exception as e:
-            logger.warning(f"[Account {account_id}] 停止时异常: {e}")
-# ── 公共群组加入 ───────────────────────────────────────────────────
-async def join_public_groups(client: Client, account_id: int):
-    """账号启动后自动加入所有公共监控群组，并上报加群状态"""
+            logger.error(f"[Account {self.account_id}] 启动失败: {e}")
+            await update_account_health(self.account_id, -15, "error", reason=str(e)[:100])
+            return False
+
+    async def _run_client(self):
+        try:
+            async with self.client:
+                await self.client.idle()
+        except Exception as e:
+            logger.error(f"[Account {self.account_id}] TDLib 客户端异常: {e}")
+            self.is_running = False
+
+    async def _on_auth_state(self, update):
+        try:
+            state_type = update.authorization_state.get("@type", "") if hasattr(update, 'authorization_state') else ""
+            logger.info(f"[Account {self.account_id}] 认证状态: {state_type}")
+            if state_type == "authorizationStateReady":
+                await api.post("/engine/account/status", {"accountId": self.account_id, "status": "active"})
+                await update_account_health(self.account_id, 0, "healthy")
+            elif state_type == "authorizationStateClosed":
+                self.is_running = False
+                await update_account_health(self.account_id, -10, "error", reason="session_closed")
+        except Exception as e:
+            logger.warning(f"[Account {self.account_id}] 处理认证状态异常: {e}")
+
+    async def _on_new_message(self, update):
+        try:
+            message = update.message if hasattr(update, 'message') else None
+            if not message:
+                return
+            content = message.get("content", {}) if isinstance(message, dict) else {}
+            content_type = content.get("@type", "")
+            text = ""
+            if content_type == "messageText":
+                text = content.get("text", {}).get("text", "")
+            elif content_type in ("messagePhoto", "messageVideo", "messageDocument"):
+                caption = content.get("caption", {})
+                text = caption.get("text", "") if caption else ""
+            if not text:
+                return
+            chat_id_int = message.get("chat_id", 0) if isinstance(message, dict) else 0
+            if not chat_id_int or chat_id_int > 0:
+                return
+            chat_id = str(chat_id_int)
+            sender_info = message.get("sender_id", {}) if isinstance(message, dict) else {}
+            sender_type = sender_info.get("@type", "")
+            if sender_type != "messageSenderUser":
+                return
+            sender_user_id = sender_info.get("user_id", 0)
+            if not sender_user_id:
+                return
+            chat_info = await self._get_chat_info(chat_id_int)
+            chat_title = chat_info.get("title", str(chat_id_int))
+            chat_username = chat_info.get("username", "") or None
+            user_info = await self._get_user_info(sender_user_id)
+            sender_username = user_info.get("username", "") or None
+            sender_first_name = user_info.get("first_name", "")
+            sender_last_name = user_info.get("last_name", "")
+            is_bot = user_info.get("is_bot", False)
+            message_id = message.get("id", 0) if isinstance(message, dict) else 0
+            await process_message(
+                account_id=self.account_id, user_id=self.user_id,
+                chat_id=chat_id, chat_title=chat_title, chat_username=chat_username,
+                sender_id=sender_user_id, sender_username=sender_username,
+                sender_first_name=sender_first_name, sender_last_name=sender_last_name,
+                message_id=message_id, text=text, is_bot=is_bot,
+            )
+        except Exception as e:
+            logger.warning(f"[Account {self.account_id}] 处理消息异常: {e}")
+
+    async def _get_chat_info(self, chat_id: int) -> dict:
+        try:
+            result = await self.client.invoke({"@type": "getChat", "chat_id": chat_id})
+            if result and result.get("@type") == "chat":
+                title = result.get("title", "")
+                chat_type = result.get("type", {})
+                username = ""
+                if chat_type.get("@type") == "chatTypeSupergroup":
+                    sg_id = chat_type.get("supergroup_id", 0)
+                    sg_info = await self.client.invoke({"@type": "getSupergroup", "supergroup_id": sg_id})
+                    if sg_info:
+                        username = sg_info.get("username", "")
+                return {"title": title, "username": username}
+        except Exception:
+            pass
+        return {"title": str(chat_id), "username": ""}
+
+    async def _get_user_info(self, user_id: int) -> dict:
+        try:
+            result = await self.client.invoke({"@type": "getUser", "user_id": user_id})
+            if result and result.get("@type") == "user":
+                return {
+                    "username": result.get("username", ""),
+                    "first_name": result.get("first_name", ""),
+                    "last_name": result.get("last_name", ""),
+                    "is_bot": result.get("type", {}).get("@type") == "userTypeBot",
+                }
+        except Exception:
+            pass
+        return {"username": "", "first_name": "", "last_name": "", "is_bot": False}
+
+    async def resolve_chat_id(self, chat_id_str: str) -> Optional[int]:
+        if not chat_id_str:
+            return None
+        try:
+            return int(chat_id_str)
+        except (ValueError, TypeError):
+            pass
+        if chat_id_str in self._chat_id_cache:
+            return self._chat_id_cache[chat_id_str]
+        try:
+            if "t.me/+" in chat_id_str or "t.me/joinchat" in chat_id_str:
+                result = await self.client.invoke({"@type": "joinChatByInviteLink", "invite_link": chat_id_str})
+            else:
+                username = chat_id_str.lstrip("@").split("/")[-1]
+                result = await self.client.invoke({"@type": "searchPublicChat", "username": username})
+            if result and result.get("id"):
+                real_id = result["id"]
+                self._chat_id_cache[chat_id_str] = real_id
+                return real_id
+        except Exception as e:
+            logger.warning(f"[Resolve] 无法解析 {chat_id_str}: {e}")
+        return None
+
+    async def join_chat(self, chat_id_str: str) -> Optional[int]:
+        if not self.client or not self.is_running:
+            return None
+        try:
+            chat_id_val = int(chat_id_str) if chat_id_str.lstrip("-").isdigit() else None
+            if chat_id_val:
+                await self.client.invoke({"@type": "joinChat", "chat_id": chat_id_val})
+                return chat_id_val
+            else:
+                result = await self.resolve_chat_id(chat_id_str)
+                if result:
+                    await self.client.invoke({"@type": "joinChat", "chat_id": result})
+                    return result
+        except Exception as e:
+            err_str = str(e).lower()
+            if "already" in err_str or "member" in err_str:
+                try:
+                    return int(chat_id_str) if chat_id_str.lstrip("-").isdigit() else None
+                except Exception:
+                    pass
+            logger.warning(f"[Account {self.account_id}] 加入群组 {chat_id_str} 失败: {e}")
+        return None
+
+    async def send_message(self, chat_id: int, text: str) -> bool:
+        if not self.client or not self.is_running:
+            return False
+        try:
+            await self.client.invoke({
+                "@type": "sendMessage", "chat_id": chat_id,
+                "input_message_content": {
+                    "@type": "inputMessageText",
+                    "text": {"@type": "formattedText", "text": text}
+                }
+            })
+            return True
+        except Exception as e:
+            logger.warning(f"[Account {self.account_id}] 发送消息失败: {e}")
+            return False
+
+    async def stop(self):
+        self.is_running = False
+        if self.client:
+            try:
+                await self.client.close()
+            except Exception:
+                pass
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        logger.info(f"[Account {self.account_id}] TDLib Worker 已停止")
+
+
+async def join_public_groups(worker: AccountWorker, account_id: int):
     global public_group_real_ids
     if not public_groups:
         return
     for pg in public_groups:
-        pg_id = pg.get("id")  # 公共群组数据库 ID
+        pg_id = pg.get("id")
         group_id = pg.get("groupId", "")
         if not group_id:
             continue
         try:
-            chat_id_val = int(group_id) if group_id.lstrip("-").isdigit() else group_id
-            try:
-                chat = await client.join_chat(chat_id_val)
-                # 记录真实数字 ID（用于消息匹配）
-                if hasattr(chat, 'id'):
-                    public_group_real_ids[group_id] = chat.id
-                    logger.info(f"[Account {account_id}] 已加入公共群组 {group_id} -> 真实ID: {chat.id}")
-                else:
-                    logger.info(f"[Account {account_id}] 已加入公共群组 {group_id}")
-                # 上报加群成功状态
+            real_id = await worker.join_chat(group_id)
+            if real_id:
+                public_group_real_ids[group_id] = real_id
+                logger.info(f"[Account {account_id}] 已加入公共群组 {group_id} -> 真实ID: {real_id}")
                 if pg_id:
                     await api.post("/engine/public-group/join-status", {
-                        "publicGroupId": pg_id,
-                        "monitorAccountId": account_id,
-                        "status": "joined",
+                        "publicGroupId": pg_id, "monitorAccountId": account_id, "status": "joined",
                     })
-            except Exception as join_err:
-                err_str = str(join_err).lower()
-                if "already" in err_str or "user_already" in err_str or "you are already" in err_str:
-                    logger.debug(f"[Account {account_id}] 已是公共群组 {group_id} 的成员")
-                    # 上报已在群状态
-                    if pg_id:
-                        await api.post("/engine/public-group/join-status", {
-                            "publicGroupId": pg_id,
-                            "monitorAccountId": account_id,
-                            "status": "joined",
-                        })
-                else:
-                    logger.warning(f"[Account {account_id}] 加入公共群组 {group_id} 失败: {join_err}")
-                    # 上报失败状态
-                    if pg_id:
-                        await api.post("/engine/public-group/join-status", {
-                            "publicGroupId": pg_id,
-                            "monitorAccountId": account_id,
-                            "status": "failed",
-                            "errorMsg": str(join_err)[:200],
-                        })
-            await asyncio.sleep(2)  # 防封延迟
+            else:
+                if pg_id:
+                    await api.post("/engine/public-group/join-status", {
+                        "publicGroupId": pg_id, "monitorAccountId": account_id,
+                        "status": "failed", "errorMsg": "join_failed",
+                    })
         except Exception as e:
             logger.warning(f"[Account {account_id}] 处理公共群组 {group_id} 异常: {e}")
+        await asyncio.sleep(2)
 
 
-# ── 配置同步 ─────────────────────────────────────────────────────
+async def process_dm_queue():
+    while True:
+        try:
+            queue = await api.get("/engine/dm-queue?limit=5")
+            if not queue:
+                await asyncio.sleep(DM_WORKER_INTERVAL)
+                continue
+            items = queue if isinstance(queue, list) else queue.get("items", [])
+            for item in items[:5]:
+                queue_id = item.get("id")
+                account_id = item.get("senderAccountId")
+                target_tg_id = str(item.get("targetTgId", ""))
+                target_username = item.get("targetUsername")
+                content = item.get("content", "")
+                user_id = item.get("userId")
+                if not account_id or not content:
+                    continue
+                worker = active_workers.get(account_id)
+                if not worker or not worker.is_running:
+                    logger.warning(f"[DM] 账号 {account_id} 不可用，跳过")
+                    continue
+                config = monitor_config.get(str(user_id), {})
+                antiban = config.get("antiban", {})
+                min_delay = antiban.get("minDelay", 60)
+                max_delay = antiban.get("maxDelay", 180)
+                delay = random.gauss((min_delay + max_delay) / 2, (max_delay - min_delay) / 6)
+                delay = max(min_delay, min(max_delay, delay))
+                logger.info(f"[DM] 准备发送 account={account_id} target={target_username or target_tg_id} delay={delay:.0f}s")
+                await asyncio.sleep(delay)
+                try:
+                    target_id = int(target_tg_id) if target_tg_id.lstrip("-").isdigit() else None
+                    if target_id:
+                        success = await worker.send_message(target_id, content)
+                    else:
+                        resolved_id = await worker.resolve_chat_id(f"@{target_username}" if target_username else target_tg_id)
+                        success = await worker.send_message(resolved_id, content) if resolved_id else False
+                    if success:
+                        cache_key = f"{account_id}:{target_tg_id}"
+                        sent_dm_cache[cache_key] = time.time()
+                        await api.post("/engine/dm-queue/success", {"id": queue_id})
+                        await update_account_health(account_id, 0)
+                        logger.info(f"[DM] 发送成功 -> {target_username or target_tg_id}")
+                    else:
+                        await api.post("/engine/dm-queue/fail", {"id": queue_id, "error": "send_failed"})
+                except Exception as e:
+                    logger.error(f"[DM] 发送失败: {e}")
+                    await update_account_health(account_id, -2, reason="error")
+                    await api.post("/engine/dm-queue/fail", {"id": queue_id, "error": str(e)[:200]})
+        except Exception as e:
+            logger.error(f"[DM Worker] 异常: {e}")
+        await asyncio.sleep(DM_WORKER_INTERVAL)
+
+
 async def sync_config():
-    """从 API 拉取最新配置，启停账号"""
     global monitor_config, public_groups
-
     while True:
         try:
             data = await api.get("/engine/config")
             if not data:
-                logger.warning("[Config] 无法获取配置，程后重试")
+                logger.warning("[Config] 无法获取配置，稍后重试")
                 await asyncio.sleep(POLL_INTERVAL)
                 continue
-
             monitor_config = data.get("userConfigs", {})
             accounts = data.get("accounts", [])
-
-            # 更新公共群组列表
             new_public_groups = data.get("publicGroups", [])
             public_groups_changed = new_public_groups != public_groups
             public_groups = new_public_groups
             if public_groups:
                 logger.info(f"[Config] 公共群组: {len([g for g in public_groups if g.get('isActive')])} 个活跃")
-
-            # 需要激活的账号 ID 集合
             target_ids = {
                 a["id"] for a in accounts
                 if a.get("isActive") and a.get("role") in ("monitor", "both")
-                and a.get("sessionString")
+                and (a.get("sessionString") or a.get("phone"))
             }
-
-            # 停止不再需要的账号
-            to_stop = set(active_clients.keys()) - target_ids
+            to_stop = set(active_workers.keys()) - target_ids
             for aid in to_stop:
-                logger.info(f"[Config] 停止账号 {aid}（配置已移除或停用）")
-                await stop_account(aid)
-
-            # 启动新增的账号
-            to_start = target_ids - set(active_clients.keys())
+                logger.info(f"[Config] 停止账号 {aid}")
+                worker = active_workers.pop(aid, None)
+                if worker:
+                    await worker.stop()
+            to_start = target_ids - set(active_workers.keys())
             for account in accounts:
                 if account["id"] in to_start:
-                    client = await start_account(account)
-                    if client:
-                        active_clients[account["id"]] = client
-                        # 新账号启动后自动加入公共群组
-                        asyncio.create_task(join_public_groups(client, account["id"]))
-
-            # 公共群组发生变化时，让所有活跃账号重新加入
+                    worker = AccountWorker(account)
+                    success = await worker.start()
+                    if success:
+                        active_workers[account["id"]] = worker
+                        asyncio.create_task(join_public_groups(worker, account["id"]))
             if public_groups_changed and public_groups:
-                logger.info("[Config] 公共群组列表已更新，所有账号重新加入公共群组...")
-                for aid, client in active_clients.items():
-                    asyncio.create_task(join_public_groups(client, aid))
-
+                logger.info("[Config] 公共群组列表已更新，所有账号重新加入...")
+                for aid, worker in active_workers.items():
+                    asyncio.create_task(join_public_groups(worker, aid))
             logger.info(
-                f"[Config] 同步完成 活跃账号={len(active_clients)} "
+                f"[Config] 同步完成 活跃账号={len(active_workers)} "
                 f"监控用户={len(monitor_config)} 公共群组={len(public_groups)}"
             )
-
         except Exception as e:
             logger.error(f"[Config] 同步异常: {e}")
-
         await asyncio.sleep(POLL_INTERVAL)
-# ── 心跳上报 ─────────────────────────────────────────────────
+
+
 async def heartbeat():
-    """每分钟上报引擎状态"""
     while True:
         try:
             await api.post("/engine/heartbeat", {
-                "activeAccounts": len(active_clients),
+                "activeAccounts": len(active_workers),
                 "timestamp": int(time.time()),
+                "engineType": "tdlib",
+                "tdlibVersion": "1.8.x",
             })
         except Exception as e:
             logger.warning(f"[Heartbeat] 上报失败: {e}")
         await asyncio.sleep(60)
 
 
-# ── 主入口 ───────────────────────────────────────────────────
 async def main():
     logger.info("=" * 60)
-    logger.info("TG Monitor Pro - 监控引擎启动")
+    logger.info("TG Monitor Pro - TDLib 监控引擎启动")
     logger.info(f"API Base: {API_BASE}")
     logger.info(f"TG API ID: {TG_API_ID}")
+    logger.info(f"TDLib 数据目录: {TDLIB_DATA_DIR}")
     logger.info("=" * 60)
-
+    os.makedirs(TDLIB_DATA_DIR, exist_ok=True)
     if not TG_API_ID or not TG_API_HASH:
-        logger.warning("⚠️  TG_API_ID 或 TG_API_HASH 未配置，引擎将每60秒重试检查")
-        logger.warning("   请在 monitor-engine/.env 中填入从 https://my.telegram.org/apps 获取的凭证")
-        # 不退出，每60秒检查一次配置是否已填入
+        logger.warning("TG_API_ID 或 TG_API_HASH 未配置，引擎将每60秒重试检查")
         while True:
             await asyncio.sleep(60)
             new_api_id = int(os.getenv("TG_API_ID", "0"))
             new_api_hash = os.getenv("TG_API_HASH", "")
             if new_api_id and new_api_hash:
-                logger.info("✅ 检测到 TG API 凭证已配置，重启引擎...")
+                logger.info("检测到 TG API 凭证已配置，重启引擎...")
                 import sys
                 os.execv(sys.executable, [sys.executable] + sys.argv)
-            logger.info("⏳ 等待 TG_API_ID 和 TG_API_HASH 配置...")
+            logger.info("等待 TG_API_ID 和 TG_API_HASH 配置...")
         return
-
-    # 并发运行所有任务
-    await asyncio.gather(
-        sync_config(),
-        process_dm_queue(),
-        heartbeat(),
-    )
+    await asyncio.gather(sync_config(), process_dm_queue(), heartbeat())
 
 
 if __name__ == "__main__":

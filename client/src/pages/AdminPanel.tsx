@@ -548,6 +548,9 @@ export default function AdminPanel() {
                                 <span>所属用户: {account.userName ?? `#${account.userId}`}</span>
                                 <span>今日发信: {account.dailyDmSent ?? 0}</span>
                                 <span className={`font-medium ${healthColor(score)}`}>健康度: {score}</span>
+                                <span className="text-blue-400 font-mono">
+                                  {account.engineType === "tdlib" ? "🚀 TDLib" : "🐍 Pyrogram"}
+                                </span>
                               </div>
                             </div>
                           </div>

@@ -355,18 +355,37 @@ export const engineRouter = router({
       return { success: true };
     }),
 
-  // ── 心跳上报 ─────────────────────────────────────────────
+  // ── 心跳上报（TDLib 引擎增强版）─────────────────────────────
   heartbeat: engineProcedure
     .input(
       z.object({
         activeAccounts: z.number(),
         timestamp: z.number(),
+        engineType: z.string().optional(),       // "tdlib" | "pyrogram"
+        tdlibVersion: z.string().optional(),     // TDLib 版本号
+        totalGroups: z.number().optional(),      // 正在监控的群组总数
+        gapRecoveries: z.number().optional(),    // updates gap 恢复次数
       })
     )
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (db) {
-        // 简单记录到内存，不做持久化
+        // 持久化心跳状态到 systemConfig
+        try {
+          const heartbeatData = JSON.stringify({
+            activeAccounts: input.activeAccounts,
+            timestamp: input.timestamp,
+            engineType: input.engineType ?? "pyrogram",
+            tdlibVersion: input.tdlibVersion ?? null,
+            totalGroups: input.totalGroups ?? 0,
+            gapRecoveries: input.gapRecoveries ?? 0,
+          });
+          await db.insert(systemConfig)
+            .values({ configKey: "engine_last_heartbeat", configValue: heartbeatData })
+            .onDuplicateKeyUpdate({ set: { configValue: heartbeatData } });
+        } catch (_e) {
+          // 忽略持久化错误，不影响引擎运行
+        }
       }
       return { success: true, serverTime: Date.now() };
     }),

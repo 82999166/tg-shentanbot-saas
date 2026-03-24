@@ -17,7 +17,8 @@ services:
     restart: unless-stopped
     env_file: .env
     volumes:
-      - ./sessions:/app/sessions       # Telegram Session 文件持久化
+      - ./sessions:/app/sessions       # 旧版 Pyrogram Session 文件（兼容保留）
+      - ./tdlib_data:/app/tdlib_data   # TDLib 持久化数据（重要！删除后需重新登录）
       - ./logs:/app/logs               # 日志持久化
     command: python3 main.py
     healthcheck:
