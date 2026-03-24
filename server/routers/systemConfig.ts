@@ -14,6 +14,17 @@ const CONFIG_KEYS = [
   { key: "tutorial_text", description: "使用教程内容（支持 Markdown）" },
   { key: "bot_name", description: "Bot 显示名称" },
   { key: "site_name", description: "平台名称" },
+  // 反垃圾配置
+  { key: "anti_spam_enabled", description: "是否启用反垃圾（true/false）" },
+  { key: "anti_spam_daily_limit", description: "每日发信上限（次数）" },
+  { key: "anti_spam_rate_window", description: "频率窗口（秒）" },
+  { key: "anti_spam_rate_limit", description: "频率窗口内最大发信次数" },
+  { key: "anti_spam_min_msg_len", description: "触发关键词的消息最小字数" },
+  // 全局消息过滤配置
+  { key: "global_filter_ads", description: "全局广告过滤开关（true/false）" },
+  { key: "global_max_msg_length", description: "全局消息字数上限（0=不限制）" },
+  // Bot 告警配置
+  { key: "account_health_alert_threshold", description: "账号健康度告警阈值（0-100）" },
 ];
 
 export const systemConfigRouter = router({
