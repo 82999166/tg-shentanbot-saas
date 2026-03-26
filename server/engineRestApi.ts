@@ -500,36 +500,36 @@ export function registerEngineRestRoutes(app: Router) {
         return res.status(400).json({ error: "publicGroupId and monitorAccountId are required" });
       }
 
-      // upsert: 如果已有记录则更新，否则新建
-      const existing = await db
-        .select()
-        .from(publicGroupJoinStatus)
-        .where(
-          and(
-            eq(publicGroupJoinStatus.publicGroupId, publicGroupId),
-            eq(publicGroupJoinStatus.monitorAccountId, monitorAccountId)
-          )
-        )
-        .limit(1);
-
-      if (existing.length > 0) {
-        await db
-          .update(publicGroupJoinStatus)
-          .set({
-            status: status || "joined",
-            errorMsg: errorMsg || null,
-            joinedAt: status === "joined" ? new Date() : existing[0].joinedAt,
-            updatedAt: new Date(),
-          })
-          .where(eq(publicGroupJoinStatus.id, existing[0].id));
-      } else {
+      // upsert: 先尝试 INSERT，冲突时改为 UPDATE（避免并发竞态条件）
+      const now = new Date();
+      try {
         await db.insert(publicGroupJoinStatus).values({
           publicGroupId,
           monitorAccountId,
           status: status || "joined",
           errorMsg: errorMsg || null,
-          joinedAt: status === "joined" ? new Date() : null,
+          joinedAt: status === "joined" ? now : null,
         });
+      } catch (insertErr: any) {
+        // 主键/唯一键冲突时改为 UPDATE
+        if (insertErr?.code === 'ER_DUP_ENTRY' || insertErr?.errno === 1062) {
+          await db
+            .update(publicGroupJoinStatus)
+            .set({
+              status: status || "joined",
+              errorMsg: errorMsg || null,
+              ...(status === "joined" ? { joinedAt: now } : {}),
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(publicGroupJoinStatus.publicGroupId, publicGroupId),
+                eq(publicGroupJoinStatus.monitorAccountId, monitorAccountId)
+              )
+            );
+        } else {
+          throw insertErr;
+        }
       }
 
       res.json({ success: true });
