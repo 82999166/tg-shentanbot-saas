@@ -348,6 +348,65 @@ function UserDetailDialog({ userId, onClose, planColors }: {
   );
 }
 
+// ─── 管理员登录表单 ─────────────────────────────────────────────────────────────
+function AdminLoginForm() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const loginMut = trpc.emailAuth.login.useMutation({
+    onSuccess: () => { window.location.reload(); },
+    onError: (e: any) => { toast.error(e.message || "登录失败"); setLoading(false); },
+  });
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) { toast.error("请输入账号和密码"); return; }
+    setLoading(true);
+    loginMut.mutate({ email, password });
+  };
+  return (
+    <div className="flex h-screen items-center justify-center bg-background">
+      <div className="w-full max-w-sm p-8 rounded-2xl bg-card border border-border shadow-xl">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
+            <Shield className="w-5 h-5 text-amber-400" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-foreground">管理后台</h1>
+            <p className="text-xs text-muted-foreground">请使用管理员账号登录</p>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-foreground mb-1.5 block">邮箱</label>
+            <Input
+              type="email"
+              placeholder="admin@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="bg-background"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-foreground mb-1.5 block">密码</label>
+            <Input
+              type="password"
+              placeholder="请输入密码"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="bg-background"
+            />
+          </div>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            {loading ? "登录中..." : "登录"}
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── 主页面 ─────────────────────────────────────────────────────────────────────
 export default function AdminPanel() {
   const { user } = useAuth();
@@ -408,12 +467,18 @@ export default function AdminPanel() {
     enterprise: "bg-amber-900/50 text-amber-300",
   };
 
-  if (user?.role !== "admin") {
+  // 未登录时显示管理员登录表单
+  if (!user) {
+    return <AdminLoginForm />;
+  }
+
+  // 已登录但非管理员
+  if (user.role !== "admin") {
     return (
       <AppLayout>
         <div className="p-6 text-center">
           <Shield className="w-12 h-12 mx-auto mb-4 text-slate-600" />
-          <p className="text-slate-400">无权访问此页面</p>
+          <p className="text-slate-400">无权访问此页面，需要管理员权限</p>
         </div>
       </AppLayout>
     );

@@ -178,6 +178,7 @@ export function registerEngineRestRoutes(app: Router) {
       const publicGroupsList = publicGroups.map((g) => ({
         id: g.id,
         groupId: g.groupId,
+        username: g.groupId,         // 引擎用 username 字段做 real_ids 映射，groupId 即为 @username
         groupTitle: g.groupTitle,
         groupType: g.groupType,
         memberCount: g.memberCount,

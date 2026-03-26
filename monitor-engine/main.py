@@ -301,8 +301,10 @@ async def process_message(
     sender_first_name: str, sender_last_name: str, message_id: int, text: str,
     is_bot: bool = False,
 ):
-    if not text or not text.strip() or is_bot:
+    if not text or not text.strip():
         return
+    # 注意：is_bot 不在此处过滤，公共群组（搜索群）的机器人回复也需要监控
+    # 私有群组的机器人消息在下方私有群组匹配时单独处理
     global process_lock
     import asyncio as _asyncio
     if process_lock is None:
@@ -327,7 +329,7 @@ async def process_message(
     groups = config.get("groups", [])
     push_settings_cfg = config.get("pushSettings", {})
 
-    if push_settings_cfg.get("pushEnabled", True):
+    if push_settings_cfg.get("pushEnabled", True) and not is_bot:  # 私有群组不监控机器人消息
         blocked_ids = set(config.get("blockedTgIds", []))
         if sender_tg_id not in blocked_ids:
             if not (push_settings_cfg.get("filterAds", False) and is_likely_spam(sender_id, sender_username, text)):

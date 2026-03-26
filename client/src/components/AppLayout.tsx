@@ -76,7 +76,8 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
     );
   }
 
-  if (!isAuthenticated) {
+  // 管理后台路径由 AdminPanel 自行处理权限，不走用户登录跳转
+  if (!isAuthenticated && !location.startsWith("/admin")) {
     window.location.href = getLoginUrl();
     return null;
   }
