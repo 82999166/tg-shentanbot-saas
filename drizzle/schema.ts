@@ -607,6 +607,7 @@ export const publicMonitorGroups = mysqlTable("public_monitor_groups", {
   groupType: varchar("groupType", { length: 32 }).default("group"),  // group / channel
   memberCount: int("memberCount").default(0),
   isActive: boolean("isActive").default(true).notNull(),
+  realId: varchar("realId", { length: 64 }),                         // TG 真实数字 ID（引擎解析后回写）
   addedBy: int("addedBy"),                                           // 添加者 userId（管理员）
   note: varchar("note", { length: 512 }),                           // 备注
   createdAt: timestamp("createdAt").defaultNow().notNull(),

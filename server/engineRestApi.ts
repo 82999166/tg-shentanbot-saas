@@ -182,6 +182,7 @@ export function registerEngineRestRoutes(app: Router) {
         groupType: g.groupType,
         memberCount: g.memberCount,
         isActive: g.isActive,
+        realId: g.realId || null,   // TG 真实数字 ID（引擎首次解析后回写）
       }));
 
       // 获取全局反垃圾配置（从 system_config 表读取）
@@ -495,7 +496,7 @@ export function registerEngineRestRoutes(app: Router) {
       const db = await getDb();
       if (!db) return res.status(500).json({ error: "DB unavailable" });
 
-      const { publicGroupId, monitorAccountId, status, errorMsg } = req.body;
+      const { publicGroupId, monitorAccountId, status, errorMsg, realId } = req.body;
       if (!publicGroupId || !monitorAccountId) {
         return res.status(400).json({ error: "publicGroupId and monitorAccountId are required" });
       }
@@ -529,6 +530,19 @@ export function registerEngineRestRoutes(app: Router) {
             );
         } else {
           throw insertErr;
+        }
+      }
+
+      // 如果引擎上报了 realId，回写到 publicMonitorGroups 表（仅当 status=joined 且 realId 不为空时）
+      if (status === "joined" && realId) {
+        try {
+          await db
+            .update(publicMonitorGroups)
+            .set({ realId: String(realId) })
+            .where(eq(publicMonitorGroups.id, publicGroupId));
+        } catch (updateErr) {
+          // 回写失败不影响主流程
+          console.warn("[Engine API] 回写 realId 失败:", updateErr);
         }
       }
 

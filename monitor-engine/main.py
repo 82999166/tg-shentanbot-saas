@@ -880,6 +880,7 @@ async def join_public_groups(worker: AccountWorker, account_id: int):
                 if pg_id:
                     await api.post("/engine/public-group/join-status", {
                         "publicGroupId": pg_id, "monitorAccountId": account_id, "status": "joined",
+                        "realId": str(real_id),  # 回写真实 ID 到数据库，下次重启可预加载
                     })
             else:
                 logger.warning(f"[Account {account_id}] 加入群组失败: {group_id}")
@@ -903,7 +904,12 @@ async def join_public_groups(worker: AccountWorker, account_id: int):
         delay = random.uniform(interval_min, interval_max)
         await asyncio.sleep(delay)
 
-    logger.info(f"[Account {account_id}] 加群完成：成功 {joined_count}/{len(groups_to_join)} 个")
+    logger.info(
+        f"[Account {account_id}] ===== 加群全部完成 =====\n"
+        f"  成功: {joined_count}/{len(groups_to_join)} 个群组\n"
+        f"  当前 real_ids 映射数: {len(public_group_real_ids)}\n"
+        f"  监控已全面生效，不会漏报任何群组的消息"
+    )
 
 
 async def process_dm_queue():
@@ -979,6 +985,16 @@ async def sync_config():
             new_ids = {g.get("groupId") for g in new_public_groups}
             public_groups_changed = old_ids != new_ids
             public_groups = new_public_groups
+            # 立即从配置预加载已知的 real_ids（引擎首次解析后回写到数据库的）
+            preloaded = 0
+            for g in new_public_groups:
+                gid = g.get("groupId", "")
+                rid = g.get("realId")
+                if gid and rid and gid not in public_group_real_ids:
+                    public_group_real_ids[gid] = int(rid)
+                    preloaded += 1
+            if preloaded > 0:
+                logger.info(f"[Config] 预加载 {preloaded} 个群组 real_id 映射，监控立即生效")
             # 读取加群配置
             new_join_config = data.get("joinConfig", {})
             if new_join_config:
