@@ -43,6 +43,7 @@ function Router() {
       <Route path={"/antiban"} component={Antiban} />
       <Route path={"/plans"} component={Plans} />
       <Route path={"/admin"} component={AdminPanel} />
+      <Route path={"/admin/login"} component={() => { window.location.replace("/admin"); return null; }} />
       <Route path={"/payment"} component={Payment} />
       <Route path={"/system-settings"} component={SystemSettings} />
       <Route path={"/bot-config"} component={BotConfig} />
