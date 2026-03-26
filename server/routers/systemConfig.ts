@@ -397,4 +397,30 @@ export const systemConfigRouter = router({
       }
       return { success: true };
     }),
+
+  // 触发引擎立即同步（重新解析所有公共群组 ID）
+  triggerEngineSync: adminProcedure
+    .mutation(async () => {
+      const engineUrl = process.env.WEB_API_URL
+        ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
+        : 'http://127.0.0.1:8765';
+      const engineSecret = process.env.ENGINE_SECRET || '';
+      try {
+        const resp = await fetch(`${engineUrl}/force-sync`, {
+          method: 'POST',
+          headers: {
+            'X-Engine-Secret': engineSecret,
+            'Content-Type': 'application/json',
+          },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!resp.ok) {
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `引擎响应 ${resp.status}` });
+        }
+        return { success: true, message: '已触发引擎立即同步' };
+      } catch (err: any) {
+        if (err instanceof TRPCError) throw err;
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `无法连接引擎: ${err.message}` });
+      }
+    }),
 });

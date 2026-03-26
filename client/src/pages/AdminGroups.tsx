@@ -21,7 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, XCircle, Users, Eye, ArrowUpFromLine } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, XCircle, Users, Eye, ArrowUpFromLine, Zap } from "lucide-react";
 
 export default function AdminGroups() {
   const [addDialog, setAddDialog] = useState(false);
@@ -80,6 +80,13 @@ export default function AdminGroups() {
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
+  const triggerSync = trpc.sysConfig.triggerEngineSync.useMutation({
+    onSuccess: () => {
+      toast.success("已触发引擎立即同步，新群组将在几秒内开始监控");
+    },
+    onError: (e: { message: string }) => toast.error(`同步失败: ${e.message}`),
+  });
+
   const activeGroups = groups.filter((g: { isActive: boolean }) => g.isActive);
   const inactiveGroups = groups.filter((g: { isActive: boolean }) => !g.isActive);
 
@@ -114,6 +121,16 @@ export default function AdminGroups() {
             >
               <ArrowUpFromLine className="w-4 h-4 mr-1" />
               {syncPrivate.isPending ? "同步中..." : "一键同步私有群组"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => triggerSync.mutate()}
+              disabled={triggerSync.isPending}
+              title="通知引擎立即重新解析所有公共群组 ID，添加新群组后使用"
+            >
+              <Zap className="w-4 h-4 mr-1" />
+              {triggerSync.isPending ? "同步中..." : "立即同步引擎"}
             </Button>
             <Button size="sm" onClick={() => setAddDialog(true)}>
               <Plus className="w-4 h-4 mr-1" />
