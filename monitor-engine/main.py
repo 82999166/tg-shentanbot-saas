@@ -574,16 +574,27 @@ class AccountWorker:
     async def _get_chat_info(self, chat_id: int) -> dict:
         try:
             result = await self.client.invoke({"@type": "getChat", "chat_id": chat_id})
-            if result and result.get("@type") == "chat":
-                title = result.get("title", "")
-                chat_type = result.get("type", {})
-                username = ""
-                if chat_type.get("@type") == "chatTypeSupergroup":
-                    sg_id = chat_type.get("supergroup_id", 0)
-                    sg_info = await self.client.invoke({"@type": "getSupergroup", "supergroup_id": sg_id})
-                    if sg_info:
-                        username = sg_info.get("username", "")
-                return {"title": title, "username": username}
+            if result:
+                # pytdbot 返回 Chat 对象（属性访问）或字典（键访问）
+                def _get(obj, key, default=None):
+                    if hasattr(obj, key):
+                        return getattr(obj, key, default)
+                    elif isinstance(obj, dict):
+                        return obj.get(key, default)
+                    return default
+                obj_type = _get(result, "@type") or type(result).__name__
+                if "chat" in obj_type.lower() or hasattr(result, "title"):
+                    title = _get(result, "title", "")
+                    chat_type_obj = _get(result, "type", {})
+                    username = ""
+                    type_name = (_get(chat_type_obj, "@type") or type(chat_type_obj).__name__) if chat_type_obj else ""
+                    if "supergroup" in type_name.lower():
+                        sg_id = _get(chat_type_obj, "supergroup_id", 0)
+                        if sg_id:
+                            sg_info = await self.client.invoke({"@type": "getSupergroup", "supergroup_id": sg_id})
+                            if sg_info:
+                                username = _get(sg_info, "username", "") or ""
+                    return {"title": title, "username": username}
         except Exception:
             pass
         return {"title": str(chat_id), "username": ""}
@@ -591,13 +602,23 @@ class AccountWorker:
     async def _get_user_info(self, user_id: int) -> dict:
         try:
             result = await self.client.invoke({"@type": "getUser", "user_id": user_id})
-            if result and result.get("@type") == "user":
-                return {
-                    "username": result.get("username", ""),
-                    "first_name": result.get("first_name", ""),
-                    "last_name": result.get("last_name", ""),
-                    "is_bot": result.get("type", {}).get("@type") == "userTypeBot",
-                }
+            if result:
+                def _get(obj, key, default=None):
+                    if hasattr(obj, key):
+                        return getattr(obj, key, default)
+                    elif isinstance(obj, dict):
+                        return obj.get(key, default)
+                    return default
+                obj_type = _get(result, "@type") or type(result).__name__
+                if "user" in obj_type.lower() or hasattr(result, "first_name"):
+                    user_type_obj = _get(result, "type", {})
+                    type_name = (_get(user_type_obj, "@type") or type(user_type_obj).__name__) if user_type_obj else ""
+                    return {
+                        "username": _get(result, "username", ""),
+                        "first_name": _get(result, "first_name", ""),
+                        "last_name": _get(result, "last_name", ""),
+                        "is_bot": "bot" in type_name.lower(),
+                    }
         except Exception:
             pass
         return {"username": "", "first_name": "", "last_name": "", "is_bot": False}
@@ -617,10 +638,18 @@ class AccountWorker:
             else:
                 username = chat_id_str.lstrip("@").split("/")[-1]
                 result = await self.client.invoke({"@type": "searchPublicChat", "username": username})
-            if result and result.get("id"):
-                real_id = result["id"]
-                self._chat_id_cache[chat_id_str] = real_id
-                return real_id
+            if result:
+                # pytdbot 返回 Chat 对象（属性访问）或字典（键访问）
+                if hasattr(result, 'id'):
+                    real_id = result.id
+                elif isinstance(result, dict):
+                    real_id = result.get("id")
+                else:
+                    real_id = None
+                if real_id:
+                    self._chat_id_cache[chat_id_str] = real_id
+                    logger.info(f"[Resolve] {chat_id_str} -> {real_id}")
+                    return real_id
         except Exception as e:
             logger.warning(f"[Resolve] 无法解析 {chat_id_str}: {e}")
         return None
@@ -641,7 +670,12 @@ class AccountWorker:
         except Exception as e:
             err_str = str(e).lower()
             if "already" in err_str or "member" in err_str:
+                # 已经是成员，尝试解析真实 chat_id
                 try:
+                    resolved = await self.resolve_chat_id(chat_id_str)
+                    if resolved:
+                        logger.info(f"[Account {self.account_id}] 已是成员: {chat_id_str} -> {resolved}")
+                        return resolved
                     return int(chat_id_str) if chat_id_str.lstrip("-").isdigit() else None
                 except Exception:
                     pass

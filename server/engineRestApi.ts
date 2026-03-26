@@ -21,6 +21,7 @@ import {
   publicMonitorGroups,
   publicGroupKeywords,
   publicGroupJoinStatus,
+  systemConfig,
 } from "../drizzle/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 
@@ -179,7 +180,23 @@ export function registerEngineRestRoutes(app: Router) {
         groupTitle: g.groupTitle,
         groupType: g.groupType,
         memberCount: g.memberCount,
+        isActive: g.isActive,
       }));
+
+      // 获取全局反垃圾配置（从 system_config 表读取）
+      const sysConfigRows = await db.select().from(systemConfig);
+      const sysConfigMap: Record<string, string> = {};
+      for (const row of sysConfigRows) {
+        sysConfigMap[row.configKey] = row.configValue || "";
+      }
+      const globalAntiSpam = {
+        enabled: sysConfigMap["anti_spam_enabled"] !== "false",
+        dailyLimit: parseInt(sysConfigMap["anti_spam_daily_limit"] || "100", 10),
+        rateWindow: parseInt(sysConfigMap["anti_spam_rate_window"] || "0", 10),
+        rateLimit: parseInt(sysConfigMap["anti_spam_rate_limit"] || "1000", 10),
+        minMsgLen: parseInt(sysConfigMap["anti_spam_min_msg_len"] || "0", 10),
+        maxMsgLen: parseInt(sysConfigMap["anti_spam_max_msg_len"] || "0", 10),
+      };
 
       return res.json({
         accounts: accounts.map((a) => ({
@@ -193,6 +210,8 @@ export function registerEngineRestRoutes(app: Router) {
         userConfigs,
         // 新模式：公共群组列表（引擎用每个会员的 globalKeywords 匹配这些群组的消息）
         publicGroups: publicGroupsList,
+        // 全局反垃圾配置
+        globalAntiSpam,
       });
     } catch (e: any) {
       console.error("[Engine API] config error:", e);
@@ -208,17 +227,21 @@ export function registerEngineRestRoutes(app: Router) {
       if (!db) return res.status(500).json({ error: "DB unavailable" });
 
       const input = req.body;
+      // 兼容引擎发送的两种字段格式：matchedKeyword（单个）和 matchedKeywords（数组）
+      const matchedKeywordStr = Array.isArray(input.matchedKeywords)
+        ? input.matchedKeywords.join(", ")
+        : (input.matchedKeyword || "");
       const result = await db.insert(hitRecords).values({
         userId: input.userId,
-        tgAccountId: input.monitorAccountId,
+        tgAccountId: input.monitorAccountId || input.accountId || 0,
         monitorGroupId: 0,
-        keywordId: 0,
+        keywordId: input.keywordId || 0,
         senderTgId: input.senderTgId,
         senderUsername: input.senderUsername || null,
         senderFirstName: input.senderName || null,
-        messageContent: input.messageText,
-        matchedKeyword: (input.matchedKeywords || []).join(", "),
-        messageId: input.messageId || null,
+        messageContent: input.messageContent || input.messageText || null,
+        matchedKeyword: matchedKeywordStr,
+        messageId: input.messageId ? String(input.messageId) : null,
         dmStatus: "pending",
         messageDate: new Date(),
       });
