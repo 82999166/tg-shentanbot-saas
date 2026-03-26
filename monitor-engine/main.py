@@ -54,13 +54,30 @@ TDLIB_DATA_DIR = os.getenv("TDLIB_DATA_DIR", os.path.join(_BASE_DIR, "tdlib_data
 active_workers: dict = {}
 monitor_config: dict = {}
 public_groups: list = []
+force_sync_event: asyncio.Event = None  # 将在 main() 中初始化
+global_client_manager = None  # 全局 ClientManager，统一管理所有账号的 TDLib 客户端
 public_group_real_ids: dict = {}
+join_config: dict = {
+    "joinIntervalMin": 30,
+    "joinIntervalMax": 60,
+    "maxGroupsPerAccount": 100,
+    "joinEnabled": True,
+}
 sent_dm_cache: dict = {}
 collab_chat_id_cache: dict = {}
 processed_messages: dict = {}
 PROCESSED_MSG_TTL = 300
+process_lock = None  # asyncio.Lock，在事件循环启动后初始化
 daily_hit_cache: dict = {}
 rate_hit_cache: dict = {}
+global_anti_spam: dict = {
+    "enabled": True,
+    "dailyLimit": 100,
+    "rateWindow": 0,
+    "rateLimit": 1000,
+    "minMsgLen": 0,
+    "maxMsgLen": 0,
+}
 
 
 class ApiClient:
@@ -153,6 +170,9 @@ def check_anti_spam(sender_tg_id: str, text: str, anti_spam_cfg: dict):
     min_len = int(anti_spam_cfg.get("minMsgLen", 0))
     if min_len > 0 and len(text.strip()) < min_len:
         return True, f"msg too short ({len(text.strip())} < {min_len})"
+    max_len = int(anti_spam_cfg.get("maxMsgLen", 0))
+    if max_len > 0 and len(text.strip()) > max_len:
+        return True, f"msg too long ({len(text.strip())} > {max_len})"
     daily_limit = int(anti_spam_cfg.get("dailyLimit", 10))
     rate_window = int(anti_spam_cfg.get("rateWindow", 60))
     rate_limit_n = int(anti_spam_cfg.get("rateLimit", 3))
@@ -182,21 +202,44 @@ async def send_bot_notification(
     bot_chat_id: str, sender_username: Optional[str], sender_tg_id: str,
     matched_keyword: str, group_name: str, group_username: Optional[str],
     message_text: str, sender_name: str = "", hit_record_id: Optional[int] = None,
-    dm_status: str = "disabled",
+    dm_status: str = "disabled", chat_id: Optional[str] = None,
 ):
     if not BOT_TOKEN:
         return
     try:
-        if sender_name:
+        if sender_username:
+            user_display = f'<a href="https://t.me/{sender_username}">{sender_name or "@" + sender_username}</a>'
+        elif sender_name:
             user_display = sender_name
-        elif sender_username:
-            user_display = f"@{sender_username}"
         else:
             user_display = f"ID:{sender_tg_id}"
+        # 群组名称：优先使用真实名称，不是数字ID
+        _group_display_name = group_name if (group_name and not str(group_name).lstrip("-").isdigit()) else None
+        # 如果 group_name 是数字ID但有 group_username，尝试从 username 生成名称
+        if not _group_display_name and group_username:
+            _group_display_name = f"@{group_username}"
         if group_username:
-            source_display = f'<a href="https://t.me/{group_username}">{group_name}</a>'
+            # 有 username，生成 t.me 链接
+            _label = _group_display_name or f"@{group_username}"
+            source_display = f'<a href="https://t.me/{group_username}">{_label}</a>'
+        elif _group_display_name:
+            # 无 username 但有名称，尝试生成 t.me/c/ 链接（超级群组格式）
+            _raw_id = str(chat_id) if chat_id else str(group_name)
+            # 超级群组 ID 格式：-100xxxxxxxxx -> t.me/c/xxxxxxxxx
+            if _raw_id.startswith("-100"):
+                _clean_id = _raw_id[4:]
+                source_display = f'<a href="https://t.me/c/{_clean_id}">{_group_display_name}</a>'
+            else:
+                source_display = _group_display_name
         else:
-            source_display = group_name
+            # 只有数字ID，尝试生成链接，使用群名代替"群组"
+            _raw_id = str(chat_id) if chat_id else str(group_name)
+            _fallback_name = _group_display_name or "群组"
+            if _raw_id.startswith("-100"):
+                _clean_id = _raw_id[4:]
+                source_display = f'<a href="https://t.me/c/{_clean_id}">{_fallback_name}</a>'
+            else:
+                source_display = _fallback_name
         highlighted_text = message_text[:200]
         if matched_keyword and matched_keyword in highlighted_text:
             highlighted_text = highlighted_text.replace(matched_keyword, f"<b>#{matched_keyword}</b>")
@@ -210,6 +253,11 @@ async def send_bot_notification(
             f"时间：{now_str}"
         )
         rid = str(hit_record_id) if hit_record_id else "0"
+        # 私聊按钮：有 username 用 t.me 链接，无 username 用 callback_data（tg://user?id= 在群组中不支持）
+        if sender_username:
+            chat_btn = {"text": "私聊", "url": f"https://t.me/{sender_username}"}
+        else:
+            chat_btn = {"text": "私聊", "callback_data": f"dm:{rid}:{sender_tg_id}"}
         inline_keyboard = [
             [
                 {"text": "历史", "callback_data": f"history:{rid}:{sender_tg_id}"},
@@ -218,7 +266,7 @@ async def send_bot_notification(
             ],
             [
                 {"text": "删除", "callback_data": f"delete:{rid}:{sender_tg_id}"},
-                {"text": "私聊", "url": f"https://t.me/{sender_username}" if sender_username else f"https://t.me/+{sender_tg_id}"},
+                chat_btn,
             ]
         ]
         payload = {
@@ -255,12 +303,18 @@ async def process_message(
 ):
     if not text or not text.strip() or is_bot:
         return
+    global process_lock
+    import asyncio as _asyncio
+    if process_lock is None:
+        process_lock = _asyncio.Lock()
     sender_tg_id = str(sender_id)
     sender_name = f"{sender_first_name} {sender_last_name}".strip()
     now_ts = time.time()
-    expired_keys = [k for k, v in processed_messages.items() if now_ts - v > PROCESSED_MSG_TTL]
-    for k in expired_keys:
-        del processed_messages[k]
+    # 使用 Lock 防止多账号并发时的竞态条件（重复推送）
+    async with process_lock:
+        expired_keys = [k for k, v in processed_messages.items() if now_ts - v > PROCESSED_MSG_TTL]
+        for k in expired_keys:
+            del processed_messages[k]
 
     config = monitor_config.get(str(user_id), {})
     groups = config.get("groups", [])
@@ -270,7 +324,8 @@ async def process_message(
         blocked_ids = set(config.get("blockedTgIds", []))
         if sender_tg_id not in blocked_ids:
             if not (push_settings_cfg.get("filterAds", False) and is_likely_spam(sender_id, sender_username, text)):
-                anti_spam_cfg = config.get("globalAntiSpam", {})
+                # 优先使用用户自定义的 globalAntiSpam，否则使用全局配置
+                anti_spam_cfg = config.get("globalAntiSpam") or global_anti_spam
                 is_spam, spam_reason = check_anti_spam(sender_tg_id, text, anti_spam_cfg)
                 if not is_spam:
                     for group in groups:
@@ -279,14 +334,16 @@ async def process_message(
                         group_id_cfg = str(group.get("groupId", ""))
                         if group_id_cfg != chat_id:
                             continue
-                        dedup_key = f"{chat_id}:{message_id}:{user_id}"
+                        dedup_key = f"priv:{chat_id}:{message_id}:{user_id}"
                         if dedup_key in processed_messages:
                             continue
+                        # 先占位，防止并发重复推送
+                        processed_messages[dedup_key] = now_ts
                         keywords_list = [kw for kw in group.get("keywords", []) if kw.get("isActive", True)]
                         matched_keywords = [kw for kw in keywords_list if match_keyword(text, kw)]
                         if not matched_keywords:
+                            del processed_messages[dedup_key]  # 未命中，释放占位
                             continue
-                        processed_messages[dedup_key] = now_ts
                         logger.info(
                             f"[PRIVATE_MATCH] account={account_id} user={user_id} "
                             f"group={chat_title} sender={sender_username or sender_id} "
@@ -314,12 +371,16 @@ async def process_message(
         notified_users_for_msg: set = set()
         for uid_str, uconfig in monitor_config.items():
             uid = int(uid_str)
-            pub_dedup_key = f"{chat_id}:{message_id}:{uid}"
+            # 全局去重 key（不含 account_id），防止多账号重复推送给同一用户
+            pub_dedup_key = f"pub:{chat_id}:{message_id}:{uid}"
             if pub_dedup_key in processed_messages:
                 notified_users_for_msg.add(uid)
                 continue
             if uid in notified_users_for_msg:
                 continue
+            # 先占位（原子写入），防止并发时重复推送
+            processed_messages[pub_dedup_key] = now_ts
+            notified_users_for_msg.add(uid)
             u_push_settings = uconfig.get("pushSettings", {})
             if not u_push_settings.get("pushEnabled", True):
                 continue
@@ -328,7 +389,8 @@ async def process_message(
                 continue
             if u_push_settings.get("filterAds", False) and is_likely_spam(sender_id, sender_username, text):
                 continue
-            u_anti_spam = uconfig.get("globalAntiSpam", {})
+            # 优先使用用户自定义的 globalAntiSpam，否则使用全局配置
+            u_anti_spam = uconfig.get("globalAntiSpam") or global_anti_spam
             is_spam, _ = check_anti_spam(sender_tg_id, text, u_anti_spam)
             if is_spam:
                 continue
@@ -340,16 +402,23 @@ async def process_message(
             u_matched_keywords = [kw for kw in global_kws if kw.get("isActive", True) and match_keyword(text, kw)]
             if not u_matched_keywords:
                 continue
-            processed_messages[pub_dedup_key] = now_ts
-            notified_users_for_msg.add(uid)
+            logger.debug(f"[DEDUP] 公共群组消息去重标记: {pub_dedup_key}")
+            # 优先使用 publicGroups 中已存储的 groupTitle，避免 _get_chat_info 失败时显示数字ID
+            pg_title = matched_public_group.get("groupTitle") or chat_title
+            # 从 groupId 提取 username（@username 格式或数字ID）
+            _raw_group_id = matched_public_group.get("groupId", "")
+            if _raw_group_id and (str(_raw_group_id).startswith("@") or not str(_raw_group_id).lstrip("-").isdigit()):
+                pg_username = str(_raw_group_id).lstrip("@")
+            else:
+                pg_username = matched_public_group.get("groupUsername") or chat_username
             logger.info(
-                f"[PUBLIC_MATCH] user={uid} public_group={chat_title} "
+                f"[PUBLIC_MATCH] user={uid} public_group={pg_title} "
                 f"sender={sender_username or sender_id} "
                 f"keywords={[k['pattern'] for k in u_matched_keywords]}"
             )
             await _handle_match(
                 account_id=account_id, user_id=uid, config=uconfig,
-                chat_id=chat_id, chat_title=chat_title, chat_username=chat_username,
+                chat_id=chat_id, chat_title=pg_title, chat_username=pg_username,
                 sender_tg_id=sender_tg_id, sender_username=sender_username,
                 sender_name=sender_name, text=text, matched_keywords=u_matched_keywords,
             )
@@ -374,8 +443,11 @@ async def _handle_match(
             "userId": user_id, "senderTgId": sender_tg_id,
             "senderUsername": sender_username, "senderName": sender_name,
             "tgGroupId": chat_id, "groupName": chat_title,
+            # 同时发送两种格式，兼容新旧接口
             "matchedKeyword": matched_keywords[0]["pattern"],
-            "messageContent": text[:500], "keywordId": matched_keywords[0].get("id"),
+            "matchedKeywords": [k["pattern"] for k in matched_keywords],
+            "messageContent": text[:500], "messageText": text[:500],
+            "keywordId": matched_keywords[0].get("id"),
         })
         if hit_result:
             hit_record_id = hit_result.get("id")
@@ -399,26 +471,29 @@ async def _handle_match(
             group_name=chat_title, group_username=chat_username, message_text=text,
             sender_name=sender_name, hit_record_id=hit_record_id,
             dm_status="queued" if dm_will_send else "disabled",
+            chat_id=str(chat_id),
         )
 
     push_settings_cfg = config.get("pushSettings", {})
     collab_chat_id_str = push_settings_cfg.get("collabChatId")
-    if collab_chat_id_str:
-        worker = active_workers.get(account_id)
-        if worker and worker.is_running:
-            try:
-                real_collab_id = await worker.resolve_chat_id(collab_chat_id_str)
-                if real_collab_id:
-                    collab_text = (
-                        f"关键词命中\n"
-                        f"用户：{sender_name or sender_username or sender_tg_id}\n"
-                        f"来源：{chat_title}\n"
-                        f"关键词：{matched_keywords[0]['pattern']}\n"
-                        f"内容：{text[:200]}"
-                    )
-                    await worker.send_message(real_collab_id, collab_text)
-            except Exception as e:
-                logger.warning(f"[CollabPush] 协作群推送失败: {e}")
+    if collab_chat_id_str and BOT_TOKEN:
+        # 使用 Bot API 推送到协作群（带完整按钮）
+        try:
+            await send_bot_notification(
+                bot_chat_id=str(collab_chat_id_str),
+                sender_username=sender_username,
+                sender_tg_id=sender_tg_id,
+                matched_keyword=matched_keywords[0]["pattern"],
+                group_name=chat_title,
+                group_username=chat_username,
+                message_text=text,
+                sender_name=sender_name,
+                hit_record_id=hit_record_id,
+                dm_status="queued" if dm_will_send else "disabled",
+                chat_id=str(chat_id),
+            )
+        except Exception as e:
+            logger.warning(f"[CollabPush] 协作群推送失败: {e}")
 
     for kw in matched_keywords:
         await api.post("/engine/keyword-stat", {
@@ -469,6 +544,7 @@ class AccountWorker:
         os.makedirs(self.files_directory, exist_ok=True)
 
     async def start(self) -> bool:
+        global global_client_manager
         if not TG_API_ID or not TG_API_HASH:
             logger.error("TG_API_ID 或 TG_API_HASH 未配置")
             return False
@@ -476,6 +552,15 @@ class AccountWorker:
             logger.warning(f"[Account {self.account_id}] 无 Session 或手机号，跳过")
             return False
         try:
+            # 如果session_string是一个目录路径（TDLib files_dir），迁移session数据
+            if self.session_string and os.path.isdir(self.session_string):
+                src_db = os.path.join(self.session_string, "db", "td.binlog")
+                dst_db_dir = os.path.join(self.files_directory, "database")
+                dst_db = os.path.join(dst_db_dir, "td.binlog")
+                if os.path.exists(src_db) and not os.path.exists(dst_db):
+                    os.makedirs(dst_db_dir, exist_ok=True)
+                    shutil.copy2(src_db, dst_db)
+                    logger.info(f"[Account {self.account_id}] 已迁移 session: {src_db} -> {dst_db}")
             from pytdbot import Client as TDClient
             self.client = TDClient(
                 api_id=TG_API_ID,
@@ -496,7 +581,15 @@ class AccountWorker:
             async def on_auth_state(c, update):
                 await self._on_auth_state(update)
 
-            self._task = asyncio.create_task(self._run_client())
+            # 使用全局 ClientManager 统一管理，避免多个 receiver 并发导致 TDLib 崩溃
+            if global_client_manager is None:
+                from pytdbot import ClientManager
+                global_client_manager = ClientManager(loop=asyncio.get_event_loop())
+                await global_client_manager.start()
+                logger.info("[Engine] 全局 ClientManager 已创建并启动")
+
+            # 将客户端注册到全局 ClientManager
+            await global_client_manager.add_client(self.client, start_client=True)
             self.is_running = True
             logger.info(f"[Account {self.account_id}] TDLib Worker 已启动 (数据目录: {self.files_directory})")
             return True
@@ -505,53 +598,65 @@ class AccountWorker:
             await update_account_health(self.account_id, -15, "error", reason=str(e)[:100])
             return False
 
-    async def _run_client(self):
-        try:
-            async with self.client:
-                await self.client.idle()
-        except Exception as e:
-            logger.error(f"[Account {self.account_id}] TDLib 客户端异常: {e}")
-            self.is_running = False
-
     async def _on_auth_state(self, update):
         try:
-            state_type = update.authorization_state.get("@type", "") if hasattr(update, 'authorization_state') else ""
+            # pytdbot returns objects, use .ID or type() to get state type
+            auth_state = update.authorization_state if hasattr(update, "authorization_state") else update
+            if hasattr(auth_state, "ID"):
+                state_type = auth_state.ID
+            elif isinstance(auth_state, dict):
+                state_type = auth_state.get("@type", "")
+            else:
+                state_type = type(auth_state).__name__
             logger.info(f"[Account {self.account_id}] 认证状态: {state_type}")
-            if state_type == "authorizationStateReady":
+            if state_type in ("authorizationStateReady", "AuthorizationStateReady"):
                 await api.post("/engine/account/status", {"accountId": self.account_id, "status": "active"})
                 await update_account_health(self.account_id, 0, "healthy")
-            elif state_type == "authorizationStateClosed":
+            elif state_type in ("authorizationStateClosed", "AuthorizationStateClosed"):
                 self.is_running = False
                 await update_account_health(self.account_id, -10, "error", reason="session_closed")
+            elif state_type in ("authorizationStateWaitPhoneNumber", "AuthorizationStateWaitPhoneNumber"):
+                logger.warning(f"[Account {self.account_id}] Session失效，需要重新登录")
+                await update_account_health(self.account_id, -5, "expired", reason="session_expired")
         except Exception as e:
             logger.warning(f"[Account {self.account_id}] 处理认证状态异常: {e}")
-
     async def _on_new_message(self, update):
         try:
-            message = update.message if hasattr(update, 'message') else None
+            from pytdbot.types import (
+                MessageText, MessagePhoto, MessageVideo, MessageDocument,
+                MessageSenderUser
+            )
+            message = update.message if hasattr(update, "message") else None
             if not message:
                 return
-            content = message.get("content", {}) if isinstance(message, dict) else {}
-            content_type = content.get("@type", "")
             text = ""
-            if content_type == "messageText":
-                text = content.get("text", {}).get("text", "")
-            elif content_type in ("messagePhoto", "messageVideo", "messageDocument"):
-                caption = content.get("caption", {})
-                text = caption.get("text", "") if caption else ""
-            if not text:
+            content_obj = getattr(message, "content", None)
+            if content_obj is None:
                 return
-            chat_id_int = message.get("chat_id", 0) if isinstance(message, dict) else 0
+            if isinstance(content_obj, MessageText):
+                ft = getattr(content_obj, "text", None)
+                text = getattr(ft, "text", "") if ft else ""
+            elif isinstance(content_obj, (MessagePhoto, MessageVideo, MessageDocument)):
+                caption = getattr(content_obj, "caption", None)
+                text = getattr(caption, "text", "") if caption else ""
+            if not text or not text.strip():
+                return
+            chat_id_int = getattr(message, "chat_id", 0)
             if not chat_id_int or chat_id_int > 0:
                 return
             chat_id = str(chat_id_int)
-            sender_info = message.get("sender_id", {}) if isinstance(message, dict) else {}
-            sender_type = sender_info.get("@type", "")
-            if sender_type != "messageSenderUser":
+            is_outgoing = getattr(message, "is_outgoing", False)
+            if is_outgoing:
                 return
-            sender_user_id = sender_info.get("user_id", 0)
+            sender_id_obj = getattr(message, "sender_id", None)
+            if sender_id_obj is None:
+                return
+            if not isinstance(sender_id_obj, MessageSenderUser):
+                return
+            sender_user_id = getattr(sender_id_obj, "user_id", 0)
             if not sender_user_id:
                 return
+            message_id = getattr(message, "id", 0)
             chat_info = await self._get_chat_info(chat_id_int)
             chat_title = chat_info.get("title", str(chat_id_int))
             chat_username = chat_info.get("username", "") or None
@@ -560,7 +665,10 @@ class AccountWorker:
             sender_first_name = user_info.get("first_name", "")
             sender_last_name = user_info.get("last_name", "")
             is_bot = user_info.get("is_bot", False)
-            message_id = message.get("id", 0) if isinstance(message, dict) else 0
+            logger.info(
+                f"[Account {self.account_id}] 收到消息: chat={chat_id} "
+                f"sender={sender_username or sender_user_id} text={text[:50]}"
+            )
             await process_message(
                 account_id=self.account_id, user_id=self.user_id,
                 chat_id=chat_id, chat_title=chat_title, chat_username=chat_username,
@@ -569,8 +677,7 @@ class AccountWorker:
                 message_id=message_id, text=text, is_bot=is_bot,
             )
         except Exception as e:
-            logger.warning(f"[Account {self.account_id}] 处理消息异常: {e}")
-
+            logger.warning(f"[Account {self.account_id}] 处理消息异常: {e}", exc_info=True)
     async def _get_chat_info(self, chat_id: int) -> dict:
         try:
             result = await self.client.invoke({"@type": "getChat", "chat_id": chat_id})
@@ -699,10 +806,18 @@ class AccountWorker:
             return False
 
     async def stop(self):
+        global global_client_manager
         self.is_running = False
         if self.client:
             try:
-                await self.client.close()
+                # 先从全局 ClientManager 中移除客户端
+                if global_client_manager and hasattr(self.client, 'client_id') and self.client.client_id:
+                    try:
+                        await global_client_manager.delete_client(self.client.client_id, close_client=True)
+                    except Exception:
+                        await self.client.stop()
+                else:
+                    await self.client.stop()
             except Exception:
                 pass
         if self._task and not self._task.done():
@@ -715,10 +830,29 @@ class AccountWorker:
 
 
 async def join_public_groups(worker: AccountWorker, account_id: int):
-    global public_group_real_ids
+    """让账号加入所有公共群组，支持速度控制和每账号条数限制"""
+    global public_group_real_ids, join_config
     if not public_groups:
         return
-    for pg in public_groups:
+
+    # 读取加群配置
+    enabled = join_config.get("joinEnabled", True)
+    if not enabled:
+        logger.info(f"[Account {account_id}] 自动加群已禁用，跳过")
+        return
+
+    interval_min = max(5, int(join_config.get("joinIntervalMin", 30)))
+    interval_max = max(interval_min, int(join_config.get("joinIntervalMax", 60)))
+    max_groups = int(join_config.get("maxGroupsPerAccount", 100))
+
+    # 只处理活跃的群组，并限制每账号条数
+    active_groups = [pg for pg in public_groups if pg.get("isActive", True)]
+    groups_to_join = active_groups[:max_groups]
+
+    logger.info(f"[Account {account_id}] 开始加群：共 {len(groups_to_join)} 个群组，间隔 {interval_min}-{interval_max}s，上限 {max_groups}")
+
+    joined_count = 0
+    for pg in groups_to_join:
         pg_id = pg.get("id")
         group_id = pg.get("groupId", "")
         if not group_id:
@@ -727,20 +861,35 @@ async def join_public_groups(worker: AccountWorker, account_id: int):
             real_id = await worker.join_chat(group_id)
             if real_id:
                 public_group_real_ids[group_id] = real_id
-                logger.info(f"[Account {account_id}] 已加入公共群组 {group_id} -> 真实ID: {real_id}")
+                joined_count += 1
+                logger.info(f"[Account {account_id}] 已加入群组 {group_id} -> 真实ID: {real_id} ({joined_count}/{len(groups_to_join)})")
                 if pg_id:
                     await api.post("/engine/public-group/join-status", {
                         "publicGroupId": pg_id, "monitorAccountId": account_id, "status": "joined",
                     })
             else:
+                logger.warning(f"[Account {account_id}] 加入群组失败: {group_id}")
                 if pg_id:
                     await api.post("/engine/public-group/join-status", {
                         "publicGroupId": pg_id, "monitorAccountId": account_id,
                         "status": "failed", "errorMsg": "join_failed",
                     })
         except Exception as e:
-            logger.warning(f"[Account {account_id}] 处理公共群组 {group_id} 异常: {e}")
-        await asyncio.sleep(2)
+            logger.warning(f"[Account {account_id}] 处理群组 {group_id} 异常: {e}")
+            if pg_id:
+                try:
+                    await api.post("/engine/public-group/join-status", {
+                        "publicGroupId": pg_id, "monitorAccountId": account_id,
+                        "status": "failed", "errorMsg": str(e)[:200],
+                    })
+                except Exception:
+                    pass
+
+        # 随机间隔防封号
+        delay = random.uniform(interval_min, interval_max)
+        await asyncio.sleep(delay)
+
+    logger.info(f"[Account {account_id}] 加群完成：成功 {joined_count}/{len(groups_to_join)} 个")
 
 
 async def process_dm_queue():
@@ -797,7 +946,7 @@ async def process_dm_queue():
 
 
 async def sync_config():
-    global monitor_config, public_groups
+    global monitor_config, public_groups, force_sync_event, global_anti_spam
     while True:
         try:
             data = await api.get("/engine/config")
@@ -808,8 +957,18 @@ async def sync_config():
             monitor_config = data.get("userConfigs", {})
             accounts = data.get("accounts", [])
             new_public_groups = data.get("publicGroups", [])
-            public_groups_changed = new_public_groups != public_groups
+            # 读取全局反垃圾配置
+            new_anti_spam = data.get("globalAntiSpam", {})
+            if new_anti_spam:
+                global_anti_spam.update(new_anti_spam)
+            old_ids = {g.get("groupId") for g in public_groups}
+            new_ids = {g.get("groupId") for g in new_public_groups}
+            public_groups_changed = old_ids != new_ids
             public_groups = new_public_groups
+            # 读取加群配置
+            new_join_config = data.get("joinConfig", {})
+            if new_join_config:
+                join_config.update(new_join_config)
             if public_groups:
                 logger.info(f"[Config] 公共群组: {len([g for g in public_groups if g.get('isActive')])} 个活跃")
             target_ids = {
@@ -841,7 +1000,16 @@ async def sync_config():
             )
         except Exception as e:
             logger.error(f"[Config] 同步异常: {e}")
-        await asyncio.sleep(POLL_INTERVAL)
+        # 支持手动触发立即同步（force_sync_event.set()）
+        if force_sync_event:
+            try:
+                await asyncio.wait_for(force_sync_event.wait(), timeout=POLL_INTERVAL)
+                force_sync_event.clear()
+                logger.info("[Config] 收到强制同步信号，立即重新加载配置...")
+            except asyncio.TimeoutError:
+                pass
+        else:
+            await asyncio.sleep(POLL_INTERVAL)
 
 
 async def heartbeat():
@@ -852,13 +1020,44 @@ async def heartbeat():
                 "timestamp": int(time.time()),
                 "engineType": "tdlib",
                 "tdlibVersion": "1.8.x",
+                "totalGroups": len(public_groups),
             })
         except Exception as e:
             logger.warning(f"[Heartbeat] 上报失败: {e}")
         await asyncio.sleep(60)
 
 
+async def http_server():
+    """HTTP 服务器，接收强制同步请求"""
+    from aiohttp import web
+    async def handle_force_sync(request: web.Request):
+        secret = request.headers.get("X-Engine-Secret", "")
+        if secret != ENGINE_SECRET:
+            return web.json_response({"error": "unauthorized"}, status=401)
+        if force_sync_event:
+            force_sync_event.set()
+        return web.json_response({"success": True, "message": "已触发强制同步"})
+    async def handle_status(request: web.Request):
+        return web.json_response({
+            "activeAccounts": len(active_workers),
+            "publicGroups": len(public_groups),
+            "monitorUsers": len(monitor_config),
+        })
+    app = web.Application()
+    app.router.add_post("/force-sync", handle_force_sync)
+    app.router.add_get("/status", handle_status)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8765)
+    await site.start()
+    logger.info("[HTTP] 引擎 HTTP 服务器已启动在端口 8765")
+    # 保持运行
+    while True:
+        await asyncio.sleep(3600)
+
+
 async def main():
+    global force_sync_event
     logger.info("=" * 60)
     logger.info("TG Monitor Pro - TDLib 监控引擎启动")
     logger.info(f"API Base: {API_BASE}")
@@ -866,6 +1065,7 @@ async def main():
     logger.info(f"TDLib 数据目录: {TDLIB_DATA_DIR}")
     logger.info("=" * 60)
     os.makedirs(TDLIB_DATA_DIR, exist_ok=True)
+    force_sync_event = asyncio.Event()
     if not TG_API_ID or not TG_API_HASH:
         logger.warning("TG_API_ID 或 TG_API_HASH 未配置，引擎将每60秒重试检查")
         while True:
@@ -878,7 +1078,7 @@ async def main():
                 os.execv(sys.executable, [sys.executable] + sys.argv)
             logger.info("等待 TG_API_ID 和 TG_API_HASH 配置...")
         return
-    await asyncio.gather(sync_config(), process_dm_queue(), heartbeat())
+    await asyncio.gather(sync_config(), process_dm_queue(), heartbeat(), http_server())
 
 
 if __name__ == "__main__":
