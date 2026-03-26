@@ -66,7 +66,7 @@ join_config: dict = {
 sent_dm_cache: dict = {}
 collab_chat_id_cache: dict = {}
 processed_messages: dict = {}
-PROCESSED_MSG_TTL = 300
+PROCESSED_MSG_TTL = 3600  # 1小时内同一条消息只推送一次
 process_lock = None  # asyncio.Lock，在事件循环启动后初始化
 daily_hit_cache: dict = {}
 rate_hit_cache: dict = {}
@@ -310,11 +310,18 @@ async def process_message(
     sender_tg_id = str(sender_id)
     sender_name = f"{sender_first_name} {sender_last_name}".strip()
     now_ts = time.time()
-    # 使用 Lock 防止多账号并发时的竞态条件（重复推送）
+
+    # ── 全局去重：用 Lock 保护 check-and-set，防止多账号并发竞态 ──────────────
     async with process_lock:
         expired_keys = [k for k, v in processed_messages.items() if now_ts - v > PROCESSED_MSG_TTL]
         for k in expired_keys:
             del processed_messages[k]
+        # 对整条消息做全局去重（account 无关），防止两个账号同时处理同一条消息
+        global_msg_key = f"msg:{chat_id}:{message_id}"
+        if global_msg_key in processed_messages:
+            logger.debug(f"[DEDUP] 全局消息去重跳过: {global_msg_key}")
+            return
+        processed_messages[global_msg_key] = now_ts
 
     config = monitor_config.get(str(user_id), {})
     groups = config.get("groups", [])
@@ -463,19 +470,14 @@ async def _handle_match(
         if time.time() - last_sent > cooldown_hours * 3600:
             dm_will_send = True
 
-    bot_chat_id = config.get("botChatId")
-    if bot_chat_id:
-        await send_bot_notification(
-            bot_chat_id=str(bot_chat_id), sender_username=sender_username,
-            sender_tg_id=sender_tg_id, matched_keyword=matched_keywords[0]["pattern"],
-            group_name=chat_title, group_username=chat_username, message_text=text,
-            sender_name=sender_name, hit_record_id=hit_record_id,
-            dm_status="queued" if dm_will_send else "disabled",
-            chat_id=str(chat_id),
-        )
-
     push_settings_cfg = config.get("pushSettings", {})
     collab_chat_id_str = push_settings_cfg.get("collabChatId")
+    bot_chat_id = config.get("botChatId")
+
+    # ── 推送去重：botChatId 和 collabChatId 相同时只推一次 ────────────────────
+    # 优先使用 collabChatId（带完整按钮），如果两者不同则都推
+    already_pushed_to: set = set()
+
     if collab_chat_id_str and BOT_TOKEN:
         # 使用 Bot API 推送到协作群（带完整按钮）
         try:
@@ -492,8 +494,20 @@ async def _handle_match(
                 dm_status="queued" if dm_will_send else "disabled",
                 chat_id=str(chat_id),
             )
+            already_pushed_to.add(str(collab_chat_id_str))
         except Exception as e:
             logger.warning(f"[CollabPush] 协作群推送失败: {e}")
+
+    if bot_chat_id and str(bot_chat_id) not in already_pushed_to:
+        # botChatId 与 collabChatId 不同时才额外推送，避免重复
+        await send_bot_notification(
+            bot_chat_id=str(bot_chat_id), sender_username=sender_username,
+            sender_tg_id=sender_tg_id, matched_keyword=matched_keywords[0]["pattern"],
+            group_name=chat_title, group_username=chat_username, message_text=text,
+            sender_name=sender_name, hit_record_id=hit_record_id,
+            dm_status="queued" if dm_will_send else "disabled",
+            chat_id=str(chat_id),
+        )
 
     for kw in matched_keywords:
         await api.post("/engine/keyword-stat", {
