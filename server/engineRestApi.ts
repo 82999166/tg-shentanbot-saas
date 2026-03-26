@@ -172,7 +172,8 @@ export function registerEngineRestRoutes(app: Router) {
       const publicGroups = await db
         .select()
         .from(publicMonitorGroups)
-        .where(eq(publicMonitorGroups.isActive, true));
+        .where(eq(publicMonitorGroups.isActive, true))
+        .orderBy(publicMonitorGroups.id);
 
       const publicGroupsList = publicGroups.map((g) => ({
         id: g.id,
