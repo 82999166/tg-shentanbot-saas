@@ -47,6 +47,9 @@ type HitRecord = {
   isProcessed: boolean;
   processedAt: Date | null;
   createdAt: Date;
+  // 群组信息（后端关联 public_monitor_groups 返回）
+  groupTitle?: string | null;
+  groupUsername?: string | null;
 };
 
 export default function HitMessages() {
@@ -258,9 +261,21 @@ export default function HitMessages() {
                     )}
                   </div>
                   <div className="w-28 min-w-0">
-                    <span className="text-xs text-muted-foreground truncate block">
-                      群组 #{r.monitorGroupId}
-                    </span>
+                    {r.groupTitle ? (
+                      <a
+                        href={r.groupUsername ? `https://t.me/${r.groupUsername.replace(/^@/, '')}` : undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-500 hover:underline truncate block"
+                        title={r.groupUsername || r.groupTitle}
+                      >
+                        {r.groupTitle}
+                      </a>
+                    ) : (
+                      <span className="text-xs text-muted-foreground truncate block">
+                        {r.monitorGroupId > 0 ? `群组 #${r.monitorGroupId}` : '未知群组'}
+                      </span>
+                    )}
                   </div>
                   <div className="w-32 min-w-0">
                     <span className="text-xs text-muted-foreground">

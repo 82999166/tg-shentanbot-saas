@@ -10,6 +10,7 @@ import {
   groupSubmissions,
   keywords,
   users,
+  publicMonitorGroups,
 } from "../../drizzle/schema";
 import { eq, and, desc, gte, sql, inArray } from "drizzle-orm";
 
@@ -54,7 +55,24 @@ export const hitMessagesRouter = router({
         .from(hitRecords)
         .where(and(...conditions));
 
-      return { rows, total };
+      // 关联 public_monitor_groups 表获取群组信息
+      const groupIds = [...new Set(rows.map(r => r.monitorGroupId).filter(id => id > 0))];
+      let groupMap: Map<number, { groupTitle: string | null; groupId: string }> = new Map();
+      if (groupIds.length > 0) {
+        const groupRows = await db
+          .select({ id: publicMonitorGroups.id, groupTitle: publicMonitorGroups.groupTitle, groupId: publicMonitorGroups.groupId })
+          .from(publicMonitorGroups)
+          .where(inArray(publicMonitorGroups.id, groupIds));
+        groupMap = new Map(groupRows.map(g => [g.id, { groupTitle: g.groupTitle, groupId: g.groupId }]));
+      }
+
+      const enrichedRows = rows.map(r => ({
+        ...r,
+        groupTitle: groupMap.get(r.monitorGroupId)?.groupTitle ?? null,
+        groupUsername: groupMap.get(r.monitorGroupId)?.groupId ?? null,
+      }));
+
+      return { rows: enrichedRows, total };
     }),
 
   // ─── 标记/取消标记已处理 ─────────────────────────────────────

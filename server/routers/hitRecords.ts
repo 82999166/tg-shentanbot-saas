@@ -22,7 +22,7 @@ import {
 } from "../db";
 import { protectedProcedure, router, adminProcedure } from "../_core/trpc";
 import { getAllUsers, countAllUsers, getDb } from "../db";
-import { users, tgAccounts, keywords, monitorGroups, hitRecords } from "../../drizzle/schema";
+import { users, tgAccounts, keywords, monitorGroups, hitRecords, publicMonitorGroups } from "../../drizzle/schema";
 import { eq, and, desc, sql, or, like, gte, lt, inArray } from "drizzle-orm";
 
 // ============================================================
@@ -83,9 +83,20 @@ export const hitRecordsRouter = router({
         .from(hitRecords)
         .where(whereClause);
 
-      // admin 时附加用户信息
+      // 附加群组信息（所有用户都需要）
       let enrichedRecords: any[] = records;
+      const groupIds = [...new Set(records.map(r => r.monitorGroupId).filter(id => id > 0))];
+      let groupMap: Map<number, { groupTitle: string | null; groupId: string }> = new Map();
+      if (groupIds.length > 0) {
+        const groupRows = await db
+          .select({ id: publicMonitorGroups.id, groupTitle: publicMonitorGroups.groupTitle, groupId: publicMonitorGroups.groupId })
+          .from(publicMonitorGroups)
+          .where(inArray(publicMonitorGroups.id, groupIds));
+        groupMap = new Map(groupRows.map(g => [g.id, { groupTitle: g.groupTitle, groupId: g.groupId }]));
+      }
+
       if (isAdmin) {
+        // admin 时附加用户信息 + 群组信息
         const userIds = [...new Set(records.map(r => r.userId))];
         let userMap: Map<number, string> = new Map();
         if (userIds.length > 0) {
@@ -97,6 +108,15 @@ export const hitRecordsRouter = router({
         enrichedRecords = records.map(r => ({
           ...r,
           ownerName: userMap.get(r.userId) ?? `用户 #${r.userId}`,
+          groupTitle: groupMap.get(r.monitorGroupId)?.groupTitle ?? null,
+          groupUsername: groupMap.get(r.monitorGroupId)?.groupId ?? null,
+        }));
+      } else {
+        // 普通用户附加群组信息
+        enrichedRecords = records.map(r => ({
+          ...r,
+          groupTitle: groupMap.get(r.monitorGroupId)?.groupTitle ?? null,
+          groupUsername: groupMap.get(r.monitorGroupId)?.groupId ?? null,
         }));
       }
 
