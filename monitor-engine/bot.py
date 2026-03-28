@@ -868,6 +868,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"如需重置密码，点击下方按钮，系统将生成新的6位数密码。"
             )
             btns = [
+                [InlineKeyboardButton("🌐 登录管理后台", url="https://tg.luxurvs.com")],
                 [InlineKeyboardButton("🔑 重置登录密码", callback_data="profile_reset_password")],
                 [InlineKeyboardButton("📧 更换邮箱", callback_data="profile_set_email")],
                 [InlineKeyboardButton("◀️ 返回主菜单", callback_data="menu_main")],
@@ -881,6 +882,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             btns = [
                 [InlineKeyboardButton("📧 绑定邮箱", callback_data="profile_set_email")],
+                [InlineKeyboardButton("🌐 管理后台", url="https://tg.luxurvs.com")],
                 [InlineKeyboardButton("◀️ 返回主菜单", callback_data="menu_main")],
             ]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
