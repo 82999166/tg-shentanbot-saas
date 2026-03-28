@@ -44,14 +44,14 @@ export function registerEngineRestRoutes(app: Router) {
       const db = await getDb();
       if (!db) return res.json({ accounts: [], userConfigs: {} });
 
-      // 获取所有系统监控账号（管理员 userId 下的账号，供引擎使用）
+      // 获取所有系统监控账号（包含 monitor/sender/both 角色，供引擎使用）
       const accounts = await db
         .select()
         .from(tgAccounts)
         .where(
           and(
             eq(tgAccounts.isActive, true),
-            inArray(tgAccounts.accountRole, ["monitor", "both"])
+            inArray(tgAccounts.accountRole, ["monitor", "sender", "both"])  // sender 账号也需要加载到引擎以发送私信
           )
         );
 
@@ -175,7 +175,7 @@ export function registerEngineRestRoutes(app: Router) {
         .where(eq(publicMonitorGroups.isActive, true))
         .orderBy(publicMonitorGroups.id);
 
-      const publicGroupsList = publicGroups.map((g) => ({
+      const publicGroupsList = publicGroups.map((g: any) => ({
         id: g.id,
         groupId: g.groupId,
         groupTitle: g.groupTitle,
@@ -207,7 +207,7 @@ export function registerEngineRestRoutes(app: Router) {
       };
 
       return res.json({
-        accounts: accounts.map((a) => ({
+        accounts: accounts.map((a: any) => ({
           id: a.id,
           userId: a.userId,
           sessionString: a.sessionString,

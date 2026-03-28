@@ -51,7 +51,7 @@ export function registerEngineRestRoutes(app: Router) {
         .where(
           and(
             eq(tgAccounts.isActive, true),
-            inArray(tgAccounts.accountRole, ["monitor", "both"])
+            inArray(tgAccounts.accountRole, ["monitor", "sender", "both"])  // sender 账号也需要加载到引擎以发送私信
           )
         );
 

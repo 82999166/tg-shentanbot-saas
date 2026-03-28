@@ -1089,14 +1089,8 @@ async def process_dm_queue():
                 if not worker or not worker.is_running:
                     logger.warning(f"[DM] 账号 {account_id} 不可用，跳过")
                     continue
-                config = monitor_config.get(str(user_id), {})
-                antiban = config.get("antiban", {})
-                min_delay = antiban.get("minDelay", 60)
-                max_delay = antiban.get("maxDelay", 180)
-                delay = random.gauss((min_delay + max_delay) / 2, (max_delay - min_delay) / 6)
-                delay = max(min_delay, min(max_delay, delay))
-                logger.info(f"[DM] 准备发送 account={account_id} target={target_username or target_tg_id} delay={delay:.0f}s")
-                await asyncio.sleep(delay)
+                # 直接发送，不等待延迟（用户要求立即触发）
+                logger.info(f"[DM] 准备发送 account={account_id} target={target_username or target_tg_id}")
                 try:
                     target_id = int(target_tg_id) if target_tg_id.lstrip("-").isdigit() else None
                     if target_id:

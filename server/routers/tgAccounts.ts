@@ -123,12 +123,13 @@ export const tgAccountsRouter = router({
         phone_code_hash: input.phoneCodeHash,
       });
 
-      if (data.needs_2fa) {
+      if (data.needs_2fa || data.next_step === "verify_2fa") {
         return { success: true, needs2FA: true, message: "该账号已开启二步验证，请输入密码" };
       }
 
-      // 登录成功，保存 Pyrogram Session
-      return await saveAccount(ctx.user, phone, data.session_string);
+      // 登录成功，保存 TDLib 数据目录路径（files_directory）作为 sessionString
+      const sessionVal = data.files_directory ?? data.session_string ?? "";
+      return await saveAccount(ctx.user, phone, sessionVal);
     }),
 
   // ─── 手机号登录：第三步 - 二步验证密码（调用 Pyrogram 服务）─────────────
@@ -144,7 +145,9 @@ export const tgAccountsRouter = router({
         password: input.password,
       });
 
-      return await saveAccount(ctx.user, phone, data.session_string);
+      // 二步验证成功，保存 TDLib 数据目录路径（files_directory）作为 sessionString
+      const sessionVal = data.files_directory ?? data.session_string ?? "";
+      return await saveAccount(ctx.user, phone, sessionVal);
     }),
 
   // ─── Session 批量导入 ─────────────────────────────────────────────────────
