@@ -48,6 +48,7 @@ STATE_SENDER_PHONE = "wait_sender_phone"
 STATE_SENDER_CODE = "wait_sender_code"
 STATE_SENDER_2FA = "wait_sender_2fa"
 STATE_SENDER_SESSION = "wait_sender_session"
+STATE_EMAIL = "wait_email"
 
 # ─── API 辅助 ─────────────────────────────────────────────────────────────────
 
@@ -120,6 +121,9 @@ def main_menu_keyboard():
         ],
         [
             InlineKeyboardButton("📢 官方频道", callback_data="menu_channel"),
+        ],
+        [
+            InlineKeyboardButton("👤 个人中心", callback_data="menu_profile"),
         ],
     ])
 
@@ -848,6 +852,73 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = "📢 **官方频道**\n\n官方频道暂未配置，请稍后再试。"
             btns = [[InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+    elif data == "menu_profile":
+        uid = await ensure_user(update, context)
+        if not uid:
+            await q.edit_message_text("❌ 服务异常，请重试")
+            return
+        status = await api_get("engine.botGetEmailStatus", {"userId": uid}) or {}
+        has_email = status.get("hasEmail", False)
+        email = status.get("email", "")
+        if has_email:
+            text = (
+                f"👤 **个人中心**\n\n"
+                f"📧 已绑定邮箱：`{email}`\n\n"
+                f"您可以使用此邮箱登录管理后台。\n"
+                f"如需重置密码，点击下方按钮，系统将生成新的6位数密码。"
+            )
+            btns = [
+                [InlineKeyboardButton("🔑 重置登录密码", callback_data="profile_reset_password")],
+                [InlineKeyboardButton("📧 更换邮箱", callback_data="profile_set_email")],
+                [InlineKeyboardButton("◀️ 返回主菜单", callback_data="menu_main")],
+            ]
+        else:
+            text = (
+                "👤 **个人中心**\n\n"
+                "您尚未绑定邮箱。\n\n"
+                "绑定邮箱后，系统将为您生成一个6位数登录密码，\n"
+                "您可以使用邮箱+密码登录管理后台进行更多操作。"
+            )
+            btns = [
+                [InlineKeyboardButton("📧 绑定邮箱", callback_data="profile_set_email")],
+                [InlineKeyboardButton("◀️ 返回主菜单", callback_data="menu_main")],
+            ]
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "profile_set_email":
+        context.user_data[STATE_KEY] = STATE_EMAIL
+        await q.edit_message_text(
+            "📧 **绑定/更换邮箱**\n\n请输入您的邮箱地址：\n（格式如：example@gmail.com）",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 取消", callback_data="menu_profile")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+    elif data == "profile_reset_password":
+        uid = await ensure_user(update, context)
+        if not uid:
+            await q.edit_message_text("❌ 服务异常，请重试")
+            return
+        result = await api_post("engine.botResetPassword", {"userId": uid})
+        if result and result.get("success"):
+            new_pwd = result.get("password", "")
+            email = result.get("email", "")
+            await q.edit_message_text(
+                f"✅ **密码已重置**\n\n"
+                f"📧 邮箱：`{email}`\n"
+                f"🔑 新密码：`{new_pwd}`\n\n"
+                f"请妥善保管，登录管理后台时使用。\n"
+                f"⚠️ 此密码仅显示一次，请立即记录。",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回个人中心", callback_data="menu_profile")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            err = result.get("message", "操作失败") if result else "服务异常"
+            await q.edit_message_text(
+                f"❌ {err}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_profile")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+
     elif data == "noop":
         pass
 
@@ -1061,6 +1132,37 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"❌ {err}\n\n请检查密码是否正确",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_sender")]]),
                 parse_mode=ParseMode.MARKDOWN,
+            )
+
+    elif state == STATE_EMAIL:
+        context.user_data[STATE_KEY] = None
+        email_input = update.message.text.strip()
+        # 简单邮箱格式验证
+        import re
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_input):
+            await update.message.reply_text(
+                "❌ 邮箱格式不正确，请重新输入（如：example@gmail.com）",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_profile")]]),
+            )
+            return
+        result = await api_post("engine.botSetEmail", {"userId": uid, "email": email_input})
+        if result and result.get("success"):
+            new_pwd = result.get("password", "")
+            await update.message.reply_text(
+                f"✅ **邮箱绑定成功！**\n\n"
+                f"📧 邮箱：`{email_input}`\n"
+                f"🔑 登录密码：`{new_pwd}`\n\n"
+                f"请使用以上邮箱和密码登录管理后台。\n"
+                f"⚠️ 此密码仅显示一次，请立即记录！\n\n"
+                f"如需重置密码，可在个人中心操作。",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👤 个人中心", callback_data="menu_profile")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            err = result.get("message", "绑定失败") if result else "服务异常"
+            await update.message.reply_text(
+                f"❌ {err}\n\n请重试或联系技术支持。",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_profile")]]),
             )
 
     else:

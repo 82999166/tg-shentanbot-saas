@@ -919,8 +919,8 @@ export const engineRouter = router({
           healthScore: 80,
           healthStatus: "healthy",
           notes: "Bot内添加",
+        });
       }
-      });
       return { success: true, needs2FA: false, sessionString: data.files_directory as string };
     }),
 
@@ -1054,6 +1054,65 @@ export const engineRouter = router({
       }
       return { success: true };
     }),
+
+  // -- Bot API: 绑定邮箱并生成6位随机密码
+  botSetEmail: engineProcedure
+    .input(z.object({
+      userId: z.number(),
+      email: z.string().email('请输入有效的邮箱地址'),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '数据库未初始化' });
+      const existingEmail = await db.select({ id: users.id }).from(users)
+        .where(eq(users.email, input.email)).limit(1);
+      if (existingEmail.length > 0 && existingEmail[0].id !== input.userId) {
+        throw new TRPCError({ code: 'CONFLICT', message: '该邮箱已被其他账号使用' });
+      }
+      const rawPassword = Math.floor(100000 + Math.random() * 900000).toString();
+      const bcrypt = await import('bcryptjs');
+      const passwordHash = await bcrypt.hash(rawPassword, 12);
+      await db.update(users).set({
+        email: input.email,
+        passwordHash,
+        loginMethod: 'email',
+        emailVerified: true,
+      }).where(eq(users.id, input.userId));
+      return { success: true, password: rawPassword, email: input.email };
+    }),
+
+  // -- Bot API: 重置管理后台登录密码（生成新6位随机密码）
+  botResetPassword: engineProcedure
+    .input(z.object({
+      userId: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '数据库未初始化' });
+      const userRow = await db.select({ id: users.id, email: users.email })
+        .from(users).where(eq(users.id, input.userId)).limit(1);
+      if (!userRow[0] || !userRow[0].email) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: '请先绑定邮箱再重置密码' });
+      }
+      const rawPassword = Math.floor(100000 + Math.random() * 900000).toString();
+      const bcrypt = await import('bcryptjs');
+      const passwordHash = await bcrypt.hash(rawPassword, 12);
+      await db.update(users).set({ passwordHash }).where(eq(users.id, input.userId));
+      return { success: true, password: rawPassword, email: userRow[0].email };
+    }),
+
+  // -- Bot API: 获取用户邮箱绑定状态
+  botGetEmailStatus: engineProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { hasEmail: false, email: null };
+      const userRow = await db.select({ email: users.email }).from(users)
+        .where(eq(users.id, input.userId)).limit(1);
+      const email = userRow[0] ? userRow[0].email : null;
+      return { hasEmail: email ? true : false, email };
+    }),
+
 });
 
 // ── 配置查询（独立函数，避免循环引用） ──────────────────────────────────────────────────────────────
