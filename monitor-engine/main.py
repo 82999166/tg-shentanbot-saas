@@ -282,11 +282,12 @@ async def send_bot_notification(
         rid = str(hit_record_id) if hit_record_id else "0"
         # 私聊按钮：有 username 用 t.me 链接，无 username 用 callback_data 方式
         # 注意：Telegram Bot API InlineKeyboardButton url 不支持 tg:// 协议
-        # 无 username 时用 callback_data，由 bot.py dm: handler 发送带 tg://openmessage 的新消息
+        # 私聊按钮：有 username 用 t.me 链接，无 username 用 tg://openmessage 直接拉起对话
+        # InlineKeyboardButton.url 支持 tg:// 协议，点击后客户端直接打开私信窗口，无需中间消息
         if sender_username:
             chat_btn = {"text": "私聊", "url": f"https://t.me/{sender_username}"}
         else:
-            chat_btn = {"text": "私聊", "callback_data": f"dm:{rid}:{sender_tg_id}"}
+            chat_btn = {"text": "私聊", "url": f"tg://openmessage?user_id={sender_tg_id}"}
         inline_keyboard = [
             [
                 {"text": "历史", "callback_data": f"history:{rid}:{sender_tg_id}"},

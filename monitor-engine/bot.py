@@ -707,30 +707,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── 命中记录操作（推送消息按鈕）──
     elif data.startswith("dm:"):
+        # main.py 已直接在推送消息按钮中使用 tg://openmessage url，此 handler 为兜底保留
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
-        # 先应答避免超时，再发送带 tg://openmessage 按钮的临时消息（5秒后自动删除）
-        # 注意：answer_callback_query 的 url 不支持 tg://，但 InlineKeyboardButton.url 支持
-        await q.answer()
-        dm_markup = InlineKeyboardMarkup([[
-            InlineKeyboardButton("💬 点击打开私信", url="tg://openmessage?user_id=" + sender_tg_id_str)
-        ]])
-        try:
-            sent = await context.bot.send_message(
-                chat_id=q.message.chat_id,
-                text="👆 点击上方按钮打开私信",
-                reply_markup=dm_markup,
-            )
-            # 5秒后自动删除该提示消息
-            async def _auto_delete(bot, chat_id, msg_id):
-                await asyncio.sleep(5)
-                try:
-                    await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                except Exception:
-                    pass
-            asyncio.create_task(_auto_delete(context.bot, q.message.chat_id, sent.message_id))
-        except Exception as e:
-            await q.answer(f"TG ID: {sender_tg_id_str}", show_alert=True)
+        await q.answer(f"TG ID: {sender_tg_id_str}", show_alert=True)
     elif data.startswith("history:"):
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
