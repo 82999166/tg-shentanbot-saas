@@ -10,8 +10,8 @@ import {
   updateTgAccount,
 } from "../db";
 import { getDb } from "../db";
-import { systemSettings } from "../../drizzle/schema";
-import { sql } from "drizzle-orm";
+import { systemSettings, tgAccounts } from "../../drizzle/schema";
+import { sql, eq } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 
 // ─── Pyrogram 登录服务地址（本地 Python HTTP 服务）─────────────────────────
@@ -368,7 +368,26 @@ export const tgAccountsRouter = router({
 
 // ─── 保存账号到数据库（检查配额）─────────────────────────────────────────
 async function saveAccount(user: any, phone: string, sessionString: string) {
-  // 管理员不受套餐配额限制
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库不可用" });
+
+  // 检查手机号是否已存在（重新登录场景：直接更新，不受配额限制）
+  const existing = await db.select().from(tgAccounts).where(eq(tgAccounts.phone, phone)).limit(1);
+  if (existing.length > 0) {
+    await db.update(tgAccounts)
+      .set({
+        sessionString,
+        sessionStatus: "active",
+        isActive: true,
+        healthScore: 90,
+        healthStatus: "healthy",
+        updatedAt: new Date(),
+      })
+      .where(eq(tgAccounts.phone, phone));
+    return { success: true, needs2FA: false, accountId: existing[0].id, message: "账号重新登录成功，Session 已更新" };
+  }
+
+  // 新账号：检查套餐配额
   if (user.role !== "admin") {
     const plans = await getAllPlans();
     const userPlan = plans.find((p: any) => p.id === user.planId) ?? plans.find((p: any) => p.id === "free");
@@ -384,6 +403,7 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
     sessionString,
     sessionStatus: "active",
     accountRole: "both",
+    isActive: true,
     healthScore: 90,
     healthStatus: "healthy",
   });
