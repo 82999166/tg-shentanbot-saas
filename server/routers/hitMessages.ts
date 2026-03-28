@@ -75,6 +75,81 @@ export const hitMessagesRouter = router({
       return { rows: enrichedRows, total };
     }),
 
+  // ─── 全平台命中消息列表（管理员专用，查询所有用户数据）────────
+  adminList: adminProcedure
+    .input(
+      z.object({
+        page: z.number().default(1),
+        pageSize: z.number().default(20),
+        isProcessed: z.boolean().optional(),
+        userId: z.number().optional(),
+        keywordId: z.number().optional(),
+        monitorGroupId: z.number().optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB not available");
+      const offset = (input.page - 1) * input.pageSize;
+      // 管理员不过滤 userId，查全平台数据
+      const conditions: any[] = [];
+      if (input.userId) {
+        conditions.push(eq(hitRecords.userId, input.userId));
+      }
+      if (input.isProcessed !== undefined) {
+        conditions.push(eq(hitRecords.isProcessed, input.isProcessed));
+      }
+      if (input.keywordId) {
+        conditions.push(eq(hitRecords.keywordId, input.keywordId));
+      }
+      if (input.monitorGroupId) {
+        conditions.push(eq(hitRecords.monitorGroupId, input.monitorGroupId));
+      }
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      const rows = await db
+        .select({
+          id: hitRecords.id,
+          userId: hitRecords.userId,
+          keywordId: hitRecords.keywordId,
+          monitorGroupId: hitRecords.monitorGroupId,
+          senderTgId: hitRecords.senderTgId,
+          senderName: hitRecords.senderName,
+          senderUsername: hitRecords.senderUsername,
+          matchedContent: hitRecords.matchedContent,
+          messageUrl: hitRecords.messageUrl,
+          isProcessed: hitRecords.isProcessed,
+          processedAt: hitRecords.processedAt,
+          createdAt: hitRecords.createdAt,
+          // 关联用户邮箱
+          userEmail: users.email,
+        })
+        .from(hitRecords)
+        .leftJoin(users, eq(hitRecords.userId, users.id))
+        .where(whereClause)
+        .orderBy(desc(hitRecords.createdAt))
+        .limit(input.pageSize)
+        .offset(offset);
+      const [{ total }] = await db
+        .select({ total: sql<number>`count(*)` })
+        .from(hitRecords)
+        .where(whereClause);
+      // 关联 public_monitor_groups 表获取群组信息
+      const groupIds = [...new Set(rows.map(r => r.monitorGroupId).filter(id => id && id > 0))] as number[];
+      let groupMap: Map<number, { groupTitle: string | null; groupId: string }> = new Map();
+      if (groupIds.length > 0) {
+        const groupRows = await db
+          .select({ id: publicMonitorGroups.id, groupTitle: publicMonitorGroups.groupTitle, groupId: publicMonitorGroups.groupId })
+          .from(publicMonitorGroups)
+          .where(inArray(publicMonitorGroups.id, groupIds));
+        groupMap = new Map(groupRows.map(g => [g.id, { groupTitle: g.groupTitle, groupId: g.groupId }]));
+      }
+      const enrichedRows = rows.map(r => ({
+        ...r,
+        groupTitle: groupMap.get(r.monitorGroupId ?? 0)?.groupTitle ?? null,
+        groupUsername: groupMap.get(r.monitorGroupId ?? 0)?.groupId ?? null,
+      }));
+      return { rows: enrichedRows, total };
+    }),
   // ─── 标记/取消标记已处理 ─────────────────────────────────────
   markHandled: protectedProcedure
     .input(z.object({ id: z.number(), isProcessed: z.boolean() }))

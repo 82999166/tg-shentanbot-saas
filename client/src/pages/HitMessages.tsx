@@ -68,11 +68,21 @@ export default function HitMessages() {
 
   const utils = trpc.useUtils();
 
-  const { data, isLoading, refetch } = trpc.hitMessages.list.useQuery({
+  const isAdmin = user?.role === "admin";
+  // 管理员使用 adminList 查全平台数据，普通用户使用 list 查自己的数据
+  const { data: adminData, isLoading: adminLoading, refetch: adminRefetch } = trpc.hitMessages.adminList.useQuery({
     page,
     pageSize: 20,
     isProcessed: filterProcessed === "all" ? undefined : filterProcessed === "processed",
-  });
+  }, { enabled: isAdmin });
+  const { data: userData, isLoading: userLoading, refetch: userRefetch } = trpc.hitMessages.list.useQuery({
+    page,
+    pageSize: 20,
+    isProcessed: filterProcessed === "all" ? undefined : filterProcessed === "processed",
+  }, { enabled: !isAdmin });
+  const data = isAdmin ? adminData : userData;
+  const isLoading = isAdmin ? adminLoading : userLoading;
+  const refetch = isAdmin ? adminRefetch : userRefetch;
 
   const markHandled = trpc.hitMessages.markHandled.useMutation({
     onSuccess: () => {
@@ -283,6 +293,13 @@ export default function HitMessages() {
                       <span className="text-xs text-blue-500">关键词: {r.matchedKeyword}</span>
                     )}
                   </div>
+                  {isAdmin && (
+                    <div className="w-28 min-w-0">
+                      <span className="text-xs text-purple-400 truncate block" title={(r as any).userEmail ?? String(r.userId)}>
+                        {(r as any).userEmail ?? `用户#${r.userId}`}
+                      </span>
+                    </div>
+                  )}
                   <div className="w-28 min-w-0">
                     {r.groupTitle ? (
                       <a
