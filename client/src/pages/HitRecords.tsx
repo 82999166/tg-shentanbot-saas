@@ -132,6 +132,19 @@ export default function HitRecords() {
                           {r.ownerName}
                         </Badge>
                       )}
+                      {r.groupTitle ? (
+                        <a
+                          href={r.groupUsername ? `https://t.me/${r.groupUsername.replace(/^@/, '')}` : undefined}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-400 hover:underline"
+                          title={r.groupUsername || r.groupTitle}
+                        >
+                          💬 {r.groupTitle}
+                        </a>
+                      ) : r.monitorGroupId > 0 ? (
+                        <span className="text-xs text-muted-foreground">群组 #{r.monitorGroupId}</span>
+                      ) : null}
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-2">{r.messageContent}</p>
                   </div>

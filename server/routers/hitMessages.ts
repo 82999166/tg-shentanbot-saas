@@ -11,7 +11,6 @@ import {
   keywords,
   users,
   publicMonitorGroups,
-  tgAccounts,
 } from "../../drizzle/schema";
 import { eq, and, desc, gte, sql, inArray } from "drizzle-orm";
 
@@ -56,75 +55,24 @@ export const hitMessagesRouter = router({
         .from(hitRecords)
         .where(and(...conditions));
 
-      return { rows, total };
-    }),
-
-  // ─── 管理员：全平台命中消息列表 ──────────────────────────────
-  adminList: adminProcedure
-    .input(
-      z.object({
-        page: z.number().default(1),
-        pageSize: z.number().default(20),
-        isProcessed: z.boolean().optional(),
-        userId: z.number().optional(),
-        keyword: z.string().optional(),
-      })
-    )
-    .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("DB not available");
-      const offset = (input.page - 1) * input.pageSize;
-
-      const conditions: any[] = [];
-      if (input.isProcessed !== undefined) {
-        conditions.push(eq(hitRecords.isProcessed, input.isProcessed));
-      }
-      if (input.userId) {
-        conditions.push(eq(hitRecords.userId, input.userId));
+      // 关联 public_monitor_groups 表获取群组信息
+      const groupIds = [...new Set(rows.map(r => r.monitorGroupId).filter(id => id > 0))];
+      let groupMap: Map<number, { groupTitle: string | null; groupId: string }> = new Map();
+      if (groupIds.length > 0) {
+        const groupRows = await db
+          .select({ id: publicMonitorGroups.id, groupTitle: publicMonitorGroups.groupTitle, groupId: publicMonitorGroups.groupId })
+          .from(publicMonitorGroups)
+          .where(inArray(publicMonitorGroups.id, groupIds));
+        groupMap = new Map(groupRows.map(g => [g.id, { groupTitle: g.groupTitle, groupId: g.groupId }]));
       }
 
-      const rows = await db
-        .select({
-          id: hitRecords.id,
-          userId: hitRecords.userId,
-          userName: users.name,
-          userEmail: users.email,
-          keywordId: hitRecords.keywordId,
-          messageContent: hitRecords.messageContent,
-          senderTgId: hitRecords.senderTgId,
-          senderUsername: hitRecords.senderUsername,
-          senderFirstName: hitRecords.senderFirstName,
-          senderLastName: hitRecords.senderLastName,
-          monitorGroupId: hitRecords.monitorGroupId,
-          tgAccountId: hitRecords.tgAccountId,
-          matchedKeyword: hitRecords.matchedKeyword,
-          dmStatus: hitRecords.dmStatus,
-          isProcessed: hitRecords.isProcessed,
-          processedAt: hitRecords.processedAt,
-          messageDate: hitRecords.messageDate,
-          createdAt: hitRecords.createdAt,
-          // 关联公共群组表，获取群组名称和 groupId（用于拼接链接）
-          groupTitle: publicMonitorGroups.groupTitle,
-          groupId: publicMonitorGroups.groupId,
-          groupMemberCount: publicMonitorGroups.memberCount,
-          // 关联 TG 账号表，获取监控账号名称
-          tgAccountName: tgAccounts.phone,
-        })
-        .from(hitRecords)
-        .leftJoin(users, eq(hitRecords.userId, users.id))
-        .leftJoin(publicMonitorGroups, eq(hitRecords.monitorGroupId, publicMonitorGroups.id))
-        .leftJoin(tgAccounts, eq(hitRecords.tgAccountId, tgAccounts.id))
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(desc(hitRecords.createdAt))
-        .limit(input.pageSize)
-        .offset(offset);
+      const enrichedRows = rows.map(r => ({
+        ...r,
+        groupTitle: groupMap.get(r.monitorGroupId)?.groupTitle ?? null,
+        groupUsername: groupMap.get(r.monitorGroupId)?.groupId ?? null,
+      }));
 
-      const [{ total }] = await db
-        .select({ total: sql<number>`count(*)` })
-        .from(hitRecords)
-        .where(conditions.length > 0 ? and(...conditions) : undefined);
-
-      return { rows, total };
+      return { rows: enrichedRows, total };
     }),
 
   // ─── 标记/取消标记已处理 ─────────────────────────────────────

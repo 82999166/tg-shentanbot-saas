@@ -178,6 +178,7 @@ export function registerEngineRestRoutes(app: Router) {
       const publicGroupsList = publicGroups.map((g) => ({
         id: g.id,
         groupId: g.groupId,
+        username: g.groupId,         // 引擎用 username 字段做 real_ids 映射，groupId 即为 @username
         groupTitle: g.groupTitle,
         groupType: g.groupType,
         memberCount: g.memberCount,
@@ -198,12 +199,6 @@ export function registerEngineRestRoutes(app: Router) {
         rateLimit: parseInt(sysConfigMap["anti_spam_rate_limit"] || "1000", 10),
         minMsgLen: parseInt(sysConfigMap["anti_spam_min_msg_len"] || "0", 10),
         maxMsgLen: parseInt(sysConfigMap["anti_spam_max_msg_len"] || "0", 10),
-        // 全局消息过滤规则
-        filterAds: sysConfigMap["global_filter_ads"] === "true",
-        filterBot: sysConfigMap["global_filter_bot"] === "true",
-        globalMaxMsgLen: parseInt(sysConfigMap["global_max_msg_length"] || "0", 10),
-        globalRateWindow: parseInt(sysConfigMap["global_rate_window"] || "0", 10),
-        globalRateLimit: parseInt(sysConfigMap["global_rate_limit"] || "0", 10),
       };
 
       return res.json({
@@ -239,20 +234,35 @@ export function registerEngineRestRoutes(app: Router) {
       const matchedKeywordStr = Array.isArray(input.matchedKeywords)
         ? input.matchedKeywords.join(", ")
         : (input.matchedKeyword || "");
-      // 根据引擎上报的 tgGroupId 查出 monitorGroupId
+
+      // 根据 tgGroupId 关联 public_monitor_groups 表查出正确的 monitorGroupId
+      // 引擎上报的 tgGroupId 可能是 @username、数字 ID 或 -100xxxxx 格式
       let resolvedMonitorGroupId = 0;
-      if (input.tgGroupId) {
-        const tgGroupIdStr = String(input.tgGroupId).replace(/^@/, '');
+      const tgGroupId = input.tgGroupId || input.groupId || "";
+      if (tgGroupId) {
+        // 标准化 groupId：去掉 @ 前缀，或保留数字 ID
+        const normalizedGroupId = String(tgGroupId).replace(/^@/, "");
+        // 先尝试精确匹配 groupId 字段（@username 或数字 ID）
         const groupRows = await db
-          .select({ id: publicMonitorGroups.id, groupId: publicMonitorGroups.groupId, realId: publicMonitorGroups.realId })
-          .from(publicMonitorGroups);
-        const matched = groupRows.find(g =>
-          g.groupId === tgGroupIdStr ||
-          g.groupId === '@' + tgGroupIdStr ||
-          (g.realId && g.realId === tgGroupIdStr)
-        );
-        if (matched) resolvedMonitorGroupId = matched.id;
+          .select({ id: publicMonitorGroups.id })
+          .from(publicMonitorGroups)
+          .where(eq(publicMonitorGroups.groupId, normalizedGroupId))
+          .limit(1);
+        if (groupRows.length > 0) {
+          resolvedMonitorGroupId = groupRows[0].id;
+        } else {
+          // 尝试通过 realId 字段匹配（引擎回写的 TG 真实数字 ID）
+          const groupByRealId = await db
+            .select({ id: publicMonitorGroups.id })
+            .from(publicMonitorGroups)
+            .where(eq(publicMonitorGroups.realId, normalizedGroupId))
+            .limit(1);
+          if (groupByRealId.length > 0) {
+            resolvedMonitorGroupId = groupByRealId[0].id;
+          }
+        }
       }
+
       const result = await db.insert(hitRecords).values({
         userId: input.userId,
         tgAccountId: input.monitorAccountId || input.accountId || 0,
