@@ -47,6 +47,7 @@ STATE_ACTIVATE = "wait_activate"
 STATE_SENDER_PHONE = "wait_sender_phone"
 STATE_SENDER_CODE = "wait_sender_code"
 STATE_SENDER_2FA = "wait_sender_2fa"
+STATE_SENDER_SESSION = "wait_sender_session"
 
 # ─── API 辅助 ─────────────────────────────────────────────────────────────────
 
@@ -526,26 +527,106 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── 私信账号 ──
     elif data == "menu_sender":
-        s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
-        has = s.get("hasSenderAccount", False)
-        phone = s.get("senderPhone", "")
-        if has:
-            text = f"📱 **私信账号**\n\n✅ 已绑定：`{phone}`\n\n此账号将用于自动发送私信。"
-            btns = [
-                [InlineKeyboardButton("➕ 添加新账号", callback_data="sender_add_bot")],
-                [InlineKeyboardButton("🌐 网页管理", url=f"{WEB_SITE_URL}/tg-accounts" if WEB_SITE_URL else "https://t.me")],
-                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
-            ]
+        # 获取账号列表
+        acc_result = await api_get("engine.botGetSenderAccounts", {"userId": uid})
+        accounts = acc_result.get("accounts", []) if acc_result else []
+        if accounts:
+            status_map = {"active": "✅", "pending": "⏳", "expired": "⚠️", "banned": "❌"}
+            acc_lines = []
+            for acc in accounts:
+                icon = status_map.get(acc.get("sessionStatus", ""), "❓")
+                phone_display = acc.get("phone") or acc.get("tgUsername") or f"ID:{acc.get('id')}"
+                health = acc.get("healthScore", 0)
+                acc_lines.append(f"{icon} `{phone_display}` 健康:{health}")
+            acc_text = "\n".join(acc_lines)
+            text = f"📱 **私信账号管理**\n\n共 {len(accounts)} 个账号：\n{acc_text}\n\n选择操作："
+            btns = []
+            for acc in accounts:
+                phone_display = acc.get("phone") or acc.get("tgUsername") or f"ID:{acc.get('id')}"
+                btns.append([InlineKeyboardButton(f"🗑 删除 {phone_display}", callback_data=f"sender_del:{acc['id']}")])
+            btns.append([InlineKeyboardButton("➕ 手机号添加", callback_data="sender_add_bot"),
+                         InlineKeyboardButton("📋 Session导入", callback_data="sender_import_session")])
+            if len(accounts) > 1:
+                btns.append([InlineKeyboardButton("🗑 批量删除全部", callback_data="sender_del_all")])
+            btns.append([InlineKeyboardButton("◀️ 返回主菜单", callback_data="menu_main")])
         else:
-            text = ("📱 **私信账号**\n\n⚠️ 尚未绑定私信账号\n\n"
-                    "绑定后，系统将使用此账号自动向关键词命中的用户发送私信。\n\n"
-                    "请选择绑定方式：")
+            text = "📱 **私信账号管理**\n\n⚠️ 未绑定私信账号，无法发送私信\n\n请添加账号："
             btns = [
-                [InlineKeyboardButton("📱 Bot 内添加账号", callback_data="sender_add_bot")],
-                [InlineKeyboardButton("🌐 网页管理后台", url=f"{WEB_SITE_URL}/tg-accounts" if WEB_SITE_URL else "https://t.me")],
-                [InlineKeyboardButton("◀️ 返回", callback_data="menu_main")],
+                [InlineKeyboardButton("📱 手机号添加", callback_data="sender_add_bot"),
+                 InlineKeyboardButton("📋 Session导入", callback_data="sender_import_session")],
+                [InlineKeyboardButton("◀️ 返回主菜单", callback_data="menu_main")],
             ]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+    elif data.startswith("sender_del:"):
+        account_id = int(data.split(":")[1])
+        r = await api_post("engine.botDeleteSenderAccount", {"userId": uid, "accountId": account_id})
+        if r and r.get("success"):
+            await q.answer("✅ 账号已删除", show_alert=True)
+        else:
+            await q.answer("❌ 删除失败，请重试", show_alert=True)
+        # 刷新账号列表
+        acc_result = await api_get("engine.botGetSenderAccounts", {"userId": uid})
+        accounts = acc_result.get("accounts", []) if acc_result else []
+        if accounts:
+            status_map = {"active": "✅", "pending": "⏳", "expired": "⚠️", "banned": "❌"}
+            acc_lines = []
+            for acc in accounts:
+                icon = status_map.get(acc.get("sessionStatus", ""), "❓")
+                phone_display = acc.get("phone") or acc.get("tgUsername") or f"ID:{acc.get('id')}"
+                health = acc.get("healthScore", 0)
+                acc_lines.append(f"{icon} `{phone_display}` 健康:{health}")
+            acc_text = "\n".join(acc_lines)
+            text = f"📱 **私信账号管理**\n\n共 {len(accounts)} 个账号：\n{acc_text}\n\n选择操作："
+            btns = []
+            for acc in accounts:
+                phone_display = acc.get("phone") or acc.get("tgUsername") or f"ID:{acc.get('id')}"
+                btns.append([InlineKeyboardButton(f"🗑 删除 {phone_display}", callback_data=f"sender_del:{acc['id']}")])
+            btns.append([InlineKeyboardButton("➕ 手机号添加", callback_data="sender_add_bot"),
+                         InlineKeyboardButton("📋 Session导入", callback_data="sender_import_session")])
+            if len(accounts) > 1:
+                btns.append([InlineKeyboardButton("🗑 批量删除全部", callback_data="sender_del_all")])
+            btns.append([InlineKeyboardButton("◀️ 返回主菜单", callback_data="menu_main")])
+        else:
+            text = "📱 **私信账号管理**\n\n✅ 账号已全部删除\n\n请添加账号："
+            btns = [
+                [InlineKeyboardButton("📱 手机号添加", callback_data="sender_add_bot"),
+                 InlineKeyboardButton("📋 Session导入", callback_data="sender_import_session")],
+                [InlineKeyboardButton("◀️ 返回主菜单", callback_data="menu_main")],
+            ]
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "sender_del_all":
+        acc_result = await api_get("engine.botGetSenderAccounts", {"userId": uid})
+        accounts = acc_result.get("accounts", []) if acc_result else []
+        fail_count = 0
+        for acc in accounts:
+            r = await api_post("engine.botDeleteSenderAccount", {"userId": uid, "accountId": acc["id"]})
+            if not (r and r.get("success")):
+                fail_count += 1
+        if fail_count == 0:
+            text = "📱 **私信账号管理**\n\n✅ 全部账号已删除\n\n请添加账号："
+        else:
+            text = f"📱 **私信账号管理**\n\n⚠️ {fail_count} 个账号删除失败\n\n请重试："
+        btns = [
+            [InlineKeyboardButton("📱 手机号添加", callback_data="sender_add_bot"),
+             InlineKeyboardButton("📋 Session导入", callback_data="sender_import_session")],
+            [InlineKeyboardButton("◀️ 返回主菜单", callback_data="menu_main")],
+        ]
+        await q.answer()
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+
+    elif data == "sender_import_session":
+        await q.answer()
+        context.user_data[STATE_KEY] = STATE_SENDER_SESSION
+        await q.edit_message_text(
+            "📋 **Session 导入**\n\n"
+            "请直接发送 Session 字符串（通常以 `1BQA` 开头的长字符串）\n\n"
+            "可选：在 Session 字符串后**换行**输入手机号（如 `+8613800000000`）\n\n"
+            "⚠️ Session 字符串请妥善保管，勿泄露给他人",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 取消", callback_data="menu_sender")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
     elif data == "sender_add_bot":
         # Bot 内添加账号：引导输入手机号
         context.user_data[STATE_KEY] = STATE_SENDER_PHONE
@@ -858,9 +939,42 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.MARKDOWN,
             )
 
+    # -- Bot Session import
+    elif state == STATE_SENDER_SESSION:
+        lines_input = text.strip().splitlines()
+        session_str = lines_input[0].strip()
+        phone_input = lines_input[1].strip() if len(lines_input) > 1 else None
+        if len(session_str) < 10:
+            await update.message.reply_text(
+                "Session invalid, please resend",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Cancel", callback_data="menu_sender")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+        payload = {"userId": uid, "sessionString": session_str}
+        if phone_input:
+            payload["phone"] = phone_input.replace(" ", "")
+        r = await api_post("engine.botImportSession", payload)
+        if r and r.get("success"):
+            context.user_data.pop(STATE_KEY, None)
+            await update.message.reply_text(
+                "Session imported successfully!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("View Accounts", callback_data="menu_sender"),
+                    InlineKeyboardButton("Main Menu", callback_data="menu_main"),
+                ]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            err = r.get("message", "Import failed") if r else "Server error"
+            await update.message.reply_text(
+                f"Import failed: {err}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back", callback_data="menu_sender")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
     # ── Bot 内添加私信账号：第一步 - 输入手机号 ──────────────────────────────
     elif state == STATE_SENDER_PHONE:
-        phone = text.strip()
+        phone = text.strip().replace(" ", "").replace(" ", "")
         if not phone.startswith("+"):
             phone = "+" + phone
         await update.message.reply_text("⏳ 正在发送验证码，请稍候...")

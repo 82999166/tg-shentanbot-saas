@@ -80,7 +80,7 @@ async def handle_send_code(request: web.Request) -> web.Response:
     _cleanup_expired_sessions()
     try:
         body = await request.json()
-        phone = body.get("phone", "").strip()
+        phone = body.get("phone", "").strip().replace(" ", "").replace("\u00a0", "")
         if not phone:
             return web.json_response({"success": False, "error": "手机号不能为空"}, status=400)
         if not TG_API_ID or not TG_API_HASH:
@@ -167,7 +167,7 @@ async def handle_verify_code(request: web.Request) -> web.Response:
     """第二步：验证验证码"""
     try:
         body = await request.json()
-        phone = body.get("phone", "").strip()
+        phone = body.get("phone", "").strip().replace(" ", "").replace("\u00a0", "")
         code = body.get("code", "").strip()
         if not phone or not code:
             return web.json_response({"success": False, "error": "参数不完整"}, status=400)
@@ -241,7 +241,7 @@ async def handle_verify_2fa(request: web.Request) -> web.Response:
     """第三步：二步验证密码"""
     try:
         body = await request.json()
-        phone = body.get("phone", "").strip()
+        phone = body.get("phone", "").strip().replace(" ", "").replace("\u00a0", "")
         password = body.get("password", "").strip()
         if not phone or not password:
             return web.json_response({"success": False, "error": "参数不完整"}, status=400)

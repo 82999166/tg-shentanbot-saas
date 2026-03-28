@@ -855,7 +855,7 @@ export const engineRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未初始化" });
-      const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
+      const phone = (input.phone.replace(/\s/g, "").startsWith("+") ? input.phone.replace(/\s/g, "") : `+${input.phone.replace(/\s/g, "")}`);
       // 读取系统 API 配置
       const rows = await db.select().from(systemConfig)
         .where(sql`${systemConfig.configKey} IN ('tg_api_id', 'tg_api_hash')`);
@@ -884,7 +884,7 @@ export const engineRouter = router({
       code: z.string(),
     }))
     .mutation(async ({ input }) => {
-      const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
+      const phone = (input.phone.replace(/\s/g, "").startsWith("+") ? input.phone.replace(/\s/g, "") : `+${input.phone.replace(/\s/g, "")}`);
       const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5050";
       const resp = await fetch(`${LOGIN_SERVICE_URL}/verify_code`, {
         method: "POST",
@@ -922,7 +922,7 @@ export const engineRouter = router({
       password: z.string(),
     }))
     .mutation(async ({ input }) => {
-      const phone = input.phone.startsWith("+") ? input.phone : `+${input.phone}`;
+      const phone = (input.phone.replace(/\s/g, "").startsWith("+") ? input.phone.replace(/\s/g, "") : `+${input.phone.replace(/\s/g, "")}`);
       const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5050";
       const resp = await fetch(`${LOGIN_SERVICE_URL}/verify_2fa`, {
         method: "POST",
@@ -950,6 +950,92 @@ export const engineRouter = router({
       return { success: true };
     }),
 });
+
+  // ── Bot API：获取用户的私信账号列表 ──────────────────────────────────────────
+  botGetSenderAccounts: engineProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { accounts: [] };
+      const accounts = await db
+        .select({
+          id: tgAccounts.id,
+          phone: tgAccounts.phone,
+          tgUsername: tgAccounts.tgUsername,
+          tgFirstName: tgAccounts.tgFirstName,
+          sessionStatus: tgAccounts.sessionStatus,
+          healthScore: tgAccounts.healthScore,
+          healthStatus: tgAccounts.healthStatus,
+          totalDmSent: tgAccounts.totalDmSent,
+          dailyDmSent: tgAccounts.dailyDmSent,
+          lastActiveAt: tgAccounts.lastActiveAt,
+          notes: tgAccounts.notes,
+        })
+        .from(tgAccounts)
+        .where(and(eq(tgAccounts.userId, input.userId), eq(tgAccounts.accountRole, "sender")))
+        .orderBy(tgAccounts.id);
+      return { accounts };
+    }),
+
+  // ── Bot API：删除指定私信账号 ──────────────────────────────────────────────
+  botDeleteSenderAccount: engineProcedure
+    .input(z.object({ userId: z.number(), accountId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // 确认账号属于该用户
+      const acc = await db.select({ id: tgAccounts.id }).from(tgAccounts)
+        .where(and(eq(tgAccounts.id, input.accountId), eq(tgAccounts.userId, input.userId))).limit(1);
+      if (!acc[0]) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在或无权限删除" });
+      await db.delete(tgAccounts).where(eq(tgAccounts.id, input.accountId));
+      return { success: true };
+    }),
+
+  // ── Bot API：通过 Session 字符串导入私信账号 ──────────────────────────────
+  botImportSession: engineProcedure
+    .input(z.object({
+      userId: z.number(),
+      sessionString: z.string().min(10, "Session字符串无效"),
+      phone: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // 检查 session 是否已存在
+      const existingSession = await db.select({ id: tgAccounts.id }).from(tgAccounts)
+        .where(eq(tgAccounts.sessionString, input.sessionString)).limit(1);
+      if (existingSession.length > 0) throw new TRPCError({ code: "CONFLICT", message: "该 Session 已存在，请勿重复导入" });
+      // 如果提供了手机号，检查手机号是否已存在
+      if (input.phone) {
+        const cleanPhone = input.phone.replace(/\s/g, "");
+        const phone = cleanPhone.startsWith("+") ? cleanPhone : `+${cleanPhone}`;
+        const existingPhone = await db.select({ id: tgAccounts.id }).from(tgAccounts)
+          .where(eq(tgAccounts.phone, phone)).limit(1);
+        if (existingPhone.length > 0) throw new TRPCError({ code: "CONFLICT", message: `手机号 ${phone} 已存在，请勿重复添加` });
+        await db.insert(tgAccounts).values({
+          userId: input.userId,
+          phone,
+          sessionString: input.sessionString,
+          sessionStatus: "active",
+          accountRole: "sender",
+          healthScore: 80,
+          healthStatus: "healthy",
+          notes: "Bot内Session导入",
+        });
+      } else {
+        await db.insert(tgAccounts).values({
+          userId: input.userId,
+          phone: null,
+          sessionString: input.sessionString,
+          sessionStatus: "active",
+          accountRole: "sender",
+          healthScore: 80,
+          healthStatus: "healthy",
+          notes: "Bot内Session导入（无手机号）",
+        });
+      }
+      return { success: true };
+    }),
 
 // ── 配置查询（独立函数，避免循环引用） ──────────────────────────────────────────────────────────────
 function engineRouter_config() {
