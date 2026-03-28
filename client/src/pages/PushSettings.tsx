@@ -50,7 +50,14 @@ export default function PushSettings() {
   const utils = trpc.useUtils();
 
   const { data: settings, isLoading } = trpc.hitMessages.getPushSettings.useQuery();
-  const { data: blocked, refetch: refetchBlocked } = trpc.hitMessages.blockedList.useQuery();
+  const isAdmin = user?.role === "admin";
+  const { data: blocked, refetch: refetchBlocked } = trpc.hitMessages.blockedList.useQuery(
+    undefined, { enabled: !isAdmin }
+  );
+  const { data: adminBlocked, refetch: refetchAdminBlocked } = trpc.hitMessages.adminBlockedList.useQuery(
+    undefined, { enabled: isAdmin }
+  );
+  const refetchBlockedAll = () => { isAdmin ? refetchAdminBlocked() : refetchBlocked(); };
 
   const [pushEnabled, setPushEnabled] = useState(true);
   const [filterAds, setFilterAds] = useState(true);
@@ -91,15 +98,25 @@ export default function PushSettings() {
     },
     onError: (e: { message: string }) => toast.error(e.message),
   });
+  const adminUnblockSender = trpc.hitMessages.adminUnblockSender.useMutation({
+    onSuccess: () => {
+      utils.hitMessages.adminBlockedList.invalidate();
+      setUnblockDialog(null);
+      toast.success("已解除屏蔽");
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
   const getUnblockTarget = (id: number) => blockedRows.find(r => r.id === id)?.targetTgId ?? "";
 
-  const blockedRows = (blocked ?? []) as Array<{
+  type BlockedRow = {
     id: number;
     targetTgId: string | null;
     targetUsername: string | null;
     reason: string | null;
     createdAt: Date;
-  }>;
+    blockedByEmail?: string;
+  };
+  const blockedRows = (isAdmin ? (adminBlocked ?? []) : (blocked ?? [])) as BlockedRow[];
 
   function addAdRule() {
     if (!newRuleDesc.trim()) return;
@@ -348,7 +365,7 @@ export default function PushSettings() {
                 <Badge variant="secondary">{blockedRows.length} 人</Badge>
               )}
             </CardTitle>
-            <Button variant="outline" size="sm" onClick={() => refetchBlocked()}>
+            <Button variant="outline" size="sm" onClick={() => refetchBlockedAll()}>
               <RefreshCw className="h-4 w-4 mr-2" />刷新
             </Button>
           </div>
@@ -372,6 +389,7 @@ export default function PushSettings() {
               <div className="flex items-center gap-3 px-4 py-2 bg-muted/30 text-xs text-muted-foreground">
                 <span className="w-32">用户</span>
                 <span className="flex-1">TG ID</span>
+                {isAdmin && <span className="w-36">屏蔽者</span>}
                 <span className="flex-1">屏蔽原因</span>
                 <span className="w-32">屏蔽时间</span>
                 <span className="w-16">操作</span>
@@ -384,6 +402,11 @@ export default function PushSettings() {
                     </div>
                   </div>
                   <div className="flex-1 text-xs text-muted-foreground">{r.targetTgId ?? "—"}</div>
+                  {isAdmin && (
+                    <div className="w-36 text-xs text-purple-400 truncate">
+                      {r.blockedByEmail ?? "—"}
+                    </div>
+                  )}
                   <div className="flex-1 text-xs text-muted-foreground">
                     {r.reason ?? "—"}
                   </div>
@@ -401,6 +424,7 @@ export default function PushSettings() {
                       variant="ghost"
                       className="h-7 text-xs text-red-500"
                       onClick={() => setUnblockDialog(r.id)}
+                      title={isAdmin ? `解除屏蔽（屏蔽者：${r.blockedByEmail ?? ""}）` : "解除屏蔽"}
                     >
                       <Trash2 className="h-3.5 w-3.5 mr-1" />解除
                     </Button>
@@ -451,8 +475,15 @@ export default function PushSettings() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setUnblockDialog(null)}>取消</Button>
             <Button
-              onClick={() => unblockDialog && unblockSender.mutate({ targetTgId: getUnblockTarget(unblockDialog) })}
-              disabled={unblockSender.isPending}
+              onClick={() => {
+                if (!unblockDialog) return;
+                if (isAdmin) {
+                  adminUnblockSender.mutate({ id: unblockDialog });
+                } else {
+                  unblockSender.mutate({ targetTgId: getUnblockTarget(unblockDialog) });
+                }
+              }}
+              disabled={unblockSender.isPending || adminUnblockSender.isPending}
             >
               确认解除
             </Button>

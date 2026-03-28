@@ -285,6 +285,35 @@ export const hitMessagesRouter = router({
       .where(eq(blacklist.userId, ctx.user.id))
       .orderBy(desc(blacklist.createdAt));
   }),
+  // ─── 管理员：全平台屏蔽列表（含屏蔽者信息）─────────────────
+  adminBlockedList: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) throw new Error("DB not available");
+    const rows = await db
+      .select()
+      .from(blacklist)
+      .orderBy(desc(blacklist.createdAt));
+    if (!rows.length) return [];
+    const userIds = [...new Set(rows.map((r: any) => r.userId))];
+    const userRows = await db
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .where(inArray(users.id, userIds));
+    const userMap = new Map(userRows.map((u: any) => [u.id, u.email ?? `用户#${u.id}`]));
+    return rows.map((r: any) => ({
+      ...r,
+      blockedByEmail: userMap.get(r.userId) ?? `用户#${r.userId}`,
+    }));
+  }),
+  // ─── 管理员：解除任意用户的屏蔽 ─────────────────────────────
+  adminUnblockSender: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB not available");
+      await db.delete(blacklist).where(eq(blacklist.id, input.id));
+      return { success: true };
+    }),
 
   // ─── 发送者历史记录（近7天） ─────────────────────────────────
   senderHistory: protectedProcedure
