@@ -95,6 +95,13 @@ async def handle_send_code(request: web.Request) -> web.Response:
                 pass
 
         # 使用临时账号 ID 创建登录客户端
+        # 清理旧的临时登录session目录，避免TDLib残留导致WaitPassword
+        import shutil, os
+        _temp_id_clean = f"temp_{phone.replace("+", "").replace(" ", "")}"
+        _old_dir = os.path.join(TDLIB_DATA_DIR, f"login_{_temp_id_clean}")
+        if os.path.exists(_old_dir):
+            shutil.rmtree(_old_dir, ignore_errors=True)
+            logger.info(f"[SendCode] 已清理旧session目录: {_old_dir}")
         temp_id = f"temp_{phone.replace('+', '').replace(' ', '')}"
         client, files_dir = await _create_tdlib_client(temp_id, phone)
 
@@ -163,9 +170,13 @@ async def handle_send_code(request: web.Request) -> web.Response:
                 "expires_at": time.time() + SESSION_TIMEOUT,
             }
             return web.json_response({"success": True, "message": "账号已登录", "next_step": "already_logged_in", "phone_code_hash": "tdlib_session"})
-        else:
+        elif auth_state_result["state"] == "wait_password":
             task.cancel()
-            return web.json_response({"success": False, "error": f"意外的认证状态: {auth_state_result['state']}"}, status=500)
+            # TDLib残留旧session，清理后告知用户重试
+            import shutil
+            shutil.rmtree(files_dir, ignore_errors=True)
+            task.cancel()
+            return web.json_response({"success": False, "error": "账号session已过期，已自动清理，请重新点击添加账号"}, status=400)
     except Exception as e:
         logger.error(f"[SendCode] 错误: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=500)
