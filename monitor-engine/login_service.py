@@ -104,9 +104,17 @@ async def handle_send_code(request: web.Request) -> web.Response:
 
         @client.on_updateAuthorizationState()
         async def on_auth(c, update):
-            state = update.authorization_state if hasattr(update, 'authorization_state') else {}
-            state_type = state.get("@type", "") if isinstance(state, dict) else ""
-            if state_type == "authorizationStateWaitPhoneNumber":
+            from pytdbot import types as tg_types
+            state = update.authorization_state if hasattr(update, 'authorization_state') else update
+            # 获取状态类型名（兼容对象和字典两种格式）
+            if hasattr(state, 'ID') and state.ID:
+                state_type = state.ID
+            elif isinstance(state, dict):
+                state_type = state.get("@type", "")
+            else:
+                state_type = type(state).__name__
+            logger.info(f"[SendCode] 认证状态: {state_type}")
+            if isinstance(state, tg_types.AuthorizationStateWaitPhoneNumber) or state_type in ("authorizationStateWaitPhoneNumber", "AuthorizationStateWaitPhoneNumber"):
                 # 发送手机号
                 result = await c.invoke({
                     "@type": "setAuthenticationPhoneNumber",
@@ -114,16 +122,16 @@ async def handle_send_code(request: web.Request) -> web.Response:
                     "settings": {"@type": "phoneNumberAuthenticationSettings", "allow_flash_call": False, "is_current_phone_number": False}
                 })
                 logger.info(f"[SendCode] 已发送手机号 {phone}: {result}")
-            elif state_type == "authorizationStateWaitCode":
+            elif isinstance(state, tg_types.AuthorizationStateWaitCode) or state_type in ("authorizationStateWaitCode", "AuthorizationStateWaitCode"):
                 auth_state_result["state"] = "wait_code"
                 auth_state_event.set()
-            elif state_type == "authorizationStateWaitPassword":
+            elif isinstance(state, tg_types.AuthorizationStateWaitPassword) or state_type in ("authorizationStateWaitPassword", "AuthorizationStateWaitPassword"):
                 auth_state_result["state"] = "wait_password"
                 auth_state_event.set()
-            elif state_type == "authorizationStateReady":
+            elif isinstance(state, tg_types.AuthorizationStateReady) or state_type in ("authorizationStateReady", "AuthorizationStateReady"):
                 auth_state_result["state"] = "ready"
                 auth_state_event.set()
-            elif state_type in ("authorizationStateClosing", "authorizationStateClosed"):
+            elif state_type in ("authorizationStateClosing", "authorizationStateClosed", "AuthorizationStateClosing", "AuthorizationStateClosed"):
                 auth_state_result["state"] = "closed"
                 auth_state_event.set()
 
@@ -185,9 +193,15 @@ async def handle_verify_code(request: web.Request) -> web.Response:
 
         @client.on_updateAuthorizationState()
         async def on_auth(c, update):
-            state = update.authorization_state if hasattr(update, 'authorization_state') else {}
-            state_type = state.get("@type", "") if isinstance(state, dict) else ""
-            if state_type == "authorizationStateReady":
+            from pytdbot import types as tg_types
+            state = update.authorization_state if hasattr(update, 'authorization_state') else update
+            if hasattr(state, 'ID') and state.ID:
+                state_type = state.ID
+            elif isinstance(state, dict):
+                state_type = state.get("@type", "")
+            else:
+                state_type = type(state).__name__
+            if isinstance(state, tg_types.AuthorizationStateReady) or state_type in ("authorizationStateReady", "AuthorizationStateReady"):
                 auth_result["state"] = "ready"
                 auth_event.set()
             elif state_type == "authorizationStateWaitPassword":
@@ -256,9 +270,15 @@ async def handle_verify_2fa(request: web.Request) -> web.Response:
 
         @client.on_updateAuthorizationState()
         async def on_auth(c, update):
-            state = update.authorization_state if hasattr(update, 'authorization_state') else {}
-            state_type = state.get("@type", "") if isinstance(state, dict) else ""
-            if state_type == "authorizationStateReady":
+            from pytdbot import types as tg_types
+            state = update.authorization_state if hasattr(update, 'authorization_state') else update
+            if hasattr(state, 'ID') and state.ID:
+                state_type = state.ID
+            elif isinstance(state, dict):
+                state_type = state.get("@type", "")
+            else:
+                state_type = type(state).__name__
+            if isinstance(state, tg_types.AuthorizationStateReady) or state_type in ("authorizationStateReady", "AuthorizationStateReady"):
                 auth_result["state"] = "ready"
                 auth_event.set()
 

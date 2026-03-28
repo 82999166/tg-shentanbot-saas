@@ -19,6 +19,7 @@ import {
   plans,
   pushSettings,
   systemConfig,
+  systemSettings,
   publicMonitorGroups,
   blacklist,
 } from "../../drizzle/schema";
@@ -856,13 +857,13 @@ export const engineRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未初始化" });
       const phone = (input.phone.replace(/\s/g, "").startsWith("+") ? input.phone.replace(/\s/g, "") : `+${input.phone.replace(/\s/g, "")}`);
-      // 读取系统 API 配置
-      const rows = await db.select().from(systemConfig)
-        .where(sql`${systemConfig.configKey} IN ('tg_api_id', 'tg_api_hash')`);
-      const cfgMap: Record<string, string> = {};
-      for (const r of rows) cfgMap[r.configKey] = r.configValue ?? "";
-      const apiId = parseInt(cfgMap["tg_api_id"] || "0");
-      const apiHash = cfgMap["tg_api_hash"] || "";
+      // 读取系统 API 配置（从 system_settings 表）
+      const settingsRows = await db.select().from(systemSettings)
+        .where(sql`${systemSettings.key} IN ('tg_api_id', 'tg_api_hash')`);
+      const settingsMap: Record<string, string> = {};
+      for (const r of settingsRows) settingsMap[r.key] = r.value ?? "";
+      const apiId = parseInt(settingsMap["tg_api_id"] || "0");
+      const apiHash = settingsMap["tg_api_hash"] || "";
       if (!apiId || !apiHash) throw new TRPCError({ code: "BAD_REQUEST", message: "请先在系统设置中配置 TG API ID 和 API Hash" });
       const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5051";
       const resp = await fetch(`${LOGIN_SERVICE_URL}/send_code`, {
@@ -949,7 +950,6 @@ export const engineRouter = router({
       });
       return { success: true };
     }),
-});
 
   // ── Bot API：获取用户的私信账号列表 ──────────────────────────────────────────
   botGetSenderAccounts: engineProcedure
@@ -1036,6 +1036,7 @@ export const engineRouter = router({
       }
       return { success: true };
     }),
+});
 
 // ── 配置查询（独立函数，避免循环引用） ──────────────────────────────────────────────────────────────
 function engineRouter_config() {
