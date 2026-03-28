@@ -864,7 +864,7 @@ export const engineRouter = router({
       const apiId = parseInt(cfgMap["tg_api_id"] || "0");
       const apiHash = cfgMap["tg_api_hash"] || "";
       if (!apiId || !apiHash) throw new TRPCError({ code: "BAD_REQUEST", message: "请先在系统设置中配置 TG API ID 和 API Hash" });
-      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5050";
+      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5051";
       const resp = await fetch(`${LOGIN_SERVICE_URL}/send_code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -885,7 +885,7 @@ export const engineRouter = router({
     }))
     .mutation(async ({ input }) => {
       const phone = (input.phone.replace(/\s/g, "").startsWith("+") ? input.phone.replace(/\s/g, "") : `+${input.phone.replace(/\s/g, "")}`);
-      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5050";
+      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5051";
       const resp = await fetch(`${LOGIN_SERVICE_URL}/verify_code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -923,7 +923,7 @@ export const engineRouter = router({
     }))
     .mutation(async ({ input }) => {
       const phone = (input.phone.replace(/\s/g, "").startsWith("+") ? input.phone.replace(/\s/g, "") : `+${input.phone.replace(/\s/g, "")}`);
-      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5050";
+      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5051";
       const resp = await fetch(`${LOGIN_SERVICE_URL}/verify_2fa`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

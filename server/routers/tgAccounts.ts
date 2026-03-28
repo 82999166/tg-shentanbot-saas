@@ -15,7 +15,7 @@ import { sql } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 
 // ─── Pyrogram 登录服务地址（本地 Python HTTP 服务）─────────────────────────
-const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5050";
+const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5051";
 
 // ─── 调用 Pyrogram 登录服务的辅助函数（使用内置 http 模块）──────────────────
 function callLoginService(path: string, body: Record<string, any>): Promise<any> {
@@ -24,7 +24,7 @@ function callLoginService(path: string, body: Record<string, any>): Promise<any>
     const postData = JSON.stringify(body);
     const options = {
       hostname: url.hostname,
-      port: parseInt(url.port || "5050"),
+      port: parseInt(url.port || "5051"),
       path: url.pathname,
       method: "POST",
       headers: {
