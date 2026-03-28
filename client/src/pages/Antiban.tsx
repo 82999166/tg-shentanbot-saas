@@ -250,7 +250,7 @@ export default function Antiban() {
                   <Slider
                     value={[form.dailyDmLimit]}
                     onValueChange={([v]) => setForm({ ...form, dailyDmLimit: v })}
-                    min={5} max={100} step={5}
+                    min={0} max={100} step={5}
                     className="flex-1"
                   />
                   <span className="text-sm font-mono w-8 text-right">{form.dailyDmLimit}</span>

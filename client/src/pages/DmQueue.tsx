@@ -2,8 +2,9 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Inbox, Send, Clock, CheckCircle2, XCircle, SkipForward, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -19,18 +20,22 @@ const STATUS_OPTIONS = [
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
   queued: { label: "排队中", color: "bg-blue-900 text-blue-300", icon: Clock },
+  pending: { label: "排队中", color: "bg-blue-900 text-blue-300", icon: Clock },
   sending: { label: "发送中", color: "bg-amber-900 text-amber-300", icon: Send },
   sent: { label: "已发送", color: "bg-emerald-900 text-emerald-300", icon: CheckCircle2 },
   failed: { label: "失败", color: "bg-red-900 text-red-300", icon: XCircle },
   skipped: { label: "已跳过", color: "bg-slate-700 text-slate-400", icon: SkipForward },
+  cancelled: { label: "已取消", color: "bg-slate-700 text-slate-400", icon: SkipForward },
 };
 
 export default function DmQueue() {
   const utils = trpc.useUtils();
   const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
   const { data, isLoading } = trpc.dmQueue.list.useQuery({
     status: statusFilter === "all" ? undefined : statusFilter as any,
-    limit: 50,
+    limit: 100,
   });
 
   const retryMut = trpc.dmQueue.retry.useMutation({
@@ -41,6 +46,14 @@ export default function DmQueue() {
     onSuccess: () => { utils.dmQueue.list.invalidate(); toast.success("已取消发送"); },
     onError: (e) => toast.error(e.message),
   });
+  const batchDeleteMut = trpc.dmQueue.batchDelete.useMutation({
+    onSuccess: (res) => {
+      utils.dmQueue.list.invalidate();
+      setSelectedIds([]);
+      toast.success(`已删除 ${res.deleted} 条记录`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const items = data ?? [];
   const stats = {
@@ -48,6 +61,17 @@ export default function DmQueue() {
     sentToday: items.filter((i: any) => i.status === 'sent').length,
     failedToday: items.filter((i: any) => i.status === 'failed').length,
     successRate: items.length > 0 ? Math.round(items.filter((i: any) => i.status === 'sent').length / items.length * 100) : 0,
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const selectAll = () => {
+    if (selectedIds.length === items.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(items.map((i: any) => i.id));
+    }
   };
 
   return (
@@ -70,9 +94,9 @@ export default function DmQueue() {
           ))}
         </div>
 
-        {/* 过滤器 */}
-        <div className="flex items-center gap-3">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+        {/* 过滤器 + 批量操作 */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setSelectedIds([]); }}>
             <SelectTrigger className="w-40 bg-card border-border">
               <SelectValue />
             </SelectTrigger>
@@ -83,6 +107,19 @@ export default function DmQueue() {
           <Button variant="outline" size="sm" onClick={() => utils.dmQueue.list.invalidate()} className="border-border">
             <RefreshCw className="w-4 h-4 mr-2" /> 刷新
           </Button>
+          {selectedIds.length > 0 && (
+            <>
+              <span className="text-sm text-muted-foreground">已选 {selectedIds.length} 条</span>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => batchDeleteMut.mutate({ ids: selectedIds })}
+                disabled={batchDeleteMut.isPending}
+              >
+                <Trash2 className="w-4 h-4 mr-1" /> 批量删除
+              </Button>
+            </>
+          )}
         </div>
 
         {/* 队列列表 */}
@@ -92,11 +129,24 @@ export default function DmQueue() {
           </div>
         ) : items.length > 0 ? (
           <div className="space-y-2">
-            {items.map((item) => {
+            {/* 全选行 */}
+            <div className="flex items-center gap-3 px-4 py-2 text-sm text-muted-foreground">
+              <Checkbox
+                checked={selectedIds.length === items.length && items.length > 0}
+                onCheckedChange={selectAll}
+              />
+              <span>全选（共 {items.length} 条）</span>
+            </div>
+            {items.map((item: any) => {
               const sc = statusConfig[item.status] ?? statusConfig.queued;
               const StatusIcon = sc.icon;
               return (
                 <div key={item.id} className="flex items-start gap-4 p-4 bg-card border border-border rounded-xl hover:border-primary/30 transition-colors">
+                  <Checkbox
+                    checked={selectedIds.includes(item.id)}
+                    onCheckedChange={() => toggleSelect(item.id)}
+                    className="mt-1"
+                  />
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${sc.color.split(" ")[0]}`}>
                     <StatusIcon className="w-4 h-4" style={{ color: "inherit" }} />
                   </div>
@@ -129,7 +179,7 @@ export default function DmQueue() {
                         <RefreshCw className="w-3 h-3 mr-1" /> 重试
                       </Button>
                     )}
-                    {(item.status === "pending") && (
+                    {(item.status === "pending" || item.status === "queued") && (
                       <Button size="sm" variant="outline" className="text-xs text-destructive hover:text-destructive border-border" onClick={() => cancelMut.mutate({ id: item.id })}>
                         <Trash2 className="w-3 h-3" />
                       </Button>

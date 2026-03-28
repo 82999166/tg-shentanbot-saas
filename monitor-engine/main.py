@@ -959,8 +959,20 @@ class AccountWorker:
             return False
         try:
             import pytdbot.types as _tdt
+            # TDLib 发送私信前必须先通过 createPrivateChat 确保对话已建立
+            # 否则会报 Chat not found (400)
+            chat_result = await self.client.invoke({
+                "@type": "createPrivateChat",
+                "user_id": chat_id,
+                "force": True
+            })
+            if isinstance(chat_result, _tdt.Error):
+                logger.warning(f"[Account {self.account_id}] 创建私聊失败: code={chat_result.code} msg={chat_result.message}")
+                return False
+            # 使用返回的真实 chat_id（可能与 user_id 不同）
+            real_chat_id = getattr(chat_result, 'id', chat_id)
             result = await self.client.invoke({
-                "@type": "sendMessage", "chat_id": chat_id,
+                "@type": "sendMessage", "chat_id": real_chat_id,
                 "input_message_content": {
                     "@type": "inputMessageText",
                     "text": {"@type": "formattedText", "text": text}

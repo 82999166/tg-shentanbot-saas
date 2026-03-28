@@ -5,7 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Activity, Download, RefreshCw, Search, Users } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "sonner";
+import { Activity, Download, RefreshCw, Search, Trash2, Users } from "lucide-react";
 import { useState } from "react";
 
 const DM_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
@@ -24,6 +26,7 @@ export default function HitRecords() {
   const [search, setSearch] = useState("");
   const [dmFilter, setDmFilter] = useState("all");
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const { data, isLoading } = trpc.hitRecords.list.useQuery({
     search: search || undefined,
@@ -32,9 +35,29 @@ export default function HitRecords() {
     limit: 20,
   });
 
+  const batchDeleteMut = trpc.hitRecords.batchDelete.useMutation({
+    onSuccess: (res) => {
+      utils.hitRecords.list.invalidate();
+      setSelectedIds([]);
+      toast.success(`已删除 ${res.deleted} 条记录`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const records = data?.records ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / 20);
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const selectAll = () => {
+    if (selectedIds.length === records.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(records.map((r: any) => r.id));
+    }
+  };
 
   const handleExport = () => {
     const headers = isAdmin
@@ -68,17 +91,17 @@ export default function HitRecords() {
     <AppLayout title="命中记录">
       <div className="p-6 space-y-4">
         {/* 过滤器 */}
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="搜索关键词、用户名..."
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); setSelectedIds([]); }}
               className="pl-9 bg-card border-border"
             />
           </div>
-          <Select value={dmFilter} onValueChange={(v) => { setDmFilter(v); setPage(1); }}>
+          <Select value={dmFilter} onValueChange={(v) => { setDmFilter(v); setPage(1); setSelectedIds([]); }}>
             <SelectTrigger className="w-40 bg-card border-border">
               <SelectValue />
             </SelectTrigger>
@@ -96,6 +119,16 @@ export default function HitRecords() {
           <Button variant="outline" size="sm" onClick={handleExport} className="border-border" disabled={records.length === 0}>
             <Download className="w-4 h-4 mr-2" /> 导出 CSV
           </Button>
+          {selectedIds.length > 0 && (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => batchDeleteMut.mutate({ ids: selectedIds })}
+              disabled={batchDeleteMut.isPending}
+            >
+              <Trash2 className="w-4 h-4 mr-1" /> 删除 {selectedIds.length} 条
+            </Button>
+          )}
         </div>
 
         {/* 总数 */}
@@ -111,10 +144,23 @@ export default function HitRecords() {
           </div>
         ) : records.length > 0 ? (
           <div className="space-y-2">
+            {/* 全选行 */}
+            <div className="flex items-center gap-3 px-4 py-2 text-sm text-muted-foreground">
+              <Checkbox
+                checked={selectedIds.length === records.length && records.length > 0}
+                onCheckedChange={selectAll}
+              />
+              <span>全选当前页（{records.length} 条）</span>
+            </div>
             {records.map((r: any) => {
               const dmSt = DM_STATUS_CONFIG[r.dmStatus] ?? DM_STATUS_CONFIG.none;
               return (
                 <div key={r.id} className="flex items-start gap-4 p-4 bg-card border border-border rounded-xl hover:border-primary/30 transition-colors">
+                  <Checkbox
+                    checked={selectedIds.includes(r.id)}
+                    onCheckedChange={() => toggleSelect(r.id)}
+                    className="mt-1"
+                  />
                   <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
                     <Users className="w-4 h-4 text-primary" />
                   </div>
@@ -167,9 +213,9 @@ export default function HitRecords() {
         {/* 分页 */}
         {totalPages > 1 && (
           <div className="flex items-center justify-center gap-2 pt-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)} className="border-border">上一页</Button>
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => { setPage(page - 1); setSelectedIds([]); }} className="border-border">上一页</Button>
             <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="border-border">下一页</Button>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => { setPage(page + 1); setSelectedIds([]); }} className="border-border">下一页</Button>
           </div>
         )}
       </div>

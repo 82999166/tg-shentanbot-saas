@@ -112,7 +112,24 @@ export const hitMessagesRouter = router({
       return { success: true };
     }),
 
-  // ─── 屏蔽发送者 ─────────────────────────────────────────────
+  // ─── 批量删除命中消息 ────────────────────────────────────────────
+  batchDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.number()).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB not available");
+      await db
+        .delete(hitRecords)
+        .where(
+          and(
+            inArray(hitRecords.id, input.ids),
+            eq(hitRecords.userId, ctx.user.id)
+          )
+        );
+      return { success: true, deleted: input.ids.length };
+    }),
+
+  // ─── 屏蔽发送者 ────────────────────────────────────────────
   blockSender: protectedProcedure
     .input(
       z.object({

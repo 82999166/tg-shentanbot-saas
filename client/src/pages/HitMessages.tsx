@@ -33,6 +33,7 @@ import {
   RefreshCw,
   UserX,
   MessageSquare,
+  Trash2,
 } from "lucide-react";
 
 type HitRecord = {
@@ -82,6 +83,15 @@ export default function HitMessages() {
       setSelectedIds([]);
       toast.success(`已批量标记 ${selectedIds.length} 条记录`);
     },
+  });
+
+  const batchDelete = trpc.hitMessages.batchDelete.useMutation({
+    onSuccess: (res) => {
+      utils.hitMessages.list.invalidate();
+      setSelectedIds([]);
+      toast.success(`已删除 ${res.deleted} 条记录`);
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   const blockSender = trpc.hitMessages.blockSender.useMutation({
@@ -207,6 +217,15 @@ export default function HitMessages() {
                 >
                   <Circle className="h-4 w-4 mr-1" />
                   批量标记未处理
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => batchDelete.mutate({ ids: selectedIds })}
+                  disabled={batchDelete.isPending}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  批量删除
                 </Button>
               </div>
             )}

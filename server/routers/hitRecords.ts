@@ -130,6 +130,23 @@ export const hitRecordsRouter = router({
       return { success: true };
     }),
 
+  // ─── 批量删除命中记录 ─────────────────────────────────────────
+  batchDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.number()).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB not available");
+      await db
+        .delete(hitRecords)
+        .where(
+          and(
+            inArray(hitRecords.id, input.ids),
+            eq(hitRecords.userId, ctx.user.id)
+          )
+        );
+      return { success: true, deleted: input.ids.length };
+    }),
+
   // 手动加入私信队列
   addToDmQueue: protectedProcedure
     .input(z.object({
@@ -195,6 +212,40 @@ export const dmQueueRouter = router({
         retryCount: 0,
         scheduledAt: new Date(Date.now() + 30 * 1000),
       });
+      return { success: true };
+    }),
+
+  // ─── 批量删除私信队列 ─────────────────────────────────────────
+  batchDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.number()).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB not available");
+      const { dmQueue } = await import("../../drizzle/schema");
+      await db
+        .delete(dmQueue)
+        .where(
+          and(
+            inArray(dmQueue.id, input.ids),
+            eq(dmQueue.userId, ctx.user.id)
+          )
+        );
+      return { success: true, deleted: input.ids.length };
+    }),
+
+  // ─── 清空所有（按状态）─────────────────────────────────────────
+  clearAll: protectedProcedure
+    .input(z.object({ status: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB not available");
+      const { dmQueue } = await import("../../drizzle/schema");
+      const conditions = [eq(dmQueue.userId, ctx.user.id)];
+      if (input.status) {
+        const { eq: eqDrizzle } = await import("drizzle-orm");
+        conditions.push(eqDrizzle(dmQueue.status, input.status as any));
+      }
+      await db.delete(dmQueue).where(and(...conditions));
       return { success: true };
     }),
 });
