@@ -36,6 +36,7 @@ import KeywordStats from "./pages/KeywordStats";
 import GroupSubmissions from "./pages/GroupSubmissions";
 import PushSettings from "./pages/PushSettings";
 import AdminUsers from "./pages/AdminUsers";
+import AdminChangePassword from "./pages/AdminChangePassword";
 
 function Router() {
   return (
@@ -74,6 +75,7 @@ function Router() {
       <Route path={"/admin-maintenance"} component={SystemMaintenance} />
       <Route path={"/admin-accounts"} component={TgAccounts} />
       <Route path={"/admin-antiban"} component={Antiban} />
+      <Route path={"/admin-change-password"} component={AdminChangePassword} />
       {/* 财务管理独立路由 */}
       <Route path={"/admin-orders"} component={Orders} />
       <Route path={"/admin-redeem-codes"} component={RedeemCodes} />

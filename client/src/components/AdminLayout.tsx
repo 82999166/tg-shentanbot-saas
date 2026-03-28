@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Globe, Users, Bot, Shield, Settings, LogOut, ShieldCheck, PanelLeft,
-  MessageCircle, BarChart2, Send, UserCog, Wrench, ShoppingCart, Key
+  MessageCircle, BarChart2, Send, UserCog, Wrench, ShoppingCart, Key, KeyRound
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -37,6 +37,7 @@ const adminMenuItems = [
   { icon: Shield, label: "防封设置", path: "/admin-antiban", group: "系统配置" },
   { icon: Settings, label: "系统设置", path: "/system-settings", group: "系统配置" },
   { icon: Wrench, label: "系统维护", path: "/admin-maintenance", group: "系统配置" },
+  { icon: KeyRound, label: "修改密码", path: "/admin-change-password", group: "系统配置" },
 ];
 
 interface AdminLayoutProps {
