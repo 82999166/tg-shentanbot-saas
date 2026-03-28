@@ -144,7 +144,7 @@ async def handle_send_code(request: web.Request) -> web.Response:
                 "expires_at": time.time() + SESSION_TIMEOUT,
             }
             logger.info(f"[SendCode] {phone} 验证码已发送")
-            return web.json_response({"success": True, "message": "验证码已发送", "next_step": "verify_code"})
+            return web.json_response({"success": True, "message": "验证码已发送", "next_step": "verify_code", "phone_code_hash": "tdlib_session"})
         elif auth_state_result["state"] == "ready":
             # 已登录（已有有效 Session）
             login_sessions[phone] = {
@@ -154,7 +154,7 @@ async def handle_send_code(request: web.Request) -> web.Response:
                 "state": "ready",
                 "expires_at": time.time() + SESSION_TIMEOUT,
             }
-            return web.json_response({"success": True, "message": "账号已登录", "next_step": "already_logged_in"})
+            return web.json_response({"success": True, "message": "账号已登录", "next_step": "already_logged_in", "phone_code_hash": "tdlib_session"})
         else:
             task.cancel()
             return web.json_response({"success": False, "error": f"意外的认证状态: {auth_state_result['state']}"}, status=500)
