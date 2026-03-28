@@ -688,13 +688,17 @@ class AccountWorker:
         try:
             # 如果session_string是一个目录路径（TDLib files_dir），迁移session数据
             if self.session_string and os.path.isdir(self.session_string):
-                src_db = os.path.join(self.session_string, "db", "td.binlog")
+                # 尝试从 login_temp 目录迁移 td.binlog（支持 database/ 和 db/ 两种子目录结构）
                 dst_db_dir = os.path.join(self.files_directory, "database")
                 dst_db = os.path.join(dst_db_dir, "td.binlog")
-                if os.path.exists(src_db) and not os.path.exists(dst_db):
-                    os.makedirs(dst_db_dir, exist_ok=True)
-                    shutil.copy2(src_db, dst_db)
-                    logger.info(f"[Account {self.account_id}] 已迁移 session: {src_db} -> {dst_db}")
+                if not os.path.exists(dst_db):
+                    for sub in ("database", "db"):
+                        src_db = os.path.join(self.session_string, sub, "td.binlog")
+                        if os.path.exists(src_db):
+                            os.makedirs(dst_db_dir, exist_ok=True)
+                            shutil.copy2(src_db, dst_db)
+                            logger.info(f"[Account {self.account_id}] 已迁移 session: {src_db} -> {dst_db}")
+                            break
             from pytdbot import Client as TDClient
             self.client = TDClient(
                 api_id=TG_API_ID,

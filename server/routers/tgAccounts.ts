@@ -306,10 +306,22 @@ export const tgAccountsRouter = router({
         return { success: false, message: "账号无有效 Session，请重新登录" };
       }
       try {
+        // 判断 sessionString 类型：
+        // - TDLib 模式：sessionString 是文件路径（以 / 开头）
+        // - Pyrogram 模式：sessionString 是 base64 session 字符串
+        const isTdlibPath = account.sessionString.startsWith("/");
+        let requestBody: Record<string, string>;
+        if (isTdlibPath) {
+          // TDLib 模式：传 account_id 给 login_service
+          requestBody = { account_id: String(input.id) };
+        } else {
+          // Pyrogram 模式：传 session_string
+          requestBody = { session_string: account.sessionString };
+        }
         const res = await fetch(`${LOGIN_SERVICE_URL}/test_session`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_string: account.sessionString }),
+          body: JSON.stringify(requestBody),
           // @ts-ignore
           signal: AbortSignal.timeout(20000),
         });
@@ -323,7 +335,8 @@ export const tgAccountsRouter = router({
             tgUsername: data.username,
             tgFirstName: data.first_name,
           });
-          return { success: true, message: `连接正常，账号：@${data.username ?? data.user_id}` };
+          const displayName = data.username ? `@${data.username}` : (data.first_name ?? account.phone);
+          return { success: true, message: `连接正常，账号：${displayName}` };
         } else {
           await updateTgAccount(input.id, ctx.user.id, { sessionStatus: "expired", healthStatus: "warning", healthScore: 20 });
           return { success: false, message: `连接失败：${data.error ?? "Session 已失效"}` };
@@ -374,9 +387,14 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
   // 检查手机号是否已存在（重新登录场景：直接更新，不受配额限制）
   const existing = await db.select().from(tgAccounts).where(eq(tgAccounts.phone, phone)).limit(1);
   if (existing.length > 0) {
+    const accountId = existing[0].id;
+    // 如果 sessionString 是 login_temp 路径，更新为 account_{id} 规范路径
+    const finalSession = sessionString.startsWith("/") && sessionString.includes("login_")
+      ? `${process.env.TDLIB_DATA_DIR ?? "/home/hjroot/tg-monitor-tdlib/monitor-engine/tdlib_data"}/account_${accountId}`
+      : sessionString;
     await db.update(tgAccounts)
       .set({
-        sessionString,
+        sessionString: finalSession,
         sessionStatus: "active",
         isActive: true,
         healthScore: 90,
@@ -384,7 +402,7 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
         updatedAt: new Date(),
       })
       .where(eq(tgAccounts.phone, phone));
-    return { success: true, needs2FA: false, accountId: existing[0].id, message: "账号重新登录成功，Session 已更新" };
+    return { success: true, needs2FA: false, accountId, message: "账号重新登录成功，Session 已更新" };
   }
 
   // 新账号：检查套餐配额
@@ -408,5 +426,10 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
     healthStatus: "healthy",
   });
 
+  // 登录成功后，将 sessionString 更新为 account_{id} 规范路径
+  if (sessionString.startsWith("/") && sessionString.includes("login_")) {
+    const finalSession = `${process.env.TDLIB_DATA_DIR ?? "/home/hjroot/tg-monitor-tdlib/monitor-engine/tdlib_data"}/account_${id}`;
+    await db.update(tgAccounts).set({ sessionString: finalSession }).where(eq(tgAccounts.id, id));
+  }
   return { success: true, needs2FA: false, accountId: id, message: "账号登录成功，已添加到账号列表" };
 }
