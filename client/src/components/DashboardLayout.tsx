@@ -51,12 +51,13 @@ const memberMenuItems = [
 
 // 管理员额外菜单
 const adminMenuItems = [
-  { icon: Globe, label: "公共群组管理", path: "/admin-groups", group: "管理" },
-  { icon: Users, label: "系统 TG 账号", path: "/accounts", group: "管理" },
-  { icon: Bot, label: "Bot 配置", path: "/bot-config", group: "管理" },
-  { icon: Shield, label: "防封设置", path: "/antiban", group: "管理" },
-  { icon: Settings, label: "系统设置", path: "/system-settings", group: "管理" },
-  { icon: Radio, label: "管理后台", path: "/admin", group: "管理" },
+  // 监控管理
+  { icon: Globe, label: "公共群组管理", path: "/admin-groups", group: "监控管理" },
+  { icon: Users, label: "系统 TG 账号", path: "/accounts", group: "监控管理" },
+  { icon: Bot, label: "Bot 配置", path: "/bot-config", group: "监控管理" },
+  // 系统配置
+  { icon: Shield, label: "防封设置", path: "/antiban", group: "系统配置" },
+  { icon: Settings, label: "系统设置", path: "/system-settings", group: "系统配置" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -146,7 +147,10 @@ function DashboardLayoutContent({
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isAdmin = user?.role === "admin";
-  const menuItems = isAdmin ? [...memberMenuItems, ...adminMenuItems] : memberMenuItems;
+  // 管理后台路径只显示管理员菜单，用户后台路径只显示用户菜单
+  const adminPaths = ["/admin-groups", "/accounts", "/bot-config", "/antiban", "/system-settings"];
+  const isAdminArea = adminPaths.some(p => location.startsWith(p));
+  const menuItems = isAdminArea ? adminMenuItems : memberMenuItems;
   const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
 
@@ -247,6 +251,11 @@ function DashboardLayoutContent({
           </SidebarContent>
 
           <SidebarFooter className="p-3">
+            {!isCollapsed && (
+              <div className="px-1 pb-2 text-center">
+                <span className="text-xs text-muted-foreground/50">TG Monitor Pro v1.1.0</span>
+              </div>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">

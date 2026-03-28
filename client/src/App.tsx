@@ -14,6 +14,13 @@ import HitRecords from "./pages/HitRecords";
 import Antiban from "./pages/Antiban";
 import Plans from "./pages/Plans";
 import AdminPanel from "./pages/AdminPanel";
+import AdminLogin from "./pages/AdminLogin";
+import AdminGroups from "./pages/AdminGroups";
+import JoinConfig from "./pages/JoinConfig";
+import RedeemCodes from "./pages/RedeemCodes";
+import SystemMaintenance from "./pages/SystemMaintenance";
+import PublicGroupExport from "./pages/PublicGroupExport";
+import Orders from "./pages/Orders";
 import Landing from "./pages/Landing";
 import Payment from "./pages/Payment";
 import SystemSettings from "./pages/SystemSettings";
@@ -28,6 +35,7 @@ import HitMessages from "./pages/HitMessages";
 import KeywordStats from "./pages/KeywordStats";
 import GroupSubmissions from "./pages/GroupSubmissions";
 import PushSettings from "./pages/PushSettings";
+import AdminUsers from "./pages/AdminUsers";
 
 function Router() {
   return (
@@ -43,6 +51,13 @@ function Router() {
       <Route path={"/antiban"} component={Antiban} />
       <Route path={"/plans"} component={Plans} />
       <Route path={"/admin"} component={AdminPanel} />
+      <Route path={"/admin/login"} component={AdminLogin} />
+      <Route path={"/admin-groups"} component={AdminGroups} />
+      <Route path={"/join-config"} component={JoinConfig} />
+      <Route path={"/redeem-codes"} component={RedeemCodes} />
+      <Route path={"/system-maintenance"} component={SystemMaintenance} />
+      <Route path={"/public-group-export"} component={PublicGroupExport} />
+      <Route path={"/orders"} component={Orders} />
       <Route path={"/payment"} component={Payment} />
       <Route path={"/system-settings"} component={SystemSettings} />
       <Route path={"/bot-config"} component={BotConfig} />
@@ -51,6 +66,15 @@ function Router() {
       <Route path={"/keyword-stats"} component={KeywordStats} />
       <Route path={"/group-submissions"} component={GroupSubmissions} />
       <Route path={"/push-settings"} component={PushSettings} />
+      <Route path={"/admin-users"} component={AdminUsers} />
+      <Route path={"/admin-hit-messages"} component={HitMessages} />
+      <Route path={"/admin-keyword-stats"} component={KeywordStats} />
+      <Route path={"/admin-group-export"} component={PublicGroupExport} />
+      <Route path={"/admin-push-settings"} component={PushSettings} />
+      <Route path={"/admin-maintenance"} component={SystemMaintenance} />
+      {/* 财务管理独立路由 */}
+      <Route path={"/admin-orders"} component={Orders} />
+      <Route path={"/admin-redeem-codes"} component={RedeemCodes} />
       <Route path={"/login"} component={Login} />
       <Route path={"/register"} component={Register} />
       <Route path={"/verify-email"} component={VerifyEmail} />

@@ -77,7 +77,15 @@ global_anti_spam: dict = {
     "rateLimit": 1000,
     "minMsgLen": 0,
     "maxMsgLen": 0,
+    # 全局消息过滤规则（管理员统一配置）
+    "filterAds": False,       # 过滤广告内容
+    "filterBot": True,        # 过滤 Bot 账号消息
+    "globalMaxMsgLen": 500,   # 全局消息字数上限（0=不限制）
+    "globalRateWindow": 60,   # 防刷屏：时间窗口（秒，0=不限制）
+    "globalRateLimit": 5,     # 防刷屏：窗口内最大消息数（0=不限制）
 }
+# 防刷屏：记录每个发送者在时间窗口内的消息计数 {sender_id: [timestamp, ...]}
+_rate_window_cache: dict = {}
 
 
 class ApiClient:
@@ -203,41 +211,58 @@ async def send_bot_notification(
     matched_keyword: str, group_name: str, group_username: Optional[str],
     message_text: str, sender_name: str = "", hit_record_id: Optional[int] = None,
     dm_status: str = "disabled", chat_id: Optional[str] = None,
+    message_id: Optional[int] = None,
 ):
     if not BOT_TOKEN:
         return
     try:
         if sender_username:
             user_display = f'<a href="https://t.me/{sender_username}">{sender_name or "@" + sender_username}</a>'
-        elif sender_name:
-            user_display = sender_name
+            mention_entity = None  # 有 username 时用 HTML 链接，不需要 entity
         else:
-            user_display = f"ID:{sender_tg_id}"
+            # 无用户名：用 text_mention 实体，桌面/手机/网页版均可点击
+            _display_name = sender_name or f"用户{sender_tg_id}"
+            user_display = _display_name  # 纯文本占位，实际通过 entity 渲染
+            mention_entity = {
+                "type": "text_mention",
+                "offset": 4,  # "用户：" 占4个字符
+                "length": len(_display_name),
+                "user": {"id": int(sender_tg_id)}
+            }
         # 群组名称：优先使用真实名称，不是数字ID
         _group_display_name = group_name if (group_name and not str(group_name).lstrip("-").isdigit()) else None
         # 如果 group_name 是数字ID但有 group_username，尝试从 username 生成名称
         if not _group_display_name and group_username:
             _group_display_name = f"@{group_username}"
         if group_username:
-            # 有 username，生成 t.me 链接
+            # 有 username，生成消息直链 t.me/username/messageId
             _label = _group_display_name or f"@{group_username}"
-            source_display = f'<a href="https://t.me/{group_username}">{_label}</a>'
+            if message_id:
+                source_display = f'<a href="https://t.me/{group_username}/{message_id}">{_label}</a>'
+            else:
+                source_display = f'<a href="https://t.me/{group_username}">{_label}</a>'
         elif _group_display_name:
-            # 无 username 但有名称，尝试生成 t.me/c/ 链接（超级群组格式）
+            # 无 username 但有名称，尝试生成 t.me/c/ 消息直链（超级群组格式）
             _raw_id = str(chat_id) if chat_id else str(group_name)
             # 超级群组 ID 格式：-100xxxxxxxxx -> t.me/c/xxxxxxxxx
             if _raw_id.startswith("-100"):
                 _clean_id = _raw_id[4:]
-                source_display = f'<a href="https://t.me/c/{_clean_id}">{_group_display_name}</a>'
+                if message_id:
+                    source_display = f'<a href="https://t.me/c/{_clean_id}/{message_id}">{_group_display_name}</a>'
+                else:
+                    source_display = f'<a href="https://t.me/c/{_clean_id}">{_group_display_name}</a>'
             else:
                 source_display = _group_display_name
         else:
-            # 只有数字ID，尝试生成链接，使用群名代替"群组"
+            # 只有数字ID，尝试生成链接，使用群名代替群组
             _raw_id = str(chat_id) if chat_id else str(group_name)
             _fallback_name = _group_display_name or "群组"
             if _raw_id.startswith("-100"):
                 _clean_id = _raw_id[4:]
-                source_display = f'<a href="https://t.me/c/{_clean_id}">{_fallback_name}</a>'
+                if message_id:
+                    source_display = f'<a href="https://t.me/c/{_clean_id}/{message_id}">{_fallback_name}</a>'
+                else:
+                    source_display = f'<a href="https://t.me/c/{_clean_id}">{_fallback_name}</a>'
             else:
                 source_display = _fallback_name
         highlighted_text = message_text[:200]
@@ -253,11 +278,11 @@ async def send_bot_notification(
             f"时间：{now_str}"
         )
         rid = str(hit_record_id) if hit_record_id else "0"
-        # 私聊按钮：有 username 用 t.me 链接，无 username 用 callback_data（tg://user?id= 在群组中不支持）
+        # 私聊按钮：有 username 用 t.me 链接，无 username 用 tg://openmessage 直接拉起对话
         if sender_username:
             chat_btn = {"text": "私聊", "url": f"https://t.me/{sender_username}"}
         else:
-            chat_btn = {"text": "私聊", "callback_data": f"dm:{rid}:{sender_tg_id}"}
+            chat_btn = {"text": "私聊", "url": f"tg://openmessage?user_id={sender_tg_id}"}
         inline_keyboard = [
             [
                 {"text": "历史", "callback_data": f"history:{rid}:{sender_tg_id}"},
@@ -269,19 +294,73 @@ async def send_bot_notification(
                 chat_btn,
             ]
         ]
-        payload = {
-            "chat_id": bot_chat_id, "text": text, "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-            "reply_markup": {"inline_keyboard": inline_keyboard},
-        }
+        # 无用户名时用 entities 模式（text_mention），有用户名时用 HTML 模式
+        if mention_entity:
+            # entities 模式：不能同时用 parse_mode，需要把 HTML 标签转为纯文本
+            # source_display 里有 HTML 链接，需要单独处理
+            # 最简方案：source 部分也改用 entities，或者只对用户名用 entity，其余保持 HTML
+            # 实际上 Telegram 支持同时传 entities + parse_mode，entities 优先级更高
+            # 但为简单起见，改为：text 全部纯文本 + entities 列表
+            import re as _re
+            def _strip_html(s):
+                return _re.sub(r'<[^>]+>', '', s)
+            plain_source = _strip_html(source_display)
+            plain_highlighted = _strip_html(highlighted_text)
+            plain_text = (
+                f"用户：{user_display}\n"
+                f"来源：{plain_source}\n"
+                f"内容：{plain_highlighted}\n"
+                f"时间：{now_str}"
+            )
+            # 重新计算 mention offset（"用户：" 在 plain_text 中的偏移）
+            mention_entity["offset"] = plain_text.index(user_display)
+            # 构建 source 链接 entity（如果有 URL）
+            source_entities = []
+            src_match = _re.search(r'href="([^"]+)"', source_display)
+            src_text_match = _re.search(r'>([^<]+)<', source_display)
+            if src_match and src_text_match:
+                src_url = src_match.group(1)
+                src_text = src_text_match.group(1)
+                src_offset = plain_text.index(src_text)
+                source_entities.append({
+                    "type": "text_link",
+                    "offset": src_offset,
+                    "length": len(src_text),
+                    "url": src_url
+                })
+            # 构建 keyword 加粗 entity
+            bold_entities = []
+            if matched_keyword and matched_keyword in plain_highlighted:
+                kw_offset = plain_text.index(matched_keyword)
+                bold_entities.append({
+                    "type": "bold",
+                    "offset": kw_offset,
+                    "length": len(matched_keyword)
+                })
+            all_entities = [mention_entity] + source_entities + bold_entities
+            payload = {
+                "chat_id": bot_chat_id, "text": plain_text,
+                "entities": all_entities,
+                "disable_web_page_preview": True,
+                "reply_markup": {"inline_keyboard": inline_keyboard},
+            }
+        else:
+            payload = {
+                "chat_id": bot_chat_id, "text": text, "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+                "reply_markup": {"inline_keyboard": inline_keyboard},
+            }
+        logger.info(f"[BotNotify] payload keys={list(payload.keys())} entities={payload.get('entities', 'NONE')}")
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
                 json=payload, timeout=aiohttp.ClientTimeout(total=10)
             ) as r:
+                resp = await r.text()
                 if r.status != 200:
-                    resp = await r.text()
-                    logger.warning(f"[BotNotify] 推送失败 {r.status}: {resp[:100]}")
+                    logger.warning(f"[BotNotify] 推送失败 {r.status}: {resp[:200]}")
+                else:
+                    logger.info(f"[BotNotify] 推送成功, resp_keys={list(__import__("json").loads(resp).get("result",{}).keys()) if r.status==200 else []}")
     except Exception as e:
         logger.warning(f"[BotNotify] 推送异常: {e}")
 
@@ -301,8 +380,38 @@ async def process_message(
     sender_first_name: str, sender_last_name: str, message_id: int, text: str,
     is_bot: bool = False,
 ):
-    if not text or not text.strip() or is_bot:
+    # 全局消息过滤规则（管理员统一配置）
+    # 1. 过滤 Bot 账号消息
+    if global_anti_spam.get("filterBot", True) and is_bot:
+        logger.debug(f"[FILTER] 过滤 Bot 消息: sender_id={sender_id}")
         return
+    if not text or not text.strip():
+        return
+    # 2. 过滤超长消息（防长内容广告）
+    _global_max_len = global_anti_spam.get("globalMaxMsgLen", 0)
+    if _global_max_len and _global_max_len > 0 and len(text) > _global_max_len:
+        logger.debug(f"[FILTER] 过滤超长消息: len={len(text)} > {_global_max_len}")
+        return
+    # 3. 防刷屏：同一发送者在时间窗口内消息数超限
+    _rate_window = global_anti_spam.get("globalRateWindow", 0)
+    _rate_limit = global_anti_spam.get("globalRateLimit", 0)
+    if _rate_window > 0 and _rate_limit > 0:
+        import time as _time
+        _now = _time.time()
+        _sender_key = str(sender_id)
+        _timestamps = _rate_window_cache.get(_sender_key, [])
+        # 清理过期时间戳
+        _timestamps = [t for t in _timestamps if _now - t < _rate_window]
+        if len(_timestamps) >= _rate_limit:
+            logger.debug(f"[FILTER] 防刷屏：sender={sender_id} 在 {_rate_window}s 内发送 {len(_timestamps)+1} 条消息，已忽略")
+            return
+        _timestamps.append(_now)
+        _rate_window_cache[_sender_key] = _timestamps
+        # 定期清理缓存（超过1000个sender时清理最旧的）
+        if len(_rate_window_cache) > 1000:
+            _oldest = sorted(_rate_window_cache.keys(), key=lambda k: min(_rate_window_cache[k]) if _rate_window_cache[k] else 0)[:200]
+            for k in _oldest:
+                del _rate_window_cache[k]
     global process_lock
     import asyncio as _asyncio
     if process_lock is None:
@@ -360,7 +469,7 @@ async def process_message(
                             account_id=account_id, user_id=user_id, config=config,
                             chat_id=chat_id, chat_title=chat_title, chat_username=chat_username,
                             sender_tg_id=sender_tg_id, sender_username=sender_username,
-                            sender_name=sender_name, text=text, matched_keywords=matched_keywords,
+                            sender_name=sender_name, text=text, matched_keywords=matched_keywords, message_id=message_id,
                         )
 
     matched_public_group = None
@@ -427,14 +536,14 @@ async def process_message(
                 account_id=account_id, user_id=uid, config=uconfig,
                 chat_id=chat_id, chat_title=pg_title, chat_username=pg_username,
                 sender_tg_id=sender_tg_id, sender_username=sender_username,
-                sender_name=sender_name, text=text, matched_keywords=u_matched_keywords,
+                sender_name=sender_name, text=text, matched_keywords=u_matched_keywords, message_id=message_id,
             )
 
 
 async def _handle_match(
     account_id: int, user_id: int, config: dict, chat_id: str, chat_title: str,
     chat_username: Optional[str], sender_tg_id: str, sender_username: Optional[str],
-    sender_name: str, text: str, matched_keywords: list,
+    sender_name: str, text: str, matched_keywords: list, message_id: int = 0,
 ):
     variables = {
         "username": sender_username or "",
@@ -493,6 +602,7 @@ async def _handle_match(
                 hit_record_id=hit_record_id,
                 dm_status="queued" if dm_will_send else "disabled",
                 chat_id=str(chat_id),
+                message_id=message_id,
             )
             already_pushed_to.add(str(collab_chat_id_str))
         except Exception as e:
@@ -507,6 +617,7 @@ async def _handle_match(
             sender_name=sender_name, hit_record_id=hit_record_id,
             dm_status="queued" if dm_will_send else "disabled",
             chat_id=str(chat_id),
+                message_id=message_id,
         )
 
     for kw in matched_keywords:
@@ -680,8 +791,11 @@ class AccountWorker:
             sender_last_name = user_info.get("last_name", "")
             is_bot = user_info.get("is_bot", False)
             logger.info(
-                f"[Account {self.account_id}] 收到消息: chat={chat_id} "
-                f"sender={sender_username or sender_user_id} text={text[:50]}"
+                f"[Account {self.account_id}] 收到消息: "
+                f"chat={chat_title}({chat_id}) "
+                f"sender={sender_username or sender_user_id} "
+                f"is_bot={is_bot} len={len(text)} "
+                f"text={text[:80]!r}"
             )
             await process_message(
                 account_id=self.account_id, user_id=self.user_id,
@@ -734,14 +848,43 @@ class AccountWorker:
                 if "user" in obj_type.lower() or hasattr(result, "first_name"):
                     user_type_obj = _get(result, "type", {})
                     type_name = (_get(user_type_obj, "@type") or type(user_type_obj).__name__) if user_type_obj else ""
+                    # TDLib 1.8.x+ usernames 对象：active_usernames 列表存储主用户名
+                    username = ""
+                    usernames_obj = _get(result, "usernames", None)
+                    if usernames_obj is not None:
+                        # 方法1：直接属性/字典访问 active_usernames
+                        active = None
+                        if hasattr(usernames_obj, "active_usernames"):
+                            active = getattr(usernames_obj, "active_usernames", None)
+                        elif isinstance(usernames_obj, dict):
+                            active = usernames_obj.get("active_usernames")
+                        if active and len(active) > 0:
+                            username = active[0]
+                        # 方法2：fallback 到 editable_username
+                        if not username:
+                            editable = None
+                            if hasattr(usernames_obj, "editable_username"):
+                                editable = getattr(usernames_obj, "editable_username", "")
+                            elif isinstance(usernames_obj, dict):
+                                editable = usernames_obj.get("editable_username", "")
+                            if editable:
+                                username = editable
+                        # 方法3：str 解析（兜底，处理 pytdbot 特殊对象）
+                        if not username:
+                            import re as _re
+                            s = str(usernames_obj)
+                            m = _re.search(r'"active_usernames"\s*:\s*\[\s*"([^"]+)"', s)
+                            if m:
+                                username = m.group(1)
                     return {
-                        "username": _get(result, "username", ""),
+                        "username": username,
                         "first_name": _get(result, "first_name", ""),
                         "last_name": _get(result, "last_name", ""),
                         "is_bot": "bot" in type_name.lower(),
                     }
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug(f"[_get_user_info] error for user_id={user_id}: {e}")
         return {"username": "", "first_name": "", "last_name": "", "is_bot": False}
 
     async def resolve_chat_id(self, chat_id_str: str) -> Optional[int]:

@@ -76,7 +76,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !location.startsWith("/admin")) {
     window.location.href = getLoginUrl();
     return null;
   }

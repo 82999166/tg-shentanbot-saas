@@ -30,9 +30,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-WEB_API_BASE = os.getenv("WEB_API_BASE", "http://localhost:3000/api")
-ENGINE_SECRET = os.getenv("ENGINE_SECRET", "3d9b664c2005b02dd31955a6a70e2bb206901dbe32c7353c")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8678159362:AAFqfg8uoL7RBQ_tWvd7YgklsoeShuEF2QU")
+WEB_API_BASE = os.getenv("WEB_API_BASE", "http://127.0.0.1:3002/api")
+ENGINE_SECRET = os.getenv("ENGINE_SECRET", "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac")
 WEB_SITE_URL = os.getenv("WEB_SITE_URL", "")  # 网站地址，用于 Bot 中的跳转链接
 
 # 套餐名称
@@ -144,12 +144,17 @@ def main_menu_text(s: dict) -> str:
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tg = update.effective_user
     msg = await update.message.reply_text("⏳ 正在初始化...")
-    result = await api_post("engine.botAutoRegister", {
-        "tgUserId": str(tg.id),
-        "tgUsername": tg.username,
-        "tgFirstName": tg.first_name,
-        "tgLastName": tg.last_name,
-    })
+    try:
+        result = await api_post("engine.botAutoRegister", {
+            "tgUserId": str(tg.id),
+            "tgUsername": tg.username,
+            "tgFirstName": tg.first_name,
+            "tgLastName": tg.last_name,
+        })
+        logger.warning(f"[DEBUG cmd_start] tg.id={tg.id} username={tg.username} result={result}")
+    except Exception as ex:
+        logger.error(f"[DEBUG cmd_start] exception: {ex}", exc_info=True)
+        result = None
     if not result:
         await msg.edit_text("❌ 服务暂时不可用，请稍后重试。")
         return
@@ -616,6 +621,25 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     # ── 命中记录操作（推送消息按鈕）──
+    elif data.startswith("dm:"):
+        parts = data.split(":")
+        sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
+        await q.answer()
+        dm_text = "该用户无公开用户名\n\nTG ID: " + sender_tg_id_str + "\n\n点击下方按钮打开对话（手机/桌面客户端有效）"
+        dm_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💬 打开对话", url="tg://openmessage?user_id=" + sender_tg_id_str)],
+        ])
+        try:
+            await context.bot.send_message(
+                chat_id=q.message.chat_id,
+                text=dm_text,
+                reply_markup=dm_markup,
+            )
+        except Exception:
+            await context.bot.send_message(
+                chat_id=q.message.chat_id,
+                text="该用户无公开用户名，TG ID: " + sender_tg_id_str,
+            )
     elif data.startswith("history:"):
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"

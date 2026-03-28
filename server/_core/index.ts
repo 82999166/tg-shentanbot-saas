@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { registerEngineRestRoutes } from "../engineRestApi";
+import { startCleanupScheduler } from "../jobs/cleanup";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -63,6 +64,9 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
+
+  // 启动定时清理任务（每天凌晨 3 点清理过期数据）
+  startCleanupScheduler();
 }
 
 startServer().catch(console.error);

@@ -248,7 +248,8 @@ export async function updateKeyword(id: number, userId: number, data: Partial<In
 export async function deleteKeyword(id: number, userId: number) {
   const db = await getDb();
   if (!db) return;
-  await db.update(keywords).set({ isActive: false }).where(and(eq(keywords.id, id), eq(keywords.userId, userId)));
+  // 硬删除：直接从数据库移除，不使用软删除占用空间
+  await db.delete(keywords).where(and(eq(keywords.id, id), eq(keywords.userId, userId)));
 }
 
 export async function countKeywordsByUserId(userId: number): Promise<number> {

@@ -10,6 +10,8 @@ import {
   groupSubmissions,
   keywords,
   users,
+  publicMonitorGroups,
+  tgAccounts,
 } from "../../drizzle/schema";
 import { eq, and, desc, gte, sql, inArray } from "drizzle-orm";
 
@@ -53,6 +55,74 @@ export const hitMessagesRouter = router({
         .select({ total: sql<number>`count(*)` })
         .from(hitRecords)
         .where(and(...conditions));
+
+      return { rows, total };
+    }),
+
+  // ─── 管理员：全平台命中消息列表 ──────────────────────────────
+  adminList: adminProcedure
+    .input(
+      z.object({
+        page: z.number().default(1),
+        pageSize: z.number().default(20),
+        isProcessed: z.boolean().optional(),
+        userId: z.number().optional(),
+        keyword: z.string().optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB not available");
+      const offset = (input.page - 1) * input.pageSize;
+
+      const conditions: any[] = [];
+      if (input.isProcessed !== undefined) {
+        conditions.push(eq(hitRecords.isProcessed, input.isProcessed));
+      }
+      if (input.userId) {
+        conditions.push(eq(hitRecords.userId, input.userId));
+      }
+
+      const rows = await db
+        .select({
+          id: hitRecords.id,
+          userId: hitRecords.userId,
+          userName: users.name,
+          userEmail: users.email,
+          keywordId: hitRecords.keywordId,
+          messageContent: hitRecords.messageContent,
+          senderTgId: hitRecords.senderTgId,
+          senderUsername: hitRecords.senderUsername,
+          senderFirstName: hitRecords.senderFirstName,
+          senderLastName: hitRecords.senderLastName,
+          monitorGroupId: hitRecords.monitorGroupId,
+          tgAccountId: hitRecords.tgAccountId,
+          matchedKeyword: hitRecords.matchedKeyword,
+          dmStatus: hitRecords.dmStatus,
+          isProcessed: hitRecords.isProcessed,
+          processedAt: hitRecords.processedAt,
+          messageDate: hitRecords.messageDate,
+          createdAt: hitRecords.createdAt,
+          // 关联公共群组表，获取群组名称和 groupId（用于拼接链接）
+          groupTitle: publicMonitorGroups.groupTitle,
+          groupId: publicMonitorGroups.groupId,
+          groupMemberCount: publicMonitorGroups.memberCount,
+          // 关联 TG 账号表，获取监控账号名称
+          tgAccountName: tgAccounts.phone,
+        })
+        .from(hitRecords)
+        .leftJoin(users, eq(hitRecords.userId, users.id))
+        .leftJoin(publicMonitorGroups, eq(hitRecords.monitorGroupId, publicMonitorGroups.id))
+        .leftJoin(tgAccounts, eq(hitRecords.tgAccountId, tgAccounts.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(hitRecords.createdAt))
+        .limit(input.pageSize)
+        .offset(offset);
+
+      const [{ total }] = await db
+        .select({ total: sql<number>`count(*)` })
+        .from(hitRecords)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
 
       return { rows, total };
     }),

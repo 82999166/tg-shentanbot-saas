@@ -23,6 +23,10 @@ const CONFIG_KEYS = [
   // 全局消息过滤配置
   { key: "global_filter_ads", description: "全局广告过滤开关（true/false）" },
   { key: "global_max_msg_length", description: "全局消息字数上限（0=不限制）" },
+  { key: "global_filter_bot", description: "过滤 Bot 账号消息（true/false）" },
+  { key: "global_rate_window", description: "防刷屏：时间窗口（秒，0=不限制）" },
+  { key: "global_rate_limit", description: "防刷屏：窗口内最大消息数（0=不限制）" },
+  { key: "data_retention_days", description: "命中记录保留天数（0=永久保留）" },
   // Bot 告警配置
   { key: "account_health_alert_threshold", description: "账号健康度告警阈值（0-100）" },
 ];

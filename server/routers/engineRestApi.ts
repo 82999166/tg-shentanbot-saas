@@ -239,20 +239,34 @@ export function registerEngineRestRoutes(app: Router) {
       const matchedKeywordStr = Array.isArray(input.matchedKeywords)
         ? input.matchedKeywords.join(", ")
         : (input.matchedKeyword || "");
-      // 根据引擎上报的 tgGroupId 查出 monitorGroupId
+
+      // 通过 tgGroupId 关联 public_monitor_groups 表，获取正确的 monitorGroupId
       let resolvedMonitorGroupId = 0;
       if (input.tgGroupId) {
-        const tgGroupIdStr = String(input.tgGroupId).replace(/^@/, '');
-        const groupRows = await db
-          .select({ id: publicMonitorGroups.id, groupId: publicMonitorGroups.groupId, realId: publicMonitorGroups.realId })
-          .from(publicMonitorGroups);
-        const matched = groupRows.find(g =>
-          g.groupId === tgGroupIdStr ||
-          g.groupId === '@' + tgGroupIdStr ||
-          (g.realId && g.realId === tgGroupIdStr)
-        );
-        if (matched) resolvedMonitorGroupId = matched.id;
+        try {
+          const tgGroupIdStr = String(input.tgGroupId);
+          // 尝试精确匹配 groupId（可能是数字ID或用户名）
+          const pgRows = await db.select({ id: publicMonitorGroups.id })
+            .from(publicMonitorGroups)
+            .where(eq(publicMonitorGroups.groupId, tgGroupIdStr))
+            .limit(1);
+          if (pgRows.length > 0) {
+            resolvedMonitorGroupId = pgRows[0].id;
+          } else {
+            // 尝试匹配 realId（TDLib 返回的真实数字 ID）
+            const pgByRealId = await db.select({ id: publicMonitorGroups.id })
+              .from(publicMonitorGroups)
+              .where(eq(publicMonitorGroups.realId, tgGroupIdStr))
+              .limit(1);
+            if (pgByRealId.length > 0) {
+              resolvedMonitorGroupId = pgByRealId[0].id;
+            }
+          }
+        } catch (e) {
+          console.warn("[Hit] 查找 monitorGroupId 失败:", e);
+        }
       }
+
       const result = await db.insert(hitRecords).values({
         userId: input.userId,
         tgAccountId: input.monitorAccountId || input.accountId || 0,

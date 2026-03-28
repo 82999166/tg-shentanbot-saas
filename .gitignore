@@ -108,3 +108,23 @@ temp/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+monitor-engine/venv/
+monitor-engine/tdlib_data/
+monitor-engine/joined_groups_cache.json
+
+# Backup files
+*.bak*
+*.bak_*
+
+# PM2 ecosystem files (server-specific)
+ecosystem.config.cjs
+ecosystem.engine.cjs
+monitor-engine/ecosystem.bot.cjs
+monitor-engine/ecosystem.engine.cjs
+monitor-engine/start_bot.sh

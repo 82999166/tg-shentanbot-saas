@@ -615,10 +615,10 @@ export const engineRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
+      // 全量返回，不限制条数（Bot 长页显示，无需分页）
       return db.select().from(keywords)
         .where(and(eq(keywords.userId, input.userId), eq(keywords.isActive, true)))
-        .orderBy(desc(keywords.createdAt))
-        .limit(20);
+        .orderBy(desc(keywords.createdAt));
     }),
 
   // ── Bot API：添加关键词 ────────────────────────────────────

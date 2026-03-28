@@ -1,5 +1,5 @@
 import { useState } from "react";
-import AppLayout from "@/components/AppLayout";
+import AdminLayout from "@/components/AdminLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -1405,8 +1405,8 @@ export default function SystemSettings() {
   }
 
   return (
-    <AppLayout title="系统设置">
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <AdminLayout title="系统设置">
+    <div className="p-6 w-full space-y-6">
 
       <Tabs defaultValue="tgapi" className="space-y-4">
         <TabsList className="bg-gray-800 border border-gray-700 flex-wrap h-auto gap-1">
@@ -1418,37 +1418,17 @@ export default function SystemSettings() {
             <DollarSign className="w-4 h-4 mr-1.5" />
             支付配置
           </TabsTrigger>
-          <TabsTrigger value="codes" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
-            <Key className="w-4 h-4 mr-1.5" />
-            卡密管理
-          </TabsTrigger>
-          <TabsTrigger value="orders" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
-            <ShoppingCart className="w-4 h-4 mr-1.5" />
-            订单管理
-          </TabsTrigger>
           <TabsTrigger value="smtp" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
             <Mail className="w-4 h-4 mr-1.5" />
             邮件配置
-          </TabsTrigger>
-          <TabsTrigger value="bot" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
-            <Bot className="w-4 h-4 mr-1.5" />
-            Bot 配置
           </TabsTrigger>
           <TabsTrigger value="sysconfig" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
             <Settings className="w-4 h-4 mr-1.5" />
             系统配置
           </TabsTrigger>
-          <TabsTrigger value="publicgroups" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
-            <Globe className="w-4 h-4 mr-1.5" />
-            公共群组
-          </TabsTrigger>
           <TabsTrigger value="tdlib" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
             <Cpu className="w-4 h-4 mr-1.5" />
             TDLib 引擎
-          </TabsTrigger>
-          <TabsTrigger value="userconfig" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
-            <UserCog className="w-4 h-4 mr-1.5" />
-            用户参数配置
           </TabsTrigger>
         </TabsList>
 
@@ -1458,32 +1438,17 @@ export default function SystemSettings() {
         <TabsContent value="payment">
           <PaymentSettingsTab />
         </TabsContent>
-        <TabsContent value="codes">
-          <RedeemCodesTab />
-        </TabsContent>
-        <TabsContent value="orders">
-          <OrdersTab />
-        </TabsContent>
         <TabsContent value="smtp">
           <SmtpSettingsTab />
-        </TabsContent>
-        <TabsContent value="bot">
-          <BotConfigTab />
         </TabsContent>
         <TabsContent value="sysconfig">
           <SysConfigTab />
         </TabsContent>
-        <TabsContent value="publicgroups">
-          <PublicGroupsTab />
-        </TabsContent>
         <TabsContent value="tdlib">
           <TdlibEngineTab />
         </TabsContent>
-        <TabsContent value="userconfig">
-          <UserConfigPanel />
-        </TabsContent>
       </Tabs>
     </div>
-    </AppLayout>
+    </AdminLayout>
   );
 }
