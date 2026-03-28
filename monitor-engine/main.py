@@ -671,6 +671,7 @@ class AccountWorker:
         }
         self.client = None
         self.is_running = False
+        self.has_been_ready = False  # 是否曾经成功认证（用于区分初始化状态和session失效）
         self._task = None
         self._chat_id_cache: dict = {}
         self.files_directory = os.path.join(TDLIB_DATA_DIR, f"account_{self.account_id}")
@@ -743,14 +744,20 @@ class AccountWorker:
                 state_type = type(auth_state).__name__
             logger.info(f"[Account {self.account_id}] 认证状态: {state_type}")
             if state_type in ("authorizationStateReady", "AuthorizationStateReady"):
+                self.has_been_ready = True
                 await api.post("/engine/account/status", {"accountId": self.account_id, "status": "active"})
                 await update_account_health(self.account_id, 0, "healthy")
             elif state_type in ("authorizationStateClosed", "AuthorizationStateClosed"):
                 self.is_running = False
                 await update_account_health(self.account_id, -10, "error", reason="session_closed")
             elif state_type in ("authorizationStateWaitPhoneNumber", "AuthorizationStateWaitPhoneNumber"):
-                logger.warning(f"[Account {self.account_id}] Session失效，需要重新登录")
-                await update_account_health(self.account_id, -5, "expired", reason="session_expired")
+                if self.has_been_ready:
+                    # 曾经成功认证后再次出现WaitPhoneNumber，才说明session真的失效了
+                    logger.warning(f"[Account {self.account_id}] Session失效，需要重新登录")
+                    await update_account_health(self.account_id, -5, "expired", reason="session_expired")
+                else:
+                    # TDLib初始化时正常经过此状态，不代表session失效，忽略
+                    logger.info(f"[Account {self.account_id}] TDLib初始化中，等待认证完成...")
         except Exception as e:
             logger.warning(f"[Account {self.account_id}] 处理认证状态异常: {e}")
     async def _on_new_message(self, update):
