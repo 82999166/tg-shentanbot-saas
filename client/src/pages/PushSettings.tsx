@@ -1,4 +1,4 @@
-import AdminLayout from "@/components/AdminLayout";
+import AppLayout from "@/components/AppLayout";
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -118,7 +118,7 @@ export default function PushSettings() {
   }
 
   return (
-    <AdminLayout title="推送设置">
+    <AppLayout title="推送设置">
     <div className="p-6 space-y-6">
       {/* 页头 */}
       <div className="flex items-center justify-between">
@@ -456,6 +456,6 @@ export default function PushSettings() {
         </DialogContent>
       </Dialog>
     </div>
-    </AdminLayout>
+    </AppLayout>
   );
 }

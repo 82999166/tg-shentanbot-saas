@@ -1,4 +1,4 @@
-import AdminLayout from "@/components/AdminLayout";
+import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,7 +105,7 @@ export default function Antiban() {
   const risk = riskConfig[riskLevel];
   const RiskIcon = risk.icon;
   return (
-    <AdminLayout title="防封策略">
+    <AppLayout title="防封策略">
       <div className="p-6 space-y-6">
 
         {/* ── 管理员专属：全局消息过滤规则 ── */}
@@ -386,6 +386,6 @@ export default function Antiban() {
           </Button>
         </div>
       </div>
-    </AdminLayout>
+    </AppLayout>
   );
 }

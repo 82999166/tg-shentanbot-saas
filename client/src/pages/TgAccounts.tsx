@@ -1,4 +1,4 @@
-import AdminLayout from "@/components/AdminLayout";
+import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -170,7 +170,7 @@ export default function TgAccounts() {
   const STEP_LABELS = ["输入手机号", "验证码", "二步验证", "完成"];
 
   return (
-    <AdminLayout>
+    <AppLayout>
       <div className="p-6 space-y-6">
         {/* 页头 */}
         <div className="flex items-center justify-between">
@@ -659,6 +659,6 @@ export default function TgAccounts() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </AdminLayout>
+    </AppLayout>
   );
 }

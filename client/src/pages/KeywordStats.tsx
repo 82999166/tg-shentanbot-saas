@@ -1,4 +1,4 @@
-import AdminLayout from "@/components/AdminLayout";
+import AppLayout from "@/components/AppLayout";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -82,7 +82,7 @@ export default function KeywordStats() {
   };
 
   return (
-    <AdminLayout>
+    <AppLayout>
       <div className="space-y-6">
         {/* 页面标题 */}
         <div>
@@ -305,6 +305,6 @@ export default function KeywordStats() {
           </Card>
         )}
       </div>
-    </AdminLayout>
+    </AppLayout>
   );
 }
