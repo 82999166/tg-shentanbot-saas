@@ -390,20 +390,22 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    await q.answer()
     data = q.data
     uid = await ensure_user(update, context)
     if not uid:
+        await q.answer()
         await q.edit_message_text("❌ 服务异常，请重试")
         return
 
     # 主菜单
     if data == "menu_main":
+        await q.answer()
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
         await q.edit_message_text(main_menu_text(s), reply_markup=main_menu_keyboard(), parse_mode=ParseMode.MARKDOWN)
 
     # ── 关键词 ──
     elif data == "menu_keywords":
+        await q.answer()
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
         kw = s.get("keywordCount", 0)
         kw_max = s.get("limits", {}).get("maxKeywords", 10)
@@ -419,6 +421,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "kw_add":
+        await q.answer()
         context.user_data[STATE_KEY] = STATE_KEYWORD
         await q.edit_message_text(
             "📋 **添加关键词**\n\n请发送关键词（多个用空格或换行分隔）：",
@@ -427,6 +430,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "kw_list":
+        await q.answer()
         kws = await api_get("engine.botGetKeywords", {"userId": uid}) or []
         if not kws:
             text = "📋 暂无关键词"
@@ -443,6 +447,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "kw_delete_menu":
+        await q.answer()
         kws = await api_get("engine.botGetKeywords", {"userId": uid}) or []
         if not kws:
             await q.edit_message_text("暂无关键词", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_keywords")]]))
@@ -470,6 +475,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── 推送群组 ──
     elif data == "menu_push_group":
+        await q.answer()
         push_cfg = await api_get("engine.botGetPushGroup", {"userId": uid}) or {}
         collab_id = push_cfg.get("collabChatId")
         collab_title = push_cfg.get("collabChatTitle") or collab_id
@@ -500,6 +506,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
     elif data == "push_group_unbind":
+        await q.answer()
         await api_post("engine.botSetPushGroup", {"userId": uid, "collabChatId": None, "collabChatTitle": None})
         await q.edit_message_text(
             "✅ 已解除推送群组绑定\n\n命中消息将不再推送到群组。",
@@ -508,6 +515,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     # ── 私信模板 ──
     elif data == "menu_template":
+        await q.answer()
         tpls = await api_get("engine.botGetTemplates", {"userId": uid}) or []
         if tpls:
             text = f"💬 **私信模板**\n\n当前模板：\n`{tpls[0]['content']}`"
@@ -520,6 +528,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
 
     elif data == "template_set":
+        await q.answer()
         context.user_data[STATE_KEY] = STATE_TEMPLATE
         await q.edit_message_text(
             "💬 **设置私信模板**\n\n请发送模板内容：\n\n"
@@ -531,6 +540,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── 私信账号 ──
     elif data == "menu_sender":
+        await q.answer()
         # 获取账号列表
         acc_result = await api_get("engine.botGetSenderAccounts", {"userId": uid})
         accounts = acc_result.get("accounts", []) if acc_result else []
@@ -600,6 +610,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
 
     elif data == "sender_del_all":
+        await q.answer()
         acc_result = await api_get("engine.botGetSenderAccounts", {"userId": uid})
         accounts = acc_result.get("accounts", []) if acc_result else []
         fail_count = 0
@@ -632,6 +643,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "sender_add_bot":
+        await q.answer()
         # Bot 内添加账号：引导输入手机号
         context.user_data[STATE_KEY] = STATE_SENDER_PHONE
         await q.edit_message_text(
@@ -641,6 +653,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN,
         )
     elif data == "sender_guide":
+        await q.answer()
         await q.edit_message_text(
             "📱 **更换私信账号**\n\n"
             "请在 Web 管理后台 → TG账号管理 中删除旧账号并重新绑定：",
@@ -653,6 +666,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── 统计 ──
     elif data == "menu_stats":
+        await q.answer()
         s = await api_get("engine.botGetStats", {"userId": uid}) or {}
         await q.edit_message_text(
             f"📊 **统计数据**\n\n"
@@ -665,6 +679,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── 套餐 ──
     elif data == "menu_plan":
+        await q.answer()
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
         plan = PLAN_NAMES.get(s.get("planId", "free"), "免费版")
         limits = s.get("limits", {})
@@ -684,6 +699,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── 激活套餐 ──
     elif data == "menu_activate":
+        await q.answer()
         context.user_data[STATE_KEY] = STATE_ACTIVATE
         await q.edit_message_text(
             "🎟 **激活套餐**\n\n请直接发送卡密（格式：XXXX-XXXX-XXXX）：",
@@ -693,6 +709,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── 自动私信开关 ──
     elif data == "menu_dm_toggle":
+        await q.answer()
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
         current = s.get("dmEnabled", False)
         new_val = not current
@@ -707,10 +724,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── 命中记录操作（推送消息按鈕）──
     elif data.startswith("dm:"):
-        # main.py 已直接在推送消息按钮中使用 tg://openmessage url，此 handler 为兜底保留
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
-        await q.answer(f"TG ID: {sender_tg_id_str}", show_alert=True)
+        await q.answer()
+        try:
+            # 发送临时纯文本超链接消息，tg://openmessage 在纯文本链接中可被客户端识别
+            import asyncio as _asyncio
+            msg = await context.bot.send_message(
+                chat_id=q.message.chat_id,
+                text=f'<a href="tg://openmessage?user_id={sender_tg_id_str}">💬 点击此处打开私信</a>（3秒后自动消失）',
+                parse_mode="HTML",
+            )
+            # 3秒后自动删除
+            async def _delete_later(m):
+                await _asyncio.sleep(3)
+                try:
+                    await m.delete()
+                except Exception:
+                    pass
+            _asyncio.create_task(_delete_later(msg))
+        except Exception as e:
+            logger.warning(f"dm handler error: {e}")
     elif data.startswith("history:"):
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
@@ -734,8 +768,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("block:"):
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
+        # parts[3] 是命中记录所属用户的系统ID（由 main.py 写入），优先使用
+        owner_uid = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else uid
         try:
-            result = await api_post("engine.botBlockUser", {"userId": uid, "targetTgId": sender_tg_id_str})
+            result = await api_post("engine.botBlockUser", {"userId": owner_uid, "targetTgId": sender_tg_id_str})
             if result and result.get("success"):
                 await q.answer(f"🚫 已屏蔽用户 {sender_tg_id_str}", show_alert=True)
             else:
@@ -782,6 +818,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await q.answer(f"❌ 操作失败: {e}", show_alert=True)
     elif data == "menu_expiry":
+        await q.answer()
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
         plan = PLAN_NAMES.get(s.get("planId", "free"), "免费版")
         exp = str(s.get("planExpiresAt", ""))[:10] or "永久有效"
@@ -796,6 +833,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     # ── 使用教程 ──
     elif data == "menu_tutorial":
+        await q.answer()
         cfg = await api_get("engine.botGetSysConfig", {}) or {}
         tutorial = cfg.get("tutorial_text") or (
             "📖 **使用教程**\n\n"
@@ -812,6 +850,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     # ── 技术支持 ──
     elif data == "menu_support":
+        await q.answer()
         cfg = await api_get("engine.botGetSysConfig", {}) or {}
         support_username = cfg.get("support_username", "")
         if support_username:
@@ -826,6 +865,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
     # ── 官方频道 ──
     elif data == "menu_channel":
+        await q.answer()
         cfg = await api_get("engine.botGetSysConfig", {}) or {}
         channel_url = cfg.get("official_channel", "")
         if channel_url:
@@ -839,6 +879,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             btns = [[InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
     elif data == "menu_profile":
+        await q.answer()
         uid = await ensure_user(update, context)
         if not uid:
             await q.edit_message_text("❌ 服务异常，请重试")
@@ -874,6 +915,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
 
     elif data == "profile_set_email":
+        await q.answer()
         context.user_data[STATE_KEY] = STATE_EMAIL
         await q.edit_message_text(
             "📧 **绑定/更换邮箱**\n\n请输入您的邮箱地址：\n（格式如：example@gmail.com）",
@@ -882,6 +924,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "profile_reset_password":
+        await q.answer()
         uid = await ensure_user(update, context)
         if not uid:
             await q.edit_message_text("❌ 服务异常，请重试")
@@ -908,6 +951,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     elif data == "noop":
+        await q.answer()
         pass
 
 # ─── 文本消息（状态机）────────────────────────────────────────────────────────

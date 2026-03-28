@@ -213,7 +213,7 @@ async def send_bot_notification(
     matched_keyword: str, group_name: str, group_username: Optional[str],
     message_text: str, sender_name: str = "", hit_record_id: Optional[int] = None,
     dm_status: str = "disabled", chat_id: Optional[str] = None,
-    message_id: Optional[int] = None,
+    message_id: Optional[int] = None, owner_user_id: int = 0,
 ):
     if not BOT_TOKEN:
         return
@@ -287,11 +287,12 @@ async def send_bot_notification(
         if sender_username:
             chat_btn = {"text": "私聊", "url": f"https://t.me/{sender_username}"}
         else:
-            chat_btn = {"text": "私聊", "url": f"tg://openmessage?user_id={sender_tg_id}"}
+            # 无用户名：用 callback_data，bot.py 收到后发临时纯文本超链接消息（tg://openmessage）
+            chat_btn = {"text": "私聊", "callback_data": f"dm:{rid}:{sender_tg_id}"}
         inline_keyboard = [
             [
                 {"text": "历史", "callback_data": f"history:{rid}:{sender_tg_id}"},
-                {"text": "屏蔽", "callback_data": f"block:{rid}:{sender_tg_id}"},
+                {"text": "屏蔽", "callback_data": f"block:{rid}:{sender_tg_id}:{owner_user_id}"},
                 {"text": "处理", "callback_data": f"done:{rid}:{sender_tg_id}"},
             ],
             [
@@ -614,6 +615,7 @@ async def _handle_match(
                 dm_status="queued" if dm_will_send else "disabled",
                 chat_id=str(chat_id),
                 message_id=message_id,
+                owner_user_id=user_id,
             )
             already_pushed_to.add(str(collab_chat_id_str))
         except Exception as e:
@@ -628,7 +630,8 @@ async def _handle_match(
             sender_name=sender_name, hit_record_id=hit_record_id,
             dm_status="queued" if dm_will_send else "disabled",
             chat_id=str(chat_id),
-                message_id=message_id,
+            message_id=message_id,
+            owner_user_id=user_id,
         )
 
     for kw in matched_keywords:
