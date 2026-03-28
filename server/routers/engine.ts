@@ -893,8 +893,9 @@ export const engineRouter = router({
         body: JSON.stringify({ phone, code: input.code, phone_code_hash: input.phoneCodeHash }),
       });
       const data = await resp.json() as any;
-      if (data.needs_2fa) return { success: true, needs2FA: true, sessionString: null };
-      if (!data.session_string) throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "验证失败" });
+      // login_service 返回 next_step=verify_2fa 表示需要二步验证
+      if (data.next_step === "verify_2fa" || data.needs_2fa) return { success: true, needs2FA: true, sessionString: null };
+      if (!data.success) throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "验证失败" });
       // 保存账号到数据库
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未初始化" });
@@ -931,7 +932,7 @@ export const engineRouter = router({
         body: JSON.stringify({ phone, password: input.password }),
       });
       const data = await resp.json() as any;
-      if (!data.session_string) throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "二步验证失败" });
+      if (!data.success) throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "验证失败" });
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未初始化" });
       // 检查手机号是否已存在（防止重复添加）

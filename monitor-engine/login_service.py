@@ -204,7 +204,7 @@ async def handle_verify_code(request: web.Request) -> web.Response:
             if isinstance(state, tg_types.AuthorizationStateReady) or state_type in ("authorizationStateReady", "AuthorizationStateReady"):
                 auth_result["state"] = "ready"
                 auth_event.set()
-            elif state_type == "authorizationStateWaitPassword":
+            elif isinstance(state, tg_types.AuthorizationStateWaitPassword) or state_type in ("authorizationStateWaitPassword", "AuthorizationStateWaitPassword"):
                 auth_result["state"] = "wait_password"
                 auth_event.set()
 
