@@ -1146,7 +1146,7 @@ async def sync_config():
                 logger.info(f"[Config] 公共群组: {len([g for g in public_groups if g.get('isActive')])} 个活跃")
             target_ids = {
                 a["id"] for a in accounts
-                if a.get("isActive") and a.get("role") in ("monitor", "both")
+                if a.get("isActive") and a.get("role") in ("monitor", "sender", "both")
                 and (a.get("sessionString") or a.get("phone"))
             }
             to_stop = set(active_workers.keys()) - target_ids

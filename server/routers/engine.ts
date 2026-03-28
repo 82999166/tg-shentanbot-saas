@@ -899,21 +899,29 @@ export const engineRouter = router({
       // 保存账号到数据库
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未初始化" });
-      // 检查手机号是否已存在（防止重复添加）
+      // 检查手机号是否已存在（存在则更新session，不存在则新增）
       const existingAcc = await db.select({ id: tgAccounts.id }).from(tgAccounts)
         .where(eq(tgAccounts.phone, phone)).limit(1);
-      if (existingAcc.length > 0) throw new TRPCError({ code: "CONFLICT", message: `手机号 ${phone} 已存在，请勿重复添加` });
-      await db.insert(tgAccounts).values({
-        userId: input.userId,
-        phone,
-        sessionString: data.session_string,
-        sessionStatus: "active",
-        accountRole: "sender",
-        healthScore: 80,
-        healthStatus: "healthy",
-        notes: "Bot内添加",
+      if (existingAcc.length > 0) {
+        await db.update(tgAccounts).set({
+          sessionString: data.files_directory,
+          sessionStatus: "active",
+          healthScore: 80,
+          healthStatus: "healthy",
+        }).where(eq(tgAccounts.phone, phone));
+      } else {
+        await db.insert(tgAccounts).values({
+          userId: input.userId,
+          phone,
+          sessionString: data.files_directory,
+          sessionStatus: "active",
+          accountRole: "sender",
+          healthScore: 80,
+          healthStatus: "healthy",
+          notes: "Bot内添加",
+      }
       });
-      return { success: true, needs2FA: false, sessionString: data.session_string as string };
+      return { success: true, needs2FA: false, sessionString: data.files_directory as string };
     }),
 
   // ── Bot 内添加私信账号：第三步 - 二步验证 ──────────────────────────────────
@@ -935,20 +943,29 @@ export const engineRouter = router({
       if (!data.success) throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "验证失败" });
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未初始化" });
-      // 检查手机号是否已存在（防止重复添加）
+      // 检查手机号是否已存在（存在则更新session，不存在则新增）
       const existing2fa = await db.select({ id: tgAccounts.id }).from(tgAccounts)
         .where(eq(tgAccounts.phone, phone)).limit(1);
-      if (existing2fa.length > 0) throw new TRPCError({ code: "CONFLICT", message: `手机号 ${phone} 已存在，请勿重复添加` });
-      await db.insert(tgAccounts).values({
-        userId: input.userId,
-        phone,
-        sessionString: data.session_string,
-        sessionStatus: "active",
-        accountRole: "sender",
-        healthScore: 80,
-        healthStatus: "healthy",
-        notes: "Bot内添加",
-      });
+      if (existing2fa.length > 0) {
+        // 已存在：更新sessionString和状态
+        await db.update(tgAccounts).set({
+          sessionString: data.files_directory,
+          sessionStatus: "active",
+          healthScore: 80,
+          healthStatus: "healthy",
+        }).where(eq(tgAccounts.phone, phone));
+      } else {
+        await db.insert(tgAccounts).values({
+          userId: input.userId,
+          phone,
+          sessionString: data.files_directory,
+          sessionStatus: "active",
+          accountRole: "sender",
+          healthScore: 80,
+          healthStatus: "healthy",
+          notes: "Bot内添加",
+        });
+      }
       return { success: true };
     }),
 
@@ -1052,7 +1069,7 @@ function engineRouter_config() {
       .where(
         and(
           eq(tgAccounts.isActive, true),
-          inArray(tgAccounts.accountRole, ["monitor", "both"])
+          inArray(tgAccounts.accountRole, ["monitor", "sender", "both"])
         )
       );
 
@@ -1185,6 +1202,7 @@ function engineRouter_config() {
       accounts: accounts.map((a) => ({
         id: a.id,
         userId: a.userId,
+        phone: a.phone,
         sessionString: a.sessionString,
         isActive: a.isActive,
         role: a.accountRole,
