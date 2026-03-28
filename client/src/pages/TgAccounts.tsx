@@ -1,3 +1,5 @@
+import AdminLayout from "@/components/AdminLayout";
+import { useAuth } from "@/_core/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +61,8 @@ const healthColor = (score: number) => {
 };
 
 export default function TgAccounts() {
+  const { user } = useAuth();
+  const Layout = user?.role === "admin" ? AdminLayout : AppLayout;
   const utils = trpc.useUtils();
   const { data: accounts = [], isLoading } = trpc.tgAccounts.list.useQuery();
 
@@ -170,7 +174,7 @@ export default function TgAccounts() {
   const STEP_LABELS = ["输入手机号", "验证码", "二步验证", "完成"];
 
   return (
-    <AppLayout>
+    <Layout>
       <div className="p-6 space-y-6">
         {/* 页头 */}
         <div className="flex items-center justify-between">
@@ -659,6 +663,6 @@ export default function TgAccounts() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </AppLayout>
+    </Layout>
   );
 }

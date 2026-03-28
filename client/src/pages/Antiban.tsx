@@ -1,3 +1,4 @@
+import AdminLayout from "@/components/AdminLayout";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ export default function Antiban() {
   const utils = trpc.useUtils();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const Layout = isAdmin ? AdminLayout : AppLayout;
 
   const { data: settings } = trpc.antiban.get.useQuery();
   const updateMut = trpc.antiban.update.useMutation({
@@ -105,7 +107,7 @@ export default function Antiban() {
   const risk = riskConfig[riskLevel];
   const RiskIcon = risk.icon;
   return (
-    <AppLayout title="防封策略">
+    <Layout title="防封策略">
       <div className="p-6 space-y-6">
 
         {/* ── 管理员专属：全局消息过滤规则 ── */}
@@ -386,6 +388,6 @@ export default function Antiban() {
           </Button>
         </div>
       </div>
-    </AppLayout>
+    </Layout>
   );
 }

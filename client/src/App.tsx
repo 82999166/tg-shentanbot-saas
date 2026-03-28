@@ -72,6 +72,8 @@ function Router() {
       <Route path={"/admin-group-export"} component={PublicGroupExport} />
       <Route path={"/admin-push-settings"} component={PushSettings} />
       <Route path={"/admin-maintenance"} component={SystemMaintenance} />
+      <Route path={"/admin-accounts"} component={TgAccounts} />
+      <Route path={"/admin-antiban"} component={Antiban} />
       {/* 财务管理独立路由 */}
       <Route path={"/admin-orders"} component={Orders} />
       <Route path={"/admin-redeem-codes"} component={RedeemCodes} />

@@ -1,3 +1,5 @@
+import AdminLayout from "@/components/AdminLayout";
+import { useAuth } from "@/_core/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
@@ -43,6 +45,8 @@ const DEFAULT_AD_RULES = [
 ];
 
 export default function PushSettings() {
+  const { user } = useAuth();
+  const Layout = user?.role === "admin" ? AdminLayout : AppLayout;
   const utils = trpc.useUtils();
 
   const { data: settings, isLoading } = trpc.hitMessages.getPushSettings.useQuery();
@@ -118,7 +122,7 @@ export default function PushSettings() {
   }
 
   return (
-    <AppLayout title="推送设置">
+    <Layout title="推送设置">
     <div className="p-6 space-y-6">
       {/* 页头 */}
       <div className="flex items-center justify-between">
@@ -456,6 +460,6 @@ export default function PushSettings() {
         </DialogContent>
       </Dialog>
     </div>
-    </AppLayout>
+    </Layout>
   );
 }

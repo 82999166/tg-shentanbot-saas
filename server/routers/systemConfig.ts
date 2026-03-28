@@ -402,7 +402,46 @@ export const systemConfigRouter = router({
       return { success: true };
     }),
 
-  // 触发引擎立即同步（重新解析所有公共群组 ID）
+  // ── 导出公共群组链接 ────────────────────────────────────────────────────────
+  exportPublicGroupLinks: adminProcedure
+    .input(z.object({
+      onlyActive: z.boolean().optional().default(true),
+      format: z.enum(["links", "full"]).optional().default("links"),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { total: 0, groups: [] };
+      const rows = input.onlyActive
+        ? await db.select().from(publicMonitorGroups).where(eq(publicMonitorGroups.isActive, true))
+        : await db.select().from(publicMonitorGroups);
+      const groups = rows.map(g => {
+        // 生成群组链接
+        let link = "";
+        const gid = g.groupId ?? "";
+        if (gid.startsWith("@")) {
+          link = `https://t.me/${gid.slice(1)}`;
+        } else if (gid.startsWith("-100")) {
+          // 私有群组，无公开链接
+          link = `tg://resolve?domain=${gid}`;
+        } else if (gid.startsWith("https://t.me/") || gid.startsWith("http://")) {
+          link = gid;
+        } else {
+          link = `https://t.me/${gid}`;
+        }
+        return {
+          id: g.id,
+          groupId: gid,
+          groupTitle: g.groupTitle ?? gid,
+          groupType: g.groupType ?? "group",
+          memberCount: g.memberCount ?? 0,
+          isActive: g.isActive,
+          note: g.note ?? "",
+          link,
+        };
+      });
+      return { total: groups.length, groups };
+    }),
+    // 触发引擎立即同步（重新解析所有公共群组 ID）
   triggerEngineSync: adminProcedure
     .mutation(async () => {
       const engineUrl = process.env.WEB_API_URL

@@ -23,7 +23,7 @@ const adminMenuItems = [
 
   // 监控管理
   { icon: Globe, label: "公共群组管理", path: "/admin-groups", group: "监控管理" },
-  { icon: Users, label: "系统 TG 账号", path: "/accounts", group: "监控管理" },
+  { icon: Users, label: "系统 TG 账号", path: "/admin-accounts", group: "监控管理" },
   { icon: Bot, label: "Bot 配置", path: "/bot-config", group: "监控管理" },
 
   // 推送配置
@@ -34,7 +34,7 @@ const adminMenuItems = [
   { icon: Key, label: "卡密管理", path: "/admin-redeem-codes", group: "财务管理" },
 
   // 系统配置
-  { icon: Shield, label: "防封设置", path: "/antiban", group: "系统配置" },
+  { icon: Shield, label: "防封设置", path: "/admin-antiban", group: "系统配置" },
   { icon: Settings, label: "系统设置", path: "/system-settings", group: "系统配置" },
   { icon: Wrench, label: "系统维护", path: "/admin-maintenance", group: "系统配置" },
 ];

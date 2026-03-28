@@ -1,3 +1,4 @@
+import AdminLayout from "@/components/AdminLayout";
 import AppLayout from "@/components/AppLayout";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
@@ -18,6 +19,7 @@ import { Download, Users, TrendingUp, Search, ChevronLeft, ChevronRight } from "
 
 export default function KeywordStats() {
   const { user } = useAuth();
+  const Layout = user?.role === "admin" ? AdminLayout : AppLayout;
   const isAdmin = user?.role === "admin";
   const [search, setSearch] = useState("");
   const [selectedKeywordId, setSelectedKeywordId] = useState<number | undefined>();
@@ -82,7 +84,7 @@ export default function KeywordStats() {
   };
 
   return (
-    <AppLayout>
+    <Layout>
       <div className="space-y-6">
         {/* 页面标题 */}
         <div>
@@ -305,6 +307,6 @@ export default function KeywordStats() {
           </Card>
         )}
       </div>
-    </AppLayout>
+    </Layout>
   );
 }

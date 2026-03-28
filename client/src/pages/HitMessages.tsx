@@ -1,3 +1,5 @@
+import AdminLayout from "@/components/AdminLayout";
+import { useAuth } from "@/_core/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
@@ -54,6 +56,8 @@ type HitRecord = {
 };
 
 export default function HitMessages() {
+  const { user } = useAuth();
+  const Layout = user?.role === "admin" ? AdminLayout : AppLayout;
   const [page, setPage] = useState(1);
   const [filterProcessed, setFilterProcessed] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -134,7 +138,7 @@ export default function HitMessages() {
   };
 
   return (
-    <AppLayout title="命中消息">
+    <Layout title="命中消息">
     <div className="p-6 space-y-6">
       {/* 页头 */}
       <div className="flex items-center justify-between">
@@ -486,6 +490,6 @@ export default function HitMessages() {
         </DialogContent>
       </Dialog>
     </div>
-    </AppLayout>
+    </Layout>
   );
 }
