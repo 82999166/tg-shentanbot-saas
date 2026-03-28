@@ -40,9 +40,11 @@ import {
 
 type HitRecord = {
   id: number;
+  userId: number;
   senderTgId: string | null;
   senderUsername: string | null;
   senderFirstName: string | null;
+  senderLastName?: string | null;
   messageContent: string | null;
   matchedKeyword: string | null;
   monitorGroupId: number;
@@ -53,6 +55,8 @@ type HitRecord = {
   // 群组信息（后端关联 public_monitor_groups 返回）
   groupTitle?: string | null;
   groupUsername?: string | null;
+  // 管理员视图：所属用户邮箱
+  userEmail?: string | null;
 };
 
 export default function HitMessages() {
@@ -295,8 +299,8 @@ export default function HitMessages() {
                   </div>
                   {isAdmin && (
                     <div className="w-28 min-w-0">
-                      <span className="text-xs text-purple-400 truncate block" title={(r as any).userEmail ?? String(r.userId)}>
-                        {(r as any).userEmail ?? `用户#${r.userId}`}
+                      <span className="text-xs text-purple-400 truncate block" title={r.userEmail ?? String(r.userId)}>
+                        {r.userEmail ?? `用户#${r.userId}`}
                       </span>
                     </div>
                   )}

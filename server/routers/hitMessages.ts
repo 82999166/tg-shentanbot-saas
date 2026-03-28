@@ -106,29 +106,24 @@ export const hitMessagesRouter = router({
         conditions.push(eq(hitRecords.monitorGroupId, input.monitorGroupId));
       }
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      // 先查 hitRecords 全字段，再关联 users 获取邮箱
       const rows = await db
-        .select({
-          id: hitRecords.id,
-          userId: hitRecords.userId,
-          keywordId: hitRecords.keywordId,
-          monitorGroupId: hitRecords.monitorGroupId,
-          senderTgId: hitRecords.senderTgId,
-          senderName: hitRecords.senderName,
-          senderUsername: hitRecords.senderUsername,
-          matchedContent: hitRecords.matchedContent,
-          messageUrl: hitRecords.messageUrl,
-          isProcessed: hitRecords.isProcessed,
-          processedAt: hitRecords.processedAt,
-          createdAt: hitRecords.createdAt,
-          // 关联用户邮箱
-          userEmail: users.email,
-        })
+        .select()
         .from(hitRecords)
-        .leftJoin(users, eq(hitRecords.userId, users.id))
         .where(whereClause)
         .orderBy(desc(hitRecords.createdAt))
         .limit(input.pageSize)
         .offset(offset);
+      // 获取用户邮箱映射
+      const userIds = [...new Set(rows.map(r => r.userId))];
+      let userEmailMap: Map<number, string | null> = new Map();
+      if (userIds.length > 0) {
+        const userRows = await db
+          .select({ id: users.id, email: users.email })
+          .from(users)
+          .where(inArray(users.id, userIds));
+        userEmailMap = new Map(userRows.map(u => [u.id, u.email]));
+      }
       const [{ total }] = await db
         .select({ total: sql<number>`count(*)` })
         .from(hitRecords)
@@ -147,6 +142,7 @@ export const hitMessagesRouter = router({
         ...r,
         groupTitle: groupMap.get(r.monitorGroupId ?? 0)?.groupTitle ?? null,
         groupUsername: groupMap.get(r.monitorGroupId ?? 0)?.groupId ?? null,
+        userEmail: userEmailMap.get(r.userId) ?? null,
       }));
       return { rows: enrichedRows, total };
     }),
