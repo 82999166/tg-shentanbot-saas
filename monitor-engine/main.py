@@ -154,6 +154,8 @@ def match_keyword(text: str, keyword: dict) -> bool:
 def render_template(template: str, variables: dict) -> str:
     result = template
     for key, value in variables.items():
+        # 支持两种格式：{key} 单花括号 和 {{key}} 双花括号
+        result = result.replace(f"{{{key}}}", str(value or ""))
         result = result.replace(f"{{{{{key}}}}}", str(value or ""))
     return result
 
@@ -545,13 +547,19 @@ async def _handle_match(
     chat_username: Optional[str], sender_tg_id: str, sender_username: Optional[str],
     sender_name: str, text: str, matched_keywords: list, message_id: int = 0,
 ):
+    # 提取 first_name（sender_name 可能是 "first last" 格式）
+    _name_parts = sender_name.split(" ", 1) if sender_name else ["", ""]
+    _first_name = _name_parts[0] if _name_parts else ""
     variables = {
         "username": sender_username or "",
         "keyword": matched_keywords[0]["pattern"] if matched_keywords else "",
         "group_name": chat_title,
+        "group": chat_title,  # 别名：{group}
         "message": text[:200],
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "sender_name": sender_name,
+        "first_name": _first_name,  # 别名：{first_name}
+        "name": sender_name,  # 别名：{name}
     }
     hit_record_id = None
     try:
@@ -950,16 +958,21 @@ class AccountWorker:
         if not self.client or not self.is_running:
             return False
         try:
-            await self.client.invoke({
+            import pytdbot.types as _tdt
+            result = await self.client.invoke({
                 "@type": "sendMessage", "chat_id": chat_id,
                 "input_message_content": {
                     "@type": "inputMessageText",
                     "text": {"@type": "formattedText", "text": text}
                 }
             })
+            # 检查返回值是否为错误（pytdbot.invoke 失败时返回 Error 对象而非抛异常）
+            if isinstance(result, _tdt.Error):
+                logger.warning(f"[Account {self.account_id}] 发送消息失败: code={result.code} msg={result.message}")
+                return False
             return True
         except Exception as e:
-            logger.warning(f"[Account {self.account_id}] 发送消息失败: {e}")
+            logger.warning(f"[Account {self.account_id}] 发送消息异常: {e}")
             return False
 
     async def stop(self):
