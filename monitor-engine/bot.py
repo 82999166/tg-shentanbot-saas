@@ -709,22 +709,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("dm:"):
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
-        await q.answer()
-        dm_text = "该用户无公开用户名\n\nTG ID: " + sender_tg_id_str + "\n\n点击下方按钮打开对话（手机/桌面客户端有效）"
-        dm_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💬 打开对话", url="tg://openmessage?user_id=" + sender_tg_id_str)],
-        ])
-        try:
-            await context.bot.send_message(
-                chat_id=q.message.chat_id,
-                text=dm_text,
-                reply_markup=dm_markup,
-            )
-        except Exception:
-            await context.bot.send_message(
-                chat_id=q.message.chat_id,
-                text="该用户无公开用户名，TG ID: " + sender_tg_id_str,
-            )
+        # 直接通过 answer url 静默拉起对话，不发送任何中间提示消息
+        await q.answer(url="tg://openmessage?user_id=" + sender_tg_id_str)
     elif data.startswith("history:"):
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
