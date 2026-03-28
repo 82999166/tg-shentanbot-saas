@@ -1188,11 +1188,20 @@ async def sync_config():
                     success = await worker.start()
                     if success:
                         active_workers[account["id"]] = worker
-                        asyncio.create_task(join_public_groups(worker, account["id"]))
+                        # sender角色只发信，不需要加群监听
+                        if account.get("role") != "sender":
+                            asyncio.create_task(join_public_groups(worker, account["id"]))
+                        else:
+                            logger.info(f"[Account {account['id']}] 发信账号，跳过自动加群")
             if public_groups_changed and public_groups:
                 logger.info("[Config] 公共群组列表已更新，所有账号重新加入...")
+                # 构建 account_id -> role 映射
+                account_role_map = {a["id"]: a.get("role", "monitor") for a in accounts}
                 for aid, worker in active_workers.items():
-                    asyncio.create_task(join_public_groups(worker, aid))
+                    if account_role_map.get(aid) != "sender":
+                        asyncio.create_task(join_public_groups(worker, aid))
+                    else:
+                        logger.info(f"[Account {aid}] 发信账号，跳过群组更新加群")
             logger.info(
                 f"[Config] 同步完成 活跃账号={len(active_workers)} "
                 f"监控用户={len(monitor_config)} 公共群组={len(public_groups)}"
