@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Globe, Users, Bot, Shield, Settings, LogOut, ShieldCheck, PanelLeft,
-  MessageCircle, BarChart2, Send, UserCog, Wrench, ShoppingCart, Key, KeyRound
+  MessageCircle, BarChart2, Send, UserCog, Wrench, ShoppingCart, Key, KeyRound, Search
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -23,6 +23,7 @@ const adminMenuItems = [
 
   // 监控管理
   { icon: Globe, label: "公共群组管理", path: "/admin-groups", group: "监控管理" },
+  { icon: Search, label: "群组采集", path: "/admin-group-scrape", group: "监控管理" },
   { icon: Users, label: "系统 TG 账号", path: "/admin-accounts", group: "监控管理" },
   { icon: Bot, label: "Bot 配置", path: "/bot-config", group: "监控管理" },
 

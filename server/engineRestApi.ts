@@ -199,6 +199,12 @@ export function registerEngineRestRoutes(app: Router) {
         rateLimit: parseInt(sysConfigMap["anti_spam_rate_limit"] || "1000", 10),
         minMsgLen: parseInt(sysConfigMap["anti_spam_min_msg_len"] || "0", 10),
         maxMsgLen: parseInt(sysConfigMap["anti_spam_max_msg_len"] || "0", 10),
+        // 全局消息过滤字段（与前端 Antiban 页面 global_* 配置对应）
+        globalMaxMsgLen: parseInt(sysConfigMap["global_max_msg_length"] || "0", 10),
+        filterBot: sysConfigMap["global_filter_bot"] !== "false",
+        filterAds: sysConfigMap["global_filter_ads"] === "true",
+        globalRateWindow: parseInt(sysConfigMap["global_rate_window"] || "0", 10),
+        globalRateLimit: parseInt(sysConfigMap["global_rate_limit"] || "0", 10),
       };
 
       return res.json({
@@ -579,6 +585,111 @@ export function registerEngineRestRoutes(app: Router) {
       res.json({ success: true });
     } catch (e: any) {
       console.error("[Engine API] public-group/join-status error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── 群组采集相关接口 ──────────────────────────────────────────────────────────
+
+  // GET /api/engine/scrape-tasks - 获取待执行的采集任务（status=pending）
+  app.get("/api/engine/scrape-tasks", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB unavailable" });
+      const { groupScrapeTasks } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const tasks = await db.select().from(groupScrapeTasks)
+        .where(eq(groupScrapeTasks.status, "pending"));
+      // 将 keywords JSON 字符串解析为数组
+      const result = tasks.map((t: any) => ({
+        ...t,
+        keywords: JSON.parse(t.keywords || "[]"),
+      }));
+      res.json(result);
+    } catch (e: any) {
+      console.error("[Engine API] scrape-tasks error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/engine/scrape-task/:id/start - 标记任务开始执行
+  app.post("/api/engine/scrape-task/:id/start", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB unavailable" });
+      const { groupScrapeTasks } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const taskId = parseInt(req.params.id);
+      await db.update(groupScrapeTasks)
+        .set({ status: "running", lastRunAt: new Date() })
+        .where(eq(groupScrapeTasks.id, taskId));
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("[Engine API] scrape-task/start error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/engine/scrape-task/:id/finish - 标记任务完成并写入结果
+  app.post("/api/engine/scrape-task/:id/finish", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB unavailable" });
+      const { groupScrapeTasks, groupScrapeResults } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const taskId = parseInt(req.params.id);
+      const { status, results } = req.body as {
+        status: "done" | "failed";
+        results: Array<{
+          keyword: string;
+          groupId: string;
+          groupTitle?: string;
+          groupType?: string;
+          memberCount?: number;
+          description?: string;
+          username?: string;
+          realId?: string;
+        }>;
+      };
+
+      // 批量写入采集结果（忽略重复）
+      let insertedCount = 0;
+      if (results && results.length > 0) {
+        for (const r of results) {
+          try {
+            await db.insert(groupScrapeResults).ignore().values({
+              taskId,
+              keyword: r.keyword,
+              groupId: r.groupId,
+              groupTitle: r.groupTitle || null,
+              groupType: r.groupType || "group",
+              memberCount: r.memberCount || 0,
+              description: r.description || null,
+              username: r.username || null,
+              realId: r.realId || null,
+              importStatus: "pending",
+            });
+            insertedCount++;
+          } catch (insertErr) {
+            // 重复记录忽略
+          }
+        }
+      }
+
+      // 更新任务状态
+      await db.update(groupScrapeTasks)
+        .set({
+          status: status || "done",
+          totalFound: insertedCount,
+        })
+        .where(eq(groupScrapeTasks.id, taskId));
+
+      res.json({ success: true, insertedCount });
+    } catch (e: any) {
+      console.error("[Engine API] scrape-task/finish error:", e);
       res.status(500).json({ error: e.message });
     }
   });

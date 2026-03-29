@@ -651,6 +651,7 @@ async def _handle_match(
             "matchedKeywords": [k["pattern"] for k in matched_keywords],
             "messageContent": text[:500], "messageText": text[:500],
             "keywordId": matched_keywords[0].get("id"),
+            "messageId": message_id if message_id else None,
         })
         if hit_result:
             hit_record_id = hit_result.get("id")

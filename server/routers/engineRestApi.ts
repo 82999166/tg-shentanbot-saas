@@ -275,6 +275,24 @@ export function registerEngineRestRoutes(app: Router) {
         }
       }
 
+      // 幂等性检查：messageId 存在时，防止同一条消息被重复写入
+      if (input.messageId && String(input.messageId) !== "0") {
+        const existing = await db.select({ id: hitRecords.id })
+          .from(hitRecords)
+          .where(
+            and(
+              eq(hitRecords.userId, input.userId),
+              eq(hitRecords.senderTgId, input.senderTgId),
+              eq(hitRecords.messageId, String(input.messageId)),
+              eq(hitRecords.matchedKeyword, matchedKeywordStr)
+            )
+          )
+          .limit(1);
+        if (existing.length > 0) {
+          console.log(`[Hit] 幂等跳过重复命中记录: userId=${input.userId} messageId=${input.messageId} keyword=${matchedKeywordStr}`);
+          return res.json({ success: true, id: existing[0].id, duplicate: true });
+        }
+      }
       const result = await db.insert(hitRecords).values({
         userId: input.userId,
         tgAccountId: input.monitorAccountId || input.accountId || 0,

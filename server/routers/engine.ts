@@ -1218,6 +1218,12 @@ function engineRouter_config() {
       rateLimit: parseInt(sysConfigMap["anti_spam_rate_limit"] || "3", 10),
       minMsgLen: parseInt(sysConfigMap["anti_spam_min_msg_len"] || "0", 10),
       enabled: sysConfigMap["anti_spam_enabled"] !== "false",
+      // 全局消息过滤字段（与前端 Antiban 页面 global_* 配置对应）
+      globalMaxMsgLen: parseInt(sysConfigMap["global_max_msg_length"] || "500", 10),
+      filterBot: sysConfigMap["global_filter_bot"] !== "false",
+      filterAds: sysConfigMap["global_filter_ads"] === "true",
+      globalRateWindow: parseInt(sysConfigMap["global_rate_window"] || "60", 10),
+      globalRateLimit: parseInt(sysConfigMap["global_rate_limit"] || "5", 10),
     };
 
     // 新模式：所有有活跃关键词的用户都加入 userConfigs（不依赖 tgAccounts）

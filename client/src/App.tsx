@@ -37,6 +37,7 @@ import GroupSubmissions from "./pages/GroupSubmissions";
 import PushSettings from "./pages/PushSettings";
 import AdminUsers from "./pages/AdminUsers";
 import AdminChangePassword from "./pages/AdminChangePassword";
+import GroupScrape from "./pages/GroupScrape";
 
 function Router() {
   return (
@@ -79,6 +80,7 @@ function Router() {
       {/* 财务管理独立路由 */}
       <Route path={"/admin-orders"} component={Orders} />
       <Route path={"/admin-redeem-codes"} component={RedeemCodes} />
+      <Route path={"/admin-group-scrape"} component={GroupScrape} />
       <Route path={"/login"} component={Login} />
       <Route path={"/register"} component={Register} />
       <Route path={"/verify-email"} component={VerifyEmail} />

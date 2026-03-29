@@ -669,3 +669,47 @@ export const publicGroupJoinStatus = mysqlTable("public_group_join_status", {
 ]);
 export type PublicGroupJoinStatus = typeof publicGroupJoinStatus.$inferSelect;
 export type InsertPublicGroupJoinStatus = typeof publicGroupJoinStatus.$inferInsert;
+
+// ============================================================
+// 群组采集任务表（管理员配置关键词采集任务）
+// ============================================================
+export const groupScrapeTasks = mysqlTable("group_scrape_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),                    // 任务名称
+  keywords: text("keywords").notNull(),                                // 搜索关键词，JSON 数组存储
+  minMemberCount: int("minMemberCount").default(1000).notNull(),       // 最小成员数过滤
+  maxResults: int("maxResults").default(50).notNull(),                 // 每个关键词最多采集数量
+  status: varchar("status", { length: 32 }).default("idle").notNull(), // idle / running / done / failed
+  lastRunAt: timestamp("lastRunAt"),                                   // 最近一次执行时间
+  totalFound: int("totalFound").default(0),                           // 本次采集到的总数
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type GroupScrapeTask = typeof groupScrapeTasks.$inferSelect;
+export type InsertGroupScrapeTask = typeof groupScrapeTasks.$inferInsert;
+
+// ============================================================
+// 群组采集结果表（TDLib searchPublicChats 返回的群组）
+// ============================================================
+export const groupScrapeResults = mysqlTable("group_scrape_results", {
+  id: int("id").autoincrement().primaryKey(),
+  taskId: int("taskId").notNull(),                                     // 关联采集任务
+  keyword: varchar("keyword", { length: 128 }).notNull(),             // 触发该结果的关键词
+  groupId: varchar("groupId", { length: 128 }).notNull(),             // TG @username 或数字 ID
+  groupTitle: varchar("groupTitle", { length: 256 }),                 // 群组名称
+  groupType: varchar("groupType", { length: 32 }).default("group"),   // group / channel / supergroup
+  memberCount: int("memberCount").default(0),                         // 成员数
+  description: text("description"),                                   // 群组简介
+  username: varchar("username", { length: 128 }),                     // @username（无@）
+  realId: varchar("realId", { length: 64 }),                          // TG 真实数字 ID
+  importStatus: varchar("importStatus", { length: 32 }).default("pending").notNull(), // pending / imported / ignored
+  importedAt: timestamp("importedAt"),                                // 导入时间
+  scrapedAt: timestamp("scrapedAt").defaultNow().notNull(),           // 采集时间
+}, (t) => [
+  index("idx_gsr_taskId").on(t.taskId),
+  index("idx_gsr_groupId").on(t.groupId),
+  index("idx_gsr_importStatus").on(t.importStatus),
+  uniqueIndex("idx_gsr_task_group").on(t.taskId, t.groupId),
+]);
+export type GroupScrapeResult = typeof groupScrapeResults.$inferSelect;
+export type InsertGroupScrapeResult = typeof groupScrapeResults.$inferInsert;
