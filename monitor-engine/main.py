@@ -1207,6 +1207,9 @@ async def scrape_groups_task():
                 keywords = task.get("keywords", [])
                 min_members = task.get("minMemberCount", 1000)
                 max_results = task.get("maxResults", 50)
+                fission_enabled = task.get("fissionEnabled", False)
+                fission_depth = min(int(task.get("fissionDepth", 1)), 3)
+                fission_max_per_seed = min(int(task.get("fissionMaxPerSeed", 10)), 50)
 
                 if not task_id or not keywords:
                     continue
@@ -1333,7 +1336,109 @@ async def scrape_groups_task():
                             logger.warning(f"[Scrape] 搜索关键词 '{kw}' 失败: {e}")
                             continue
 
-                    # 任务完成，回写结果
+                    # ── 裂变采集：对每个种子群获取相似群 ──────────────────────
+                    if fission_enabled and all_results:
+                        logger.info(f"[Scrape] 开始裂变采集，种子群数量: {len(all_results)}，深度: {fission_depth}，每种子最多: {fission_max_per_seed}")
+                        seen_ids = set(r["realId"] for r in all_results if r.get("realId"))
+                        seed_queue = list(all_results)  # 第一层种子
+                        for depth_i in range(fission_depth):
+                            next_seeds = []
+                            logger.info(f"[Scrape] 裂变第 {depth_i+1} 层，处理 {len(seed_queue)} 个种子群")
+                            for seed in seed_queue:
+                                seed_real_id = seed.get("realId")
+                                if not seed_real_id:
+                                    continue
+                                try:
+                                    # 调用 getChatSimilarChats 获取相似群
+                                    similar_result = await worker.client.invoke({
+                                        "@type": "getChatSimilarChats",
+                                        "chat_id": int(seed_real_id)
+                                    })
+                                    if not similar_result:
+                                        continue
+                                    similar_chat_ids = similar_result.get("chat_ids", [])
+                                    if not similar_chat_ids:
+                                        # 兼容旧版 TDLib 返回格式
+                                        chats_obj = similar_result.get("chats", {})
+                                        if chats_obj:
+                                            similar_chat_ids = chats_obj.get("chat_ids", [])
+                                    logger.info(f"[Scrape] 种子群 {seed.get('groupTitle','?')} 相似群: {len(similar_chat_ids)} 个")
+                                    added_for_seed = 0
+                                    for sim_chat_id in similar_chat_ids:
+                                        if added_for_seed >= fission_max_per_seed:
+                                            break
+                                        sim_id_str = str(sim_chat_id)
+                                        if sim_id_str in seen_ids:
+                                            continue
+                                        try:
+                                            sim_chat = await worker.client.invoke({
+                                                "@type": "getChat",
+                                                "chat_id": sim_chat_id
+                                            })
+                                            if not sim_chat:
+                                                continue
+                                            sim_title = sim_chat.get("title", "")
+                                            sim_type_obj = sim_chat.get("type", {})
+                                            sim_type_name = sim_type_obj.get("@type", "") if sim_type_obj else ""
+                                            if "supergroup" not in sim_type_name.lower() and "channel" not in sim_type_name.lower():
+                                                continue
+                                            sim_username = ""
+                                            sim_member_count = 0
+                                            sim_description = ""
+                                            if "supergroup" in sim_type_name.lower():
+                                                sg_id = sim_type_obj.get("supergroup_id", 0) if sim_type_obj else 0
+                                                if sg_id:
+                                                    sg_info = await worker.client.invoke({
+                                                        "@type": "getSupergroup",
+                                                        "supergroup_id": sg_id
+                                                    })
+                                                    if sg_info:
+                                                        sim_username = sg_info.get("username", "") or ""
+                                                        sim_member_count = sg_info.get("member_count", 0) or 0
+                                                    try:
+                                                        sg_full = await worker.client.invoke({
+                                                            "@type": "getSupergroupFullInfo",
+                                                            "supergroup_id": sg_id
+                                                        })
+                                                        if sg_full:
+                                                            sim_description = sg_full.get("description", "") or ""
+                                                            if not sim_member_count:
+                                                                sim_member_count = sg_full.get("member_count", 0) or 0
+                                                    except Exception:
+                                                        pass
+                                            if sim_member_count < min_members:
+                                                continue
+                                            sim_group_id = f"@{sim_username}" if sim_username else str(sim_chat_id)
+                                            sim_group_type = "channel" if "channel" in sim_type_name.lower() else "supergroup"
+                                            new_entry = {
+                                                "keyword": f"[裂变]{seed.get('keyword','?')}",
+                                                "groupId": sim_group_id,
+                                                "groupTitle": sim_title,
+                                                "groupType": sim_group_type,
+                                                "memberCount": sim_member_count,
+                                                "description": sim_description[:500] if sim_description else "",
+                                                "username": sim_username,
+                                                "realId": sim_id_str,
+                                            }
+                                            all_results.append(new_entry)
+                                            next_seeds.append(new_entry)
+                                            seen_ids.add(sim_id_str)
+                                            added_for_seed += 1
+                                            logger.info(f"[Scrape][裂变] 发现: {sim_title} ({sim_group_id}) 成员: {sim_member_count}")
+                                            await asyncio.sleep(0.5)
+                                        except Exception as e:
+                                            logger.debug(f"[Scrape][裂变] 获取相似群详情失败 {sim_chat_id}: {e}")
+                                            continue
+                                    await asyncio.sleep(1)
+                                except Exception as e:
+                                    logger.debug(f"[Scrape][裂变] getChatSimilarChats 失败 {seed_real_id}: {e}")
+                                    continue
+                            seed_queue = next_seeds
+                            if not seed_queue:
+                                logger.info(f"[Scrape] 裂变第 {depth_i+1} 层无新群，停止")
+                                break
+                        logger.info(f"[Scrape] 裂变采集完成，总计 {len(all_results)} 个群组（含种子）")
+                    # ── 任务完成，回写结果 ──────────────────────────────────────
                     logger.info(f"[Scrape] 任务 #{task_id} 完成，共采集 {len(all_results)} 个群组")
                     await api.post(f"/engine/scrape-task/{task_id}/finish", {
                         "status": "done",

@@ -29,10 +29,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   Plus, Trash2, RefreshCw, Play, Search, Download,
-  Users, CheckCircle2, XCircle, Clock, Loader2, Tag, Filter, ArrowRight
+  Users, CheckCircle2, XCircle, Clock, Loader2, Tag, Filter, ArrowRight,
+  Pencil, GitBranch
 } from "lucide-react";
 
 // 预置关键词
@@ -48,6 +50,9 @@ type Task = {
   keywords: string[];
   minMemberCount: number;
   maxResults: number;
+  fissionEnabled: boolean;
+  fissionDepth: number;
+  fissionMaxPerSeed: number;
   status: "idle" | "pending" | "running" | "done" | "failed";
   totalFound: number | null;
   lastRunAt: string | null;
@@ -91,19 +96,199 @@ function ImportStatusBadge({ status }: { status: ScrapeResult["importStatus"] })
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${className}`}>{label}</span>;
 }
 
+// ── 任务表单（新建/编辑共用）──────────────────────────────────────────────
+interface TaskFormProps {
+  taskName: string; setTaskName: (v: string) => void;
+  taskKeywords: string[]; setTaskKeywords: (v: string[]) => void;
+  taskKeywordInput: string; setTaskKeywordInput: (v: string) => void;
+  taskMinMembers: number; setTaskMinMembers: (v: number) => void;
+  taskMaxResults: number; setTaskMaxResults: (v: number) => void;
+  fissionEnabled: boolean; setFissionEnabled: (v: boolean) => void;
+  fissionDepth: number; setFissionDepth: (v: number) => void;
+  fissionMaxPerSeed: number; setFissionMaxPerSeed: (v: number) => void;
+}
+
+function TaskForm({
+  taskName, setTaskName,
+  taskKeywords, setTaskKeywords,
+  taskKeywordInput, setTaskKeywordInput,
+  taskMinMembers, setTaskMinMembers,
+  taskMaxResults, setTaskMaxResults,
+  fissionEnabled, setFissionEnabled,
+  fissionDepth, setFissionDepth,
+  fissionMaxPerSeed, setFissionMaxPerSeed,
+}: TaskFormProps) {
+  function addKeyword(kw: string) {
+    const trimmed = kw.trim();
+    if (trimmed && !taskKeywords.includes(trimmed)) {
+      setTaskKeywords([...taskKeywords, trimmed]);
+    }
+    setTaskKeywordInput("");
+  }
+  function removeKeyword(kw: string) {
+    setTaskKeywords(taskKeywords.filter(k => k !== kw));
+  }
+
+  return (
+    <div className="space-y-4 py-2">
+      <div>
+        <label className="text-sm text-gray-300 block mb-1.5">任务名称</label>
+        <Input
+          value={taskName}
+          onChange={e => setTaskName(e.target.value)}
+          placeholder="如：搜索类群组采集"
+          className="bg-gray-800 border-gray-700 text-white"
+        />
+      </div>
+
+      <div>
+        <label className="text-sm text-gray-300 block mb-1.5">搜索关键词</label>
+        <div className="flex gap-2 mb-2">
+          <Input
+            value={taskKeywordInput}
+            onChange={e => setTaskKeywordInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addKeyword(taskKeywordInput)}
+            placeholder="输入关键词后按 Enter 添加"
+            className="bg-gray-800 border-gray-700 text-white flex-1"
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => addKeyword(taskKeywordInput)}
+            className="text-gray-400 hover:text-white border border-gray-700"
+          >
+            <Plus className="w-4 h-4" />
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {taskKeywords.map(kw => (
+            <span
+              key={kw}
+              className="bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded flex items-center gap-1"
+            >
+              {kw}
+              <button onClick={() => removeKeyword(kw)} className="text-gray-400 hover:text-red-400">×</button>
+            </span>
+          ))}
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1.5">快速添加预置关键词：</p>
+          <div className="flex flex-wrap gap-1">
+            {PRESET_KEYWORDS.filter(k => !taskKeywords.includes(k)).map(kw => (
+              <button
+                key={kw}
+                onClick={() => addKeyword(kw)}
+                className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 text-xs px-2 py-0.5 rounded border border-gray-700 transition-colors"
+              >
+                + {kw}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="text-sm text-gray-300 block mb-1.5">最低成员数</label>
+          <Input
+            type="number"
+            value={taskMinMembers}
+            onChange={e => setTaskMinMembers(parseInt(e.target.value) || 0)}
+            className="bg-gray-800 border-gray-700 text-white"
+          />
+          <p className="text-xs text-gray-500 mt-1">成员数低于此值的群组将被过滤</p>
+        </div>
+        <div>
+          <label className="text-sm text-gray-300 block mb-1.5">每关键词最多采集数</label>
+          <Input
+            type="number"
+            value={taskMaxResults}
+            onChange={e => setTaskMaxResults(parseInt(e.target.value) || 10)}
+            className="bg-gray-800 border-gray-700 text-white"
+          />
+          <p className="text-xs text-gray-500 mt-1">每个关键词最多采集条数</p>
+        </div>
+      </div>
+
+      {/* 裂变采集配置 */}
+      <div className="border border-gray-700 rounded-lg p-4 space-y-3 bg-gray-800/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <GitBranch className="w-4 h-4 text-purple-400" />
+            <span className="text-sm font-medium text-gray-200">裂变采集</span>
+            <span className="text-xs text-gray-500">从已采集群组扩展发现更多相似群</span>
+          </div>
+          <Switch
+            checked={fissionEnabled}
+            onCheckedChange={setFissionEnabled}
+          />
+        </div>
+        {fissionEnabled && (
+          <div className="grid grid-cols-2 gap-4 pt-1">
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">裂变深度（1~3 层）</label>
+              <Select
+                value={String(fissionDepth)}
+                onValueChange={v => setFissionDepth(parseInt(v))}
+              >
+                <SelectTrigger className="bg-gray-800 border-gray-700 text-gray-200 h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-900 border-gray-700">
+                  <SelectItem value="1">1 层（推荐）</SelectItem>
+                  <SelectItem value="2">2 层</SelectItem>
+                  <SelectItem value="3">3 层（较慢）</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-600 mt-1">层数越多采集越多，耗时越长</p>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">每种子群最多扩展数</label>
+              <Input
+                type="number"
+                value={fissionMaxPerSeed}
+                onChange={e => setFissionMaxPerSeed(Math.min(50, parseInt(e.target.value) || 5))}
+                className="bg-gray-800 border-gray-700 text-white h-8 text-sm"
+                min={1}
+                max={50}
+              />
+              <p className="text-xs text-gray-600 mt-1">每个种子群最多发现几个相似群</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function GroupScrape() {
   const [activeTab, setActiveTab] = useState<"tasks" | "results">("tasks");
 
-  // 任务管理状态
+  // 新建任务状态
   const [createDialog, setCreateDialog] = useState(false);
-  const [deleteTaskId, setDeleteTaskId] = useState<number | null>(null);
   const [taskName, setTaskName] = useState("");
-  const [taskKeywords, setTaskKeywords] = useState<string[]>([
-    "搜索", "索引", "找群", "导航", "中文搜索"
-  ]);
+  const [taskKeywords, setTaskKeywords] = useState<string[]>(["搜索", "索引", "找群", "导航", "中文搜索"]);
   const [taskKeywordInput, setTaskKeywordInput] = useState("");
   const [taskMinMembers, setTaskMinMembers] = useState(1000);
   const [taskMaxResults, setTaskMaxResults] = useState(50);
+  const [fissionEnabled, setFissionEnabled] = useState(false);
+  const [fissionDepth, setFissionDepth] = useState(1);
+  const [fissionMaxPerSeed, setFissionMaxPerSeed] = useState(10);
+
+  // 编辑任务状态
+  const [editDialog, setEditDialog] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editKeywords, setEditKeywords] = useState<string[]>([]);
+  const [editKeywordInput, setEditKeywordInput] = useState("");
+  const [editMinMembers, setEditMinMembers] = useState(1000);
+  const [editMaxResults, setEditMaxResults] = useState(50);
+  const [editFissionEnabled, setEditFissionEnabled] = useState(false);
+  const [editFissionDepth, setEditFissionDepth] = useState(1);
+  const [editFissionMaxPerSeed, setEditFissionMaxPerSeed] = useState(10);
+
+  // 删除任务状态
+  const [deleteTaskId, setDeleteTaskId] = useState<number | null>(null);
 
   // 结果管理状态
   const [selectedTaskId, setSelectedTaskId] = useState<number | undefined>(undefined);
@@ -134,6 +319,17 @@ export default function GroupScrape() {
       toast.success("采集任务已创建");
       setCreateDialog(false);
       resetCreateForm();
+      refetchTasks();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // 更新任务
+  const updateTask = trpc.groupScrape.updateTask.useMutation({
+    onSuccess: () => {
+      toast.success("任务配置已更新");
+      setEditDialog(false);
+      setEditingTask(null);
       refetchTasks();
     },
     onError: (e) => toast.error(e.message),
@@ -194,18 +390,22 @@ export default function GroupScrape() {
     setTaskKeywordInput("");
     setTaskMinMembers(1000);
     setTaskMaxResults(50);
+    setFissionEnabled(false);
+    setFissionDepth(1);
+    setFissionMaxPerSeed(10);
   }
 
-  function addKeyword(kw: string) {
-    const trimmed = kw.trim();
-    if (trimmed && !taskKeywords.includes(trimmed)) {
-      setTaskKeywords(prev => [...prev, trimmed]);
-    }
-    setTaskKeywordInput("");
-  }
-
-  function removeKeyword(kw: string) {
-    setTaskKeywords(prev => prev.filter(k => k !== kw));
+  function openEditDialog(task: Task) {
+    setEditingTask(task);
+    setEditName(task.name);
+    setEditKeywords([...task.keywords]);
+    setEditKeywordInput("");
+    setEditMinMembers(task.minMemberCount);
+    setEditMaxResults(task.maxResults);
+    setEditFissionEnabled(task.fissionEnabled ?? false);
+    setEditFissionDepth(task.fissionDepth ?? 1);
+    setEditFissionMaxPerSeed(task.fissionMaxPerSeed ?? 10);
+    setEditDialog(true);
   }
 
   function toggleSelect(id: number) {
@@ -308,6 +508,7 @@ export default function GroupScrape() {
                       <TableHead className="text-gray-400">关键词</TableHead>
                       <TableHead className="text-gray-400">最低人数</TableHead>
                       <TableHead className="text-gray-400">最多结果</TableHead>
+                      <TableHead className="text-gray-400">裂变</TableHead>
                       <TableHead className="text-gray-400">状态</TableHead>
                       <TableHead className="text-gray-400">采集数量</TableHead>
                       <TableHead className="text-gray-400">上次执行</TableHead>
@@ -332,6 +533,16 @@ export default function GroupScrape() {
                         </TableCell>
                         <TableCell className="text-gray-300">{task.minMemberCount.toLocaleString()}</TableCell>
                         <TableCell className="text-gray-300">{task.maxResults}</TableCell>
+                        <TableCell>
+                          {task.fissionEnabled ? (
+                            <span className="inline-flex items-center gap-1 text-xs text-purple-400 bg-purple-900/30 px-1.5 py-0.5 rounded">
+                              <GitBranch className="w-3 h-3" />
+                              {task.fissionDepth}层/{task.fissionMaxPerSeed}个
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 text-xs">关闭</span>
+                          )}
+                        </TableCell>
                         <TableCell><StatusBadge status={task.status} /></TableCell>
                         <TableCell>
                           {task.totalFound != null ? (
@@ -349,7 +560,7 @@ export default function GroupScrape() {
                           {task.lastRunAt ? new Date(task.lastRunAt).toLocaleString("zh-CN") : "-"}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-1">
                             <Button
                               size="sm"
                               variant="ghost"
@@ -363,6 +574,15 @@ export default function GroupScrape() {
                               ) : (
                                 <Play className="w-4 h-4" />
                               )}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openEditDialog(task)}
+                              className="text-blue-400 hover:text-blue-300 hover:bg-blue-900/20"
+                              title="编辑任务"
+                            >
+                              <Pencil className="w-4 h-4" />
                             </Button>
                             <Button
                               size="sm"
@@ -529,7 +749,11 @@ export default function GroupScrape() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <span className="bg-gray-800 text-gray-300 text-xs px-1.5 py-0.5 rounded">
+                              <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                r.keyword.startsWith("[裂变]")
+                                  ? "bg-purple-900/40 text-purple-300"
+                                  : "bg-gray-800 text-gray-300"
+                              }`}>
                                 {r.keyword}
                               </span>
                             </TableCell>
@@ -598,96 +822,26 @@ export default function GroupScrape() {
 
       {/* ── 新建任务弹窗 ── */}
       <Dialog open={createDialog} onOpenChange={setCreateDialog}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-lg">
-          <DialogHeader>
+        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>新建采集任务</DialogTitle>
             <DialogDescription className="text-gray-400">
               配置搜索关键词和过滤条件，引擎将自动搜索并采集符合条件的公开群组
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <label className="text-sm text-gray-300 block mb-1.5">任务名称</label>
-              <Input
-                value={taskName}
-                onChange={e => setTaskName(e.target.value)}
-                placeholder="如：搜索类群组采集"
-                className="bg-gray-800 border-gray-700 text-white"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm text-gray-300 block mb-1.5">搜索关键词</label>
-              <div className="flex gap-2 mb-2">
-                <Input
-                  value={taskKeywordInput}
-                  onChange={e => setTaskKeywordInput(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && addKeyword(taskKeywordInput)}
-                  placeholder="输入关键词后按 Enter 添加"
-                  className="bg-gray-800 border-gray-700 text-white flex-1"
-                />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => addKeyword(taskKeywordInput)}
-                  className="text-gray-400 hover:text-white border border-gray-700"
-                >
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-              {/* 已添加的关键词 */}
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {taskKeywords.map(kw => (
-                  <span
-                    key={kw}
-                    className="bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded flex items-center gap-1"
-                  >
-                    {kw}
-                    <button onClick={() => removeKeyword(kw)} className="text-gray-400 hover:text-red-400">×</button>
-                  </span>
-                ))}
-              </div>
-              {/* 预置关键词快速添加 */}
-              <div>
-                <p className="text-xs text-gray-500 mb-1.5">快速添加预置关键词：</p>
-                <div className="flex flex-wrap gap-1">
-                  {PRESET_KEYWORDS.filter(k => !taskKeywords.includes(k)).map(kw => (
-                    <button
-                      key={kw}
-                      onClick={() => addKeyword(kw)}
-                      className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 text-xs px-2 py-0.5 rounded border border-gray-700 transition-colors"
-                    >
-                      + {kw}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm text-gray-300 block mb-1.5">最低成员数</label>
-                <Input
-                  type="number"
-                  value={taskMinMembers}
-                  onChange={e => setTaskMinMembers(parseInt(e.target.value) || 0)}
-                  className="bg-gray-800 border-gray-700 text-white"
-                />
-                <p className="text-xs text-gray-500 mt-1">成员数低于此值的群组将被过滤</p>
-              </div>
-              <div>
-                <label className="text-sm text-gray-300 block mb-1.5">最多采集数量</label>
-                <Input
-                  type="number"
-                  value={taskMaxResults}
-                  onChange={e => setTaskMaxResults(parseInt(e.target.value) || 10)}
-                  className="bg-gray-800 border-gray-700 text-white"
-                />
-                <p className="text-xs text-gray-500 mt-1">每个关键词最多采集条数</p>
-              </div>
-            </div>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <TaskForm
+              taskName={taskName} setTaskName={setTaskName}
+              taskKeywords={taskKeywords} setTaskKeywords={setTaskKeywords}
+              taskKeywordInput={taskKeywordInput} setTaskKeywordInput={setTaskKeywordInput}
+              taskMinMembers={taskMinMembers} setTaskMinMembers={setTaskMinMembers}
+              taskMaxResults={taskMaxResults} setTaskMaxResults={setTaskMaxResults}
+              fissionEnabled={fissionEnabled} setFissionEnabled={setFissionEnabled}
+              fissionDepth={fissionDepth} setFissionDepth={setFissionDepth}
+              fissionMaxPerSeed={fissionMaxPerSeed} setFissionMaxPerSeed={setFissionMaxPerSeed}
+            />
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button variant="ghost" onClick={() => setCreateDialog(false)} className="text-gray-400">取消</Button>
             <Button
               onClick={() => createTask.mutate({
@@ -695,12 +849,59 @@ export default function GroupScrape() {
                 keywords: taskKeywords,
                 minMemberCount: taskMinMembers,
                 maxResults: taskMaxResults,
+                fissionEnabled,
+                fissionDepth,
+                fissionMaxPerSeed,
               })}
               disabled={createTask.isPending || taskKeywords.length === 0}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
               {createTask.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Plus className="w-4 h-4 mr-1" />}
               创建任务
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── 编辑任务弹窗 ── */}
+      <Dialog open={editDialog} onOpenChange={v => { setEditDialog(v); if (!v) setEditingTask(null); }}>
+        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>编辑采集任务</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              修改任务配置后保存，下次触发时将使用新配置
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <TaskForm
+              taskName={editName} setTaskName={setEditName}
+              taskKeywords={editKeywords} setTaskKeywords={setEditKeywords}
+              taskKeywordInput={editKeywordInput} setTaskKeywordInput={setEditKeywordInput}
+              taskMinMembers={editMinMembers} setTaskMinMembers={setEditMinMembers}
+              taskMaxResults={editMaxResults} setTaskMaxResults={setEditMaxResults}
+              fissionEnabled={editFissionEnabled} setFissionEnabled={setEditFissionEnabled}
+              fissionDepth={editFissionDepth} setFissionDepth={setEditFissionDepth}
+              fissionMaxPerSeed={editFissionMaxPerSeed} setFissionMaxPerSeed={setEditFissionMaxPerSeed}
+            />
+          </div>
+          <DialogFooter className="shrink-0">
+            <Button variant="ghost" onClick={() => { setEditDialog(false); setEditingTask(null); }} className="text-gray-400">取消</Button>
+            <Button
+              onClick={() => editingTask && updateTask.mutate({
+                id: editingTask.id,
+                name: editName || editingTask.name,
+                keywords: editKeywords,
+                minMemberCount: editMinMembers,
+                maxResults: editMaxResults,
+                fissionEnabled: editFissionEnabled,
+                fissionDepth: editFissionDepth,
+                fissionMaxPerSeed: editFissionMaxPerSeed,
+              })}
+              disabled={updateTask.isPending || editKeywords.length === 0}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {updateTask.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Pencil className="w-4 h-4 mr-1" />}
+              保存修改
             </Button>
           </DialogFooter>
         </DialogContent>

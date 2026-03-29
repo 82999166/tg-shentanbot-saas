@@ -605,6 +605,9 @@ export function registerEngineRestRoutes(app: Router) {
       const result = tasks.map((t: any) => ({
         ...t,
         keywords: JSON.parse(t.keywords || "[]"),
+        fissionEnabled: !!t.fissionEnabled,
+        fissionDepth: t.fissionDepth ?? 1,
+        fissionMaxPerSeed: t.fissionMaxPerSeed ?? 10,
       }));
       res.json(result);
     } catch (e: any) {

@@ -684,6 +684,10 @@ export const groupScrapeTasks = mysqlTable("group_scrape_tasks", {
   totalFound: int("totalFound").default(0),                           // 本次采集到的总数
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  // 裂变采集配置
+  fissionEnabled: boolean("fissionEnabled").default(false).notNull(),  // 是否开启裂变采集
+  fissionDepth: int("fissionDepth").default(1).notNull(),              // 裂变深度（1~3）
+  fissionMaxPerSeed: int("fissionMaxPerSeed").default(10).notNull(),   // 每个种子群最多扩展数量
 });
 export type GroupScrapeTask = typeof groupScrapeTasks.$inferSelect;
 export type InsertGroupScrapeTask = typeof groupScrapeTasks.$inferInsert;

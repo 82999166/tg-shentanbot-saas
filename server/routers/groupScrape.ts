@@ -32,6 +32,9 @@ export const groupScrapeRouter = router({
         keywords: z.array(z.string().min(1)).min(1),
         minMemberCount: z.number().int().min(0).default(1000),
         maxResults: z.number().int().min(1).max(200).default(50),
+        fissionEnabled: z.boolean().default(false),
+        fissionDepth: z.number().int().min(1).max(3).default(1),
+        fissionMaxPerSeed: z.number().int().min(1).max(50).default(10),
       })
     )
     .mutation(async ({ input }) => {
@@ -42,6 +45,9 @@ export const groupScrapeRouter = router({
         keywords: JSON.stringify(input.keywords),
         minMemberCount: input.minMemberCount,
         maxResults: input.maxResults,
+        fissionEnabled: input.fissionEnabled ?? false,
+        fissionDepth: input.fissionDepth ?? 1,
+        fissionMaxPerSeed: input.fissionMaxPerSeed ?? 10,
         status: "idle",
       }).$returningId();
       return { id: task.id };
@@ -56,6 +62,9 @@ export const groupScrapeRouter = router({
         keywords: z.array(z.string().min(1)).min(1).optional(),
         minMemberCount: z.number().int().min(0).optional(),
         maxResults: z.number().int().min(1).max(200).optional(),
+        fissionEnabled: z.boolean().optional(),
+        fissionDepth: z.number().int().min(1).max(3).optional(),
+        fissionMaxPerSeed: z.number().int().min(1).max(50).optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -66,6 +75,9 @@ export const groupScrapeRouter = router({
       if (input.keywords !== undefined) updates.keywords = JSON.stringify(input.keywords);
       if (input.minMemberCount !== undefined) updates.minMemberCount = input.minMemberCount;
       if (input.maxResults !== undefined) updates.maxResults = input.maxResults;
+      if (input.fissionEnabled !== undefined) updates.fissionEnabled = input.fissionEnabled;
+      if (input.fissionDepth !== undefined) updates.fissionDepth = input.fissionDepth;
+      if (input.fissionMaxPerSeed !== undefined) updates.fissionMaxPerSeed = input.fissionMaxPerSeed;
       await db.update(groupScrapeTasks).set(updates).where(eq(groupScrapeTasks.id, input.id));
       return { success: true };
     }),
