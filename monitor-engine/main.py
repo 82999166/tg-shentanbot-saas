@@ -123,7 +123,21 @@ class ApiClient:
 api = ApiClient(API_BASE, ENGINE_SECRET)
 
 
-def match_keyword(text: str, keyword: dict) -> bool:
+def match_keyword(text: str, keyword: dict, user_match_mode: str = "fuzzy") -> bool:
+    """
+    关键词匹配函数（支持用户级全局匹配模式）
+    
+    user_match_mode（用户在设置中心配置）:
+      - fuzzy: 模糊匹配（包含即命中，默认）
+      - exact: 精确匹配（完整单词/句子匹配）
+      - leftmost: 最左匹配（消息以关键词开头）
+      - rightmost: 最右匹配（消息以关键词结尾）
+    
+    keyword.matchType（关键词级别配置，优先级更高）:
+      - contains/exact: 包含匹配
+      - regex: 正则匹配
+      - and/or/not: 多词逻辑匹配
+    """
     if not text:
         return False
     match_type = keyword.get("matchType", "contains")
@@ -132,9 +146,9 @@ def match_keyword(text: str, keyword: dict) -> bool:
     case_sensitive = keyword.get("caseSensitive", False)
     compare_text = text if case_sensitive else text.lower()
     compare_pattern = pattern if case_sensitive else pattern.lower()
-    if match_type in ("exact", "contains"):
-        return compare_pattern in compare_text
-    elif match_type == "regex":
+    
+    # 正则、and、or、not 模式优先处理（不受 user_match_mode 影响）
+    if match_type == "regex":
         try:
             flags = 0 if case_sensitive else re.IGNORECASE
             return bool(re.search(pattern, text, flags))
@@ -148,7 +162,25 @@ def match_keyword(text: str, keyword: dict) -> bool:
         return any((k if case_sensitive else k.lower()) in compare_text for k in kws)
     elif match_type == "not":
         return compare_pattern not in compare_text
-    return False
+    
+    # contains/exact 模式：受 user_match_mode 影响
+    if not compare_pattern:
+        return False
+    
+    # 用户级全局匹配模式
+    if user_match_mode == "leftmost":
+        # 最左匹配：消息文本以关键词开头（忽略前导空白）
+        return compare_text.lstrip().startswith(compare_pattern)
+    elif user_match_mode == "rightmost":
+        # 最右匹配：消息文本以关键词结尾（忽略尾部空白）
+        return compare_text.rstrip().endswith(compare_pattern)
+    elif user_match_mode == "exact":
+        # 精确匹配：关键词作为完整词出现（前后为非字母数字字符或边界）
+        import re as _re
+        escaped = _re.escape(compare_pattern)
+    else:
+        # fuzzy（默认）：包含匹配
+        return compare_pattern in compare_text
 
 
 def render_template(template: str, variables: dict) -> str:
@@ -511,17 +543,57 @@ async def process_message(
                 continue
             if u_push_settings.get("filterAds", False) and is_likely_spam(sender_id, sender_username, text):
                 continue
+            # 方案A：过滤机器人消息
+            if u_push_settings.get("filterBots", False) and is_bot:
+                continue
+            # 方案A：只推送有媒体的消息（mediaOnly 暂时基于文本长度判断，实际需消息对象支持）
+            # mediaOnly 过滤在 process_message 调用层处理（需传入 has_media 参数）
             # 优先使用用户自定义的 globalAntiSpam，否则使用全局配置
             u_anti_spam = uconfig.get("globalAntiSpam") or global_anti_spam
             is_spam, _ = check_anti_spam(sender_tg_id, text, u_anti_spam)
             if is_spam:
                 continue
+            # 方案A：黑名单关键词过滤（命中则跳过推送）
+            u_blacklist_kws_raw = u_push_settings.get("blacklistKeywords") or ""
+            u_blacklist_mode = u_push_settings.get("blacklistMatchMode", "fuzzy")
+            if u_blacklist_kws_raw:
+                u_blacklist_kws = [k.strip() for k in u_blacklist_kws_raw.replace("，", ",").split(",") if k.strip()]
+                _compare_text = text.lower()
+                _blacklisted = False
+                for _bkw in u_blacklist_kws:
+                    _bkw_lower = _bkw.lower()
+                    if u_blacklist_mode == "exact":
+                        import re as _re2
+                        _escaped = _re2.escape(_bkw_lower)
+                        if _re2.search(r'\b' + _escaped + r'\b', _compare_text):
+                            _blacklisted = True
+                            break
+                    else:  # fuzzy
+                        if _bkw_lower in _compare_text:
+                            _blacklisted = True
+                            break
+                if _blacklisted:
+                    logger.debug(f"[BLACKLIST] user={uid} 黑名单关键词命中，跳过推送")
+                    del processed_messages[pub_dedup_key]
+                    continue
+            # 方案A：用户级去重时间窗口（dedupeMinutes > 0 时启用）
+            u_dedupe_minutes = u_push_settings.get("dedupeMinutes", 0)
+            if u_dedupe_minutes > 0:
+                u_dedupe_key = f"udedup:{uid}:{sender_tg_id}"
+                u_last_ts = processed_messages.get(u_dedupe_key, 0)
+                if now_ts - u_last_ts < u_dedupe_minutes * 60:
+                    logger.debug(f"[DEDUP_USER] user={uid} sender={sender_tg_id} 在 {u_dedupe_minutes}min 内已推送，跳过")
+                    del processed_messages[pub_dedup_key]
+                    continue
+                processed_messages[u_dedupe_key] = now_ts
             global_kws = uconfig.get("globalKeywords", [])
             if not global_kws:
                 for g in uconfig.get("groups", []):
                     if g.get("isActive"):
                         global_kws.extend([k for k in g.get("keywords", []) if k.get("isActive")])
-            u_matched_keywords = [kw for kw in global_kws if kw.get("isActive", True) and match_keyword(text, kw)]
+            # 方案A：使用用户配置的关键词匹配模式
+            u_kw_match_mode = u_push_settings.get("keywordMatchMode", "fuzzy")
+            u_matched_keywords = [kw for kw in global_kws if kw.get("isActive", True) and match_keyword(text, kw, u_kw_match_mode)]
             if not u_matched_keywords:
                 continue
             logger.debug(f"[DEDUP] 公共群组消息去重标记: {pub_dedup_key}")

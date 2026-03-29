@@ -589,6 +589,65 @@ export const engineRouter = router({
       return { success: true };
     }),
 
+  // ── Bot API：获取推送设置（设置中心） ─────────────────────
+  botGetPushSettings: engineProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      const rows = await db.select().from(pushSettings)
+        .where(eq(pushSettings.userId, input.userId)).limit(1);
+      if (rows.length === 0) {
+        // 返回默认值
+        return {
+          pushEnabled: true,
+          filterAds: false,
+          collaborationGroupId: null,
+          collaborationGroupTitle: null,
+          pushFormat: 'standard' as const,
+          keywordMatchMode: 'fuzzy' as const,
+          blacklistMatchMode: 'fuzzy' as const,
+          includeSearchHistory: false,
+          dedupeMinutes: 0,
+          blacklistKeywords: null,
+          filterBots: false,
+          mediaOnly: false,
+        };
+      }
+      return rows[0];
+    }),
+  // ── Bot API：保存推送设置（设置中心） ─────────────────────
+  botSavePushSettings: engineProcedure
+    .input(z.object({
+      userId: z.number(),
+      pushEnabled: z.boolean().optional(),
+      filterAds: z.boolean().optional(),
+      collaborationGroupId: z.string().optional().nullable(),
+      collaborationGroupTitle: z.string().optional().nullable(),
+      pushFormat: z.enum([simple, standard, detailed]).optional(),
+      keywordMatchMode: z.enum([fuzzy, exact, leftmost, rightmost]).optional(),
+      blacklistMatchMode: z.enum([fuzzy, exact]).optional(),
+      includeSearchHistory: z.boolean().optional(),
+      dedupeMinutes: z.number().int().min(0).optional(),
+      blacklistKeywords: z.string().optional().nullable(),
+      filterBots: z.boolean().optional(),
+      mediaOnly: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      const { userId, ...updateData } = input;
+      // 过滤掉 undefined 值
+      const cleanData = Object.fromEntries(
+        Object.entries(updateData).filter(([, v]) => v !== undefined)
+      );
+      const existing = await db.select({ id: pushSettings.id })
+        .from(pushSettings).where(eq(pushSettings.userId, userId)).limit(1);
+      if (existing.length > 0) {
+        await db.update(pushSettings).set(cleanData).where(eq(pushSettings.userId, userId));
+      } else {
+        await db.insert(pushSettings).values({ userId, ...cleanData });
+      }
+      return { success: true };
+    }),
   // ── Bot API：获取今日统计 ──────────────────────────────────
   botGetStats: engineProcedure
     .input(z.object({ userId: z.number() }))
@@ -1253,6 +1312,14 @@ function engineRouter_config() {
           filterAds: pushConfig.filterAds ?? false,
           collabChatId: pushConfig.collaborationGroupId || null,
           collabChatTitle: pushConfig.collaborationGroupTitle || null,
+          // 方案A新增字段
+          keywordMatchMode: pushConfig.keywordMatchMode ?? "fuzzy",
+          blacklistMatchMode: pushConfig.blacklistMatchMode ?? "fuzzy",
+          includeSearchHistory: pushConfig.includeSearchHistory ?? false,
+          dedupeMinutes: pushConfig.dedupeMinutes ?? 0,
+          blacklistKeywords: pushConfig.blacklistKeywords ?? null,
+          filterBots: pushConfig.filterBots ?? false,
+          mediaOnly: pushConfig.mediaOnly ?? false,
         },
       };
     }

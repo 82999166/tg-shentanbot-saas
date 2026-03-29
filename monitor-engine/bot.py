@@ -49,6 +49,8 @@ STATE_SENDER_CODE = "wait_sender_code"
 STATE_SENDER_2FA = "wait_sender_2fa"
 STATE_SENDER_SESSION = "wait_sender_session"
 STATE_EMAIL = "wait_email"
+STATE_BLACKLIST_KWS = "wait_blacklist_kws"   # 等待输入黑名单关键词
+STATE_DEDUPE_CUSTOM = "wait_dedupe_custom"   # 等待输入自定义去重分钟数
 
 # ─── API 辅助 ─────────────────────────────────────────────────────────────────
 
@@ -92,9 +94,9 @@ async def ensure_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return result["id"]
     return None
 
-# ─── 主菜单 ───────────────────────────────────────────────────────────────────
-
+# ─── 主菜单（方案A：4按钮底部快捷菜单）────────────────────────────────────────
 def main_menu_keyboard():
+    """底部快捷菜单：我的信息 / 设置中心 / 常见问题 / 联系客服"""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📋 关键词管理", callback_data="menu_keywords"),
@@ -117,15 +119,105 @@ def main_menu_keyboard():
         ],
         [
             InlineKeyboardButton("⏰ 到期时间", callback_data="menu_expiry"),
-            InlineKeyboardButton("💬 技术支持", callback_data="menu_support"),
-        ],
-        [
             InlineKeyboardButton("📢 官方频道", callback_data="menu_channel"),
         ],
+        # ── 方案A：底部4快捷按钮 ──
         [
-            InlineKeyboardButton("👤 个人中心", callback_data="menu_profile"),
+            InlineKeyboardButton("👤 我的信息", callback_data="menu_profile"),
+            InlineKeyboardButton("⚙️ 设置中心", callback_data="menu_settings"),
+        ],
+        [
+            InlineKeyboardButton("❓ 常见问题", callback_data="menu_faq"),
+            InlineKeyboardButton("🎧 联系客服", callback_data="menu_support"),
         ],
     ])
+
+
+def settings_menu_keyboard(cfg: dict) -> InlineKeyboardMarkup:
+    """设置中心菜单（7项配置）"""
+    kw_mode_map = {"fuzzy": "🔍 模糊匹配", "exact": "🎯 精确匹配", "leftmost": "⬅️ 最左匹配", "rightmost": "➡️ 最右匹配"}
+    bl_mode_map = {"fuzzy": "🔍 模糊", "exact": "🎯 精确"}
+    dedupe_map = {0: "❌ 不去重", 3: "3分钟", 5: "5分钟", 10: "10分钟", 30: "30分钟",
+                  60: "1小时", 720: "12小时", 1440: "1天", 10080: "7天", 43200: "30天"}
+    dedupe_min = cfg.get("dedupeMinutes", 0)
+    dedupe_label = dedupe_map.get(dedupe_min, f"{dedupe_min}分钟")
+    kw_mode = cfg.get("keywordMatchMode", "fuzzy")
+    bl_mode = cfg.get("blacklistMatchMode", "fuzzy")
+    filter_ads = cfg.get("filterAds", False)
+    filter_bots = cfg.get("filterBots", False)
+    media_only = cfg.get("mediaOnly", False)
+    include_history = cfg.get("includeSearchHistory", False)
+    bkws = cfg.get("blacklistKeywords") or ""
+    bkw_count = len([k for k in bkws.replace("，", ",").split(",") if k.strip()]) if bkws else 0
+    on = "✅"
+    off = "❌"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"🔑 匹配模式：{kw_mode_map.get(kw_mode, kw_mode)}", callback_data="settings_kw_mode")],
+        [InlineKeyboardButton(f"🚫 黑名单关键词：{bkw_count}个 [{bl_mode_map.get(bl_mode, bl_mode)}]", callback_data="settings_blacklist")],
+        [InlineKeyboardButton(f"⏱ 去重窗口：{dedupe_label}", callback_data="settings_dedupe")],
+        [InlineKeyboardButton(f"{on if filter_ads else off} 过滤广告消息", callback_data="settings_toggle_filterAds")],
+        [InlineKeyboardButton(f"{on if filter_bots else off} 过滤机器人消息", callback_data="settings_toggle_filterBots")],
+        [InlineKeyboardButton(f"{on if media_only else off} 仅推送含媒体消息", callback_data="settings_toggle_mediaOnly")],
+        [InlineKeyboardButton(f"{on if include_history else off} 包含7日搜索历史", callback_data="settings_toggle_includeHistory")],
+        [InlineKeyboardButton("◀️ 返回主菜单", callback_data="menu_main")],
+    ])
+
+
+def settings_kw_mode_keyboard(current: str) -> InlineKeyboardMarkup:
+    """关键词匹配模式选择菜单"""
+    modes = [
+        ("fuzzy", "🔍 模糊匹配（包含即命中）"),
+        ("exact", "🎯 精确匹配（完整词匹配）"),
+        ("leftmost", "⬅️ 最左匹配（消息以关键词开头）"),
+        ("rightmost", "➡️ 最右匹配（消息以关键词结尾）"),
+    ]
+    btns = []
+    for mode, label in modes:
+        prefix = "✅ " if mode == current else "   "
+        btns.append([InlineKeyboardButton(f"{prefix}{label}", callback_data=f"settings_set_kwmode_{mode}")])
+    btns.append([InlineKeyboardButton("◀️ 返回设置中心", callback_data="menu_settings")])
+    return InlineKeyboardMarkup(btns)
+
+
+def settings_dedupe_keyboard(current: int) -> InlineKeyboardMarkup:
+    """去重时间窗口选择菜单"""
+    options = [
+        (0, "❌ 不去重"), (3, "3分钟"), (5, "5分钟"), (10, "10分钟"),
+        (30, "30分钟"), (60, "1小时"), (720, "12小时"),
+        (1440, "1天"), (10080, "7天"), (43200, "30天"),
+    ]
+    btns = []
+    row = []
+    for val, label in options:
+        prefix = "✅ " if val == current else ""
+        row.append(InlineKeyboardButton(f"{prefix}{label}", callback_data=f"settings_set_dedupe_{val}"))
+        if len(row) == 2:
+            btns.append(row)
+            row = []
+    if row:
+        btns.append(row)
+    btns.append([InlineKeyboardButton("◀️ 返回设置中心", callback_data="menu_settings")])
+    return InlineKeyboardMarkup(btns)
+
+
+def settings_blacklist_keyboard(cfg: dict) -> InlineKeyboardMarkup:
+    """黑名单关键词管理菜单"""
+    bl_mode = cfg.get("blacklistMatchMode", "fuzzy")
+    bkws = cfg.get("blacklistKeywords") or ""
+    bkw_list = [k.strip() for k in bkws.replace("，", ",").split(",") if k.strip()]
+    mode_label = "🔍 模糊" if bl_mode == "fuzzy" else "🎯 精确"
+    btns = [
+        [InlineKeyboardButton("➕ 设置黑名单关键词（逗号分隔）", callback_data="settings_set_blacklist_kws")],
+        [InlineKeyboardButton(f"匹配模式：{mode_label} → 点击切换", callback_data="settings_toggle_blmode")],
+    ]
+    if bkw_list:
+        preview = "、".join(bkw_list[:5])
+        if len(bkw_list) > 5:
+            preview += f"...等{len(bkw_list)}个"
+        btns.append([InlineKeyboardButton(f"🗑 清空黑名单（当前：{preview}）", callback_data="settings_clear_blacklist")])
+    btns.append([InlineKeyboardButton("◀️ 返回设置中心", callback_data="menu_settings")])
+    return InlineKeyboardMarkup(btns)
+
 
 def main_menu_text(s: dict) -> str:
     plan = PLAN_NAMES.get(s.get("planId", "free"), "免费版")
@@ -878,6 +970,219 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = "📢 **官方频道**\n\n官方频道暂未配置，请稍后再试。"
             btns = [[InlineKeyboardButton("◀️ 返回", callback_data="menu_main")]]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(btns), parse_mode=ParseMode.MARKDOWN)
+    # ─────────────────────────────────────────────────────────────────────────
+    # ── 方案A：设置中心 ──────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # ── 方案A：设置中心 ──────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    elif data == "menu_settings":
+        await q.answer()
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        text = (
+            "\u2699\ufe0f **\u8bbe\u7f6e\u4e2d\u5fc3**\n\n"
+            "\u5728\u8fd9\u91cc\u914d\u7f6e\u60a8\u7684\u76d1\u63a7\u63a8\u9001\u53c2\u6570\uff1a\n\n"
+            "\U0001f511 **\u5339\u914d\u6a21\u5f0f** \u2014 \u63a7\u5236\u5173\u952e\u8bcd\u5982\u4f55\u5339\u914d\u6d88\u606f\n"
+            "\U0001f6ab **\u9ed1\u540d\u5355\u5173\u952e\u8bcd** \u2014 \u547d\u4e2d\u540e\u8df3\u8fc7\u63a8\u9001\n"
+            "\u23f1 **\u53bb\u91cd\u7a97\u53e3** \u2014 \u540c\u4e00\u53d1\u9001\u8005\u7684\u6d88\u606f\u53bb\u91cd\u65f6\u95f4\n"
+            "\u2705/\u274c **\u5f00\u5173\u9879** \u2014 \u5404\u7c7b\u8fc7\u6ee4\u6761\u4ef6\n\n"
+            "\u70b9\u51fb\u4e0b\u65b9\u6309\u9215\u8fdb\u884c\u914d\u7f6e\uff1a"
+        )
+        await q.edit_message_text(
+            text,
+            reply_markup=settings_menu_keyboard(cfg),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    # ── 设置中心：关键词匹配模式 ──
+    elif data == "settings_kw_mode":
+        await q.answer()
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        current = cfg.get("keywordMatchMode", "fuzzy")
+        text = (
+            "\U0001f511 **\u5173\u952e\u8bcd\u5339\u914d\u6a21\u5f0f**\n\n"
+            "\u9009\u62e9\u5173\u952e\u8bcd\u5982\u4f55\u4e0e\u6d88\u606f\u5185\u5bb9\u8fdb\u884c\u5339\u914d\uff1a\n\n"
+            "\U0001f50d \u6a21\u7cca\u5339\u914d \u2014 \u6d88\u606f\u4e2d\u5305\u542b\u5173\u952e\u8bcd\u5373\u547d\u4e2d\uff08\u9ed8\u8ba4\uff09\n"
+            "\U0001f3af \u7cbe\u786e\u5339\u914d \u2014 \u5173\u952e\u8bcd\u4f5c\u4e3a\u5b8c\u6574\u8bcd\u51fa\u73b0\u624d\u547d\u4e2d\n"
+            "\u2b05\ufe0f \u6700\u5de6\u5339\u914d \u2014 \u6d88\u606f\u4ee5\u5173\u952e\u8bcd\u5f00\u5934\u624d\u547d\u4e2d\n"
+            "\u27a1\ufe0f \u6700\u53f3\u5339\u914d \u2014 \u6d88\u606f\u4ee5\u5173\u952e\u8bcd\u7ed3\u5c3e\u624d\u547d\u4e2d"
+        )
+        await q.edit_message_text(
+            text,
+            reply_markup=settings_kw_mode_keyboard(current),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    elif data.startswith("settings_set_kwmode_"):
+        mode = data.replace("settings_set_kwmode_", "")
+        if mode in ("fuzzy", "exact", "leftmost", "rightmost"):
+            await api_post("engine.botSavePushSettings", {"userId": uid, "keywordMatchMode": mode})
+            await q.answer("\u2705 \u5339\u914d\u6a21\u5f0f\u5df2\u66f4\u65b0")
+            cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+            await q.edit_message_text(
+                "\u2699\ufe0f **\u8bbe\u7f6e\u4e2d\u5fc3**\n\n\u914d\u7f6e\u5df2\u4fdd\u5b58\uff0c\u70b9\u51fb\u4e0b\u65b9\u6309\u9215\u7ee7\u7eed\u914d\u7f6e\uff1a",
+                reply_markup=settings_menu_keyboard(cfg),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await q.answer("\u274c \u65e0\u6548\u7684\u5339\u914d\u6a21\u5f0f")
+    # ── 设置中心：去重时间窗口 ──
+    elif data == "settings_dedupe":
+        await q.answer()
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        current = cfg.get("dedupeMinutes", 0)
+        text = (
+            "\u23f1 **\u53bb\u91cd\u65f6\u95f4\u7a97\u53e3**\n\n"
+            "\u8bbe\u7f6e\u540c\u4e00\u53d1\u9001\u8005\u7684\u6d88\u606f\u53bb\u91cd\u65f6\u95f4\uff1a\n\n"
+            "\u5728\u7a97\u53e3\u65f6\u95f4\u5185\uff0c\u540c\u4e00\u53d1\u9001\u8005\u7684\u6d88\u606f\u53ea\u63a8\u9001\u4e00\u6b21\uff0c\n"
+            "\u907f\u514d\u540c\u4e00\u4eba\u7684\u91cd\u590d\u6d88\u606f\u5237\u5c4f\u3002\n\n"
+            "\u9009\u62e9\u53bb\u91cd\u65f6\u95f4\uff1a"
+        )
+        await q.edit_message_text(
+            text,
+            reply_markup=settings_dedupe_keyboard(current),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    elif data.startswith("settings_set_dedupe_"):
+        try:
+            val = int(data.replace("settings_set_dedupe_", ""))
+            await api_post("engine.botSavePushSettings", {"userId": uid, "dedupeMinutes": val})
+            label = {0: "\u4e0d\u53bb\u91cd", 3: "3\u5206\u949f", 5: "5\u5206\u949f", 10: "10\u5206\u949f", 30: "30\u5206\u949f",
+                     60: "1\u5c0f\u65f6", 720: "12\u5c0f\u65f6", 1440: "1\u5929", 10080: "7\u5929", 43200: "30\u5929"}.get(val, f"{val}\u5206\u949f")
+            await q.answer(f"\u2705 \u53bb\u91cd\u7a97\u53e3\u5df2\u8bbe\u4e3a\uff1a{label}")
+            cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+            await q.edit_message_text(
+                "\u2699\ufe0f **\u8bbe\u7f6e\u4e2d\u5fc3**\n\n\u914d\u7f6e\u5df2\u4fdd\u5b58\uff0c\u70b9\u51fb\u4e0b\u65b9\u6309\u9215\u7ee7\u7eed\u914d\u7f6e\uff1a",
+                reply_markup=settings_menu_keyboard(cfg),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        except ValueError:
+            await q.answer("\u274c \u65e0\u6548\u7684\u53bb\u91cd\u65f6\u95f4")
+    # ── 设置中心：黑名单关键词 ──
+    elif data == "settings_blacklist":
+        await q.answer()
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        text = (
+            "\U0001f6ab **\u9ed1\u540d\u5355\u5173\u952e\u8bcd**\n\n"
+            "\u8bbe\u7f6e\u9ed1\u540d\u5355\u5173\u952e\u8bcd\u540e\uff0c\u6d88\u606f\u4e2d\u5305\u542b\u8fd9\u4e9b\u8bcd\u65f6\u5c06\u8df3\u8fc7\u63a8\u9001\u3002\n\n"
+            "**\u4f7f\u7528\u573a\u666f\uff1a** \u8fc7\u6ee4\u5e7f\u544a\u8bcd\u3001\u65e0\u5173\u5185\u5bb9\u7b49\n"
+            "**\u683c\u5f0f\uff1a** \u591a\u4e2a\u5173\u952e\u8bcd\u7528\u9017\u53f7\u5206\u9694\uff0c\u5982\uff1a\u5e7f\u544a,\u63a8\u5e7f,\u4f18\u60e0\n\n"
+            "\u70b9\u51fb\u4e0b\u65b9\u6309\u9215\u8fdb\u884c\u8bbe\u7f6e\uff1a"
+        )
+        await q.edit_message_text(
+            text,
+            reply_markup=settings_blacklist_keyboard(cfg),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    elif data == "settings_set_blacklist_kws":
+        await q.answer()
+        context.user_data[STATE_KEY] = STATE_BLACKLIST_KWS
+        text = (
+            "\U0001f6ab **\u8bbe\u7f6e\u9ed1\u540d\u5355\u5173\u952e\u8bcd**\n\n"
+            "\u8bf7\u53d1\u9001\u9ed1\u540d\u5355\u5173\u952e\u8bcd\uff0c\u591a\u4e2a\u5173\u952e\u8bcd\u7528\u9017\u53f7\u5206\u9694\uff1a\n\n"
+            "\u4f8b\u5982\uff1a`\u5e7f\u544a,\u63a8\u5e7f,\u4f18\u60e0,\u62db\u52df`\n\n"
+            "\u26a0\ufe0f \u53d1\u9001\u540e\u5c06\u66ff\u6362\u73b0\u6709\u9ed1\u540d\u5355"
+        )
+        await q.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\u274c \u53d6\u6d88", callback_data="settings_blacklist")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    elif data == "settings_toggle_blmode":
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        current_mode = cfg.get("blacklistMatchMode", "fuzzy")
+        new_mode = "exact" if current_mode == "fuzzy" else "fuzzy"
+        await api_post("engine.botSavePushSettings", {"userId": uid, "blacklistMatchMode": new_mode})
+        mode_name = "\u7cbe\u786e" if new_mode == "exact" else "\u6a21\u7cca"
+        await q.answer(f"\u2705 \u9ed1\u540d\u5355\u5339\u914d\u6a21\u5f0f\u5df2\u5207\u6362\u4e3a\uff1a{mode_name}")
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        await q.edit_message_text(
+            "\U0001f6ab **\u9ed1\u540d\u5355\u5173\u952e\u8bcd**\n\n\u70b9\u51fb\u4e0b\u65b9\u6309\u9215\u8fdb\u884c\u8bbe\u7f6e\uff1a",
+            reply_markup=settings_blacklist_keyboard(cfg),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    elif data == "settings_clear_blacklist":
+        await api_post("engine.botSavePushSettings", {"userId": uid, "blacklistKeywords": None})
+        await q.answer("\u2705 \u9ed1\u540d\u5355\u5df2\u6e05\u7a7a")
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        await q.edit_message_text(
+            "\U0001f6ab **\u9ed1\u540d\u5355\u5173\u952e\u8bcd**\n\n\u70b9\u51fb\u4e0b\u65b9\u6309\u9215\u8fdb\u884c\u8bbe\u7f6e\uff1a",
+            reply_markup=settings_blacklist_keyboard(cfg),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    # ── 设置中心：开关类设置 ──
+    elif data == "settings_toggle_filterAds":
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        new_val = not cfg.get("filterAds", False)
+        await api_post("engine.botSavePushSettings", {"userId": uid, "filterAds": new_val})
+        status = "\u5df2\u5f00\u542f" if new_val else "\u5df2\u5173\u95ed"
+        await q.answer(f"\u2705 {status} \u8fc7\u6ee4\u5e7f\u544a\u6d88\u606f")
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        await q.edit_message_text(
+            "\u2699\ufe0f **\u8bbe\u7f6e\u4e2d\u5fc3**\n\n\u914d\u7f6e\u5df2\u4fdd\u5b58\uff0c\u70b9\u51fb\u4e0b\u65b9\u6309\u9215\u7ee7\u7eed\u914d\u7f6e\uff1a",
+            reply_markup=settings_menu_keyboard(cfg),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    elif data == "settings_toggle_filterBots":
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        new_val = not cfg.get("filterBots", False)
+        await api_post("engine.botSavePushSettings", {"userId": uid, "filterBots": new_val})
+        status = "\u5df2\u5f00\u542f" if new_val else "\u5df2\u5173\u95ed"
+        await q.answer(f"\u2705 {status} \u8fc7\u6ee4\u673a\u5668\u4eba\u6d88\u606f")
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        await q.edit_message_text(
+            "\u2699\ufe0f **\u8bbe\u7f6e\u4e2d\u5fc3**\n\n\u914d\u7f6e\u5df2\u4fdd\u5b58\uff0c\u70b9\u51fb\u4e0b\u65b9\u6309\u9215\u7ee7\u7eed\u914d\u7f6e\uff1a",
+            reply_markup=settings_menu_keyboard(cfg),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    elif data == "settings_toggle_mediaOnly":
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        new_val = not cfg.get("mediaOnly", False)
+        await api_post("engine.botSavePushSettings", {"userId": uid, "mediaOnly": new_val})
+        status = "\u5df2\u5f00\u542f" if new_val else "\u5df2\u5173\u95ed"
+        await q.answer(f"\u2705 {status} \u4ec5\u63a8\u9001\u542b\u5a92\u4f53\u6d88\u606f")
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        await q.edit_message_text(
+            "\u2699\ufe0f **\u8bbe\u7f6e\u4e2d\u5fc3**\n\n\u914d\u7f6e\u5df2\u4fdd\u5b58\uff0c\u70b9\u51fb\u4e0b\u65b9\u6309\u9215\u7ee7\u7eed\u914d\u7f6e\uff1a",
+            reply_markup=settings_menu_keyboard(cfg),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    elif data == "settings_toggle_includeHistory":
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        new_val = not cfg.get("includeSearchHistory", False)
+        await api_post("engine.botSavePushSettings", {"userId": uid, "includeSearchHistory": new_val})
+        status = "\u5df2\u5f00\u542f" if new_val else "\u5df2\u5173\u95ed"
+        await q.answer(f"\u2705 {status} \u5305\u542b7\u65e5\u641c\u7d22\u5386\u53f2")
+        cfg = await api_get("engine.botGetPushSettings", {"userId": uid}) or {}
+        await q.edit_message_text(
+            "\u2699\ufe0f **\u8bbe\u7f6e\u4e2d\u5fc3**\n\n\u914d\u7f6e\u5df2\u4fdd\u5b58\uff0c\u70b9\u51fb\u4e0b\u65b9\u6309\u9215\u7ee7\u7eed\u914d\u7f6e\uff1a",
+            reply_markup=settings_menu_keyboard(cfg),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    # ── 方案A：常见问题（FAQ）──
+    elif data == "menu_faq":
+        await q.answer()
+        cfg = await api_get("engine.botGetSysConfig", {}) or {}
+        faq_text = cfg.get("faq_text") or (
+            "\u2753 **\u5e38\u89c1\u95ee\u9898**\n\n"
+            "**Q1\uff1a\u5982\u4f55\u5f00\u59cb\u4f7f\u7528\uff1f**\n"
+            "A\uff1a\u6fc0\u6d3b\u5957\u9910 \u2192 \u6dfb\u52a0\u5173\u952e\u8bcd \u2192 \u7ed1\u5b9a\u63a8\u9001\u7fa4\u7ec4\uff0c\u5373\u53ef\u5f00\u59cb\u76d1\u63a7\u3002\n\n"
+            "**Q2\uff1a\u5173\u952e\u8bcd\u5982\u4f55\u8bbe\u7f6e\uff1f**\n"
+            "A\uff1a\u70b9\u51fb\u300c\u5173\u952e\u8bcd\u7ba1\u7406\u300d\u6dfb\u52a0\u8981\u76d1\u63a7\u7684\u8bcd\uff0c\u652f\u6301\u6a21\u7cca/\u7cbe\u786e/\u6700\u5de6/\u6700\u53f3\u5339\u914d\u3002\n\n"
+            "**Q3\uff1a\u63a8\u9001\u5230\u54ea\u91cc\uff1f**\n"
+            "A\uff1a\u9ed8\u8ba4\u63a8\u9001\u5230\u60a8\u7684Bot\u79c1\u804a\uff0c\u4e5f\u53ef\u7ed1\u5b9a\u63a8\u9001\u7fa4\u7ec4\uff08/listen \u547d\u4ee4\uff09\u3002\n\n"
+            "**Q4\uff1a\u4ec0\u4e48\u662f\u9ed1\u540d\u5355\u5173\u952e\u8bcd\uff1f**\n"
+            "A\uff1a\u6d88\u606f\u4e2d\u5305\u542b\u9ed1\u540d\u5355\u8bcd\u65f6\u8df3\u8fc7\u63a8\u9001\uff0c\u7528\u4e8e\u8fc7\u6ee4\u5e7f\u544a\u7b49\u65e0\u5173\u5185\u5bb9\u3002\n\n"
+            "**Q5\uff1a\u53bb\u91cd\u7a97\u53e3\u662f\u4ec0\u4e48\uff1f**\n"
+            "A\uff1a\u540c\u4e00\u53d1\u9001\u8005\u5728\u8bbe\u5b9a\u65f6\u95f4\u5185\u7684\u6d88\u606f\u53ea\u63a8\u9001\u4e00\u6b21\uff0c\u907f\u514d\u5237\u5c4f\u3002\n\n"
+            "**Q6\uff1a\u5957\u9910\u5230\u671f\u540e\u600e\u4e48\u529e\uff1f**\n"
+            "A\uff1a\u70b9\u51fb\u300c\u6fc0\u6d3b\u5957\u9910\u300d\u8f93\u5165\u65b0\u5361\u5bc6\u5373\u53ef\u7eed\u671f\uff0c\u6570\u636e\u4e0d\u4f1a\u4e22\u5931\u3002\n\n"
+            "**Q7\uff1a\u5982\u4f55\u8054\u7cfb\u5ba2\u670d\uff1f**\n"
+            "A\uff1a\u70b9\u51fb\u300c\u8054\u7cfb\u5ba2\u670d\u300d\u6309\u9215\uff0c\u6216\u5728\u8bbe\u7f6e\u4e2d\u67e5\u770b\u5ba2\u670d\u8054\u7cfb\u65b9\u5f0f\u3002"
+        )
+        await q.edit_message_text(
+            faq_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\u25c0\ufe0f \u8fd4\u56de\u4e3b\u83dc\u5355", callback_data="menu_main")]]),
+            parse_mode=ParseMode.MARKDOWN,
+        )
     elif data == "menu_profile":
         await q.answer()
         uid = await ensure_user(update, context)
@@ -1197,6 +1502,37 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="menu_profile")]]),
             )
 
+
+    # ── 方案A：黑名单关键词输入处理 ──
+    elif state == STATE_BLACKLIST_KWS:
+        context.user_data[STATE_KEY] = None
+        raw = update.message.text.strip()
+        # 清理并去重
+        kws = [k.strip() for k in raw.replace("，", ",").split(",") if k.strip()]
+        kws = list(dict.fromkeys(kws))  # 保序去重
+        if not kws:
+            await update.message.reply_text(
+                "❌ 未检测到有效关键词，请重新输入（多个词用逗号分隔）",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="settings_blacklist")]]),
+            )
+            return
+        kw_str = ",".join(kws)
+        result = await api_post("engine.botSavePushSettings", {"userId": uid, "blacklistKeywords": kw_str})
+        if result and result.get("success"):
+            await update.message.reply_text(
+                f"✅ **黑名单关键词已保存**\n\n"
+                f"共 {len(kws)} 个关键词：\n"
+                f"`{kw_str}`\n\n"
+                f"消息中包含以上关键词时将跳过推送。",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ 返回设置中心", callback_data="menu_settings")]]),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            err = (result or {}).get("message", "保存失败")
+            await update.message.reply_text(
+                f"❌ {err}\n\n请重试。",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ 返回", callback_data="settings_blacklist")]]),
+            )
     else:
         # 默认显示主菜单
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}

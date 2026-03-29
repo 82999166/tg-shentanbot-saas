@@ -556,6 +556,21 @@ export const pushSettings = mysqlTable("push_settings", {
   collaborationGroupTitle: varchar("collaborationGroupTitle", { length: 256 }),
   // 推送格式
   pushFormat: mysqlEnum("pushFormat", ["simple", "standard", "detailed"]).default("standard").notNull(),
+  // ===== 方案A：设置中心新增字段 =====
+  // 关键词匹配模式：fuzzy=模糊匹配(默认), exact=精确匹配, leftmost=最左匹配, rightmost=最右匹配
+  keywordMatchMode: mysqlEnum("keywordMatchMode", ["fuzzy", "exact", "leftmost", "rightmost"]).default("fuzzy").notNull(),
+  // 黑名单关键词匹配模式：fuzzy=模糊匹配(默认), exact=精确匹配
+  blacklistMatchMode: mysqlEnum("blacklistMatchMode", ["fuzzy", "exact"]).default("fuzzy").notNull(),
+  // 是否包含7日搜索历史（开启后推送时同步检索近7天消息）
+  includeSearchHistory: boolean("includeSearchHistory").default(false).notNull(),
+  // 去重时间窗口（分钟）：0=不去重, 3,5,10,30,60,720,1440,14400,43200
+  dedupeMinutes: int("dedupeMinutes").default(0).notNull(),
+  // 黑名单关键词（逗号分隔，命中则跳过推送）
+  blacklistKeywords: text("blacklistKeywords"),
+  // 是否过滤机器人消息
+  filterBots: boolean("filterBots").default(false).notNull(),
+  // 是否只推送有图片/媒体的消息
+  mediaOnly: boolean("mediaOnly").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (t) => [index("idx_push_settings_userId").on(t.userId)]);

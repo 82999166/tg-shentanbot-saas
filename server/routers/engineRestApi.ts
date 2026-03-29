@@ -164,6 +164,14 @@ export function registerEngineRestRoutes(app: Router) {
             pushEnabled: pushConfig.pushEnabled ?? true,
             filterAds: pushConfig.filterAds ?? false,
             collabChatId: pushConfig.collaborationGroupId ?? null,
+            // 方案A新增字段
+            keywordMatchMode: pushConfig.keywordMatchMode ?? "fuzzy",
+            blacklistMatchMode: pushConfig.blacklistMatchMode ?? "fuzzy",
+            includeSearchHistory: pushConfig.includeSearchHistory ?? false,
+            dedupeMinutes: pushConfig.dedupeMinutes ?? 0,
+            blacklistKeywords: pushConfig.blacklistKeywords ?? null,
+            filterBots: pushConfig.filterBots ?? false,
+            mediaOnly: pushConfig.mediaOnly ?? false,
           },
         };
       }

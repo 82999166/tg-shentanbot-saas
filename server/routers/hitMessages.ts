@@ -446,6 +446,14 @@ export const hitMessagesRouter = router({
         collaborationGroupId: z.string().optional(),
         collaborationGroupTitle: z.string().optional(),
         pushFormat: z.enum(["simple", "standard", "detailed"]),
+        // 方案A新增字段
+        keywordMatchMode: z.enum(["fuzzy", "exact", "leftmost", "rightmost"]).optional(),
+        blacklistMatchMode: z.enum(["fuzzy", "exact"]).optional(),
+        includeSearchHistory: z.boolean().optional(),
+        dedupeMinutes: z.number().int().min(0).optional(),
+        blacklistKeywords: z.string().optional().nullable(),
+        filterBots: z.boolean().optional(),
+        mediaOnly: z.boolean().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
