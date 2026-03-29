@@ -411,8 +411,8 @@ export default function HitMessages() {
 
       {/* 屏蔽对话框 */}
       <Dialog open={!!blockDialog} onOpenChange={() => setBlockDialog(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <UserX className="h-5 w-5 text-red-500" />
               屏蔽用户
@@ -448,7 +448,7 @@ export default function HitMessages() {
               </p>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setBlockDialog(null)}>
               取消
             </Button>

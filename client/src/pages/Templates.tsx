@@ -203,12 +203,14 @@ export default function Templates() {
 
       {/* 新建模板对话框 */}
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setForm(defaultForm); }}>
-        <DialogContent className="bg-card border-border max-w-lg">
-          <DialogHeader>
+        <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>新建消息模板</DialogTitle>
           </DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
           <FormFields form={form} setForm={setForm} />
-          <DialogFooter>
+          </div>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setOpen(false)} className="border-border">取消</Button>
             <Button onClick={() => createMut.mutate({ name: form.name, content: form.content, weight: form.isDefault ? 10 : 1 })} disabled={!form.name || !form.content || createMut.isPending}>
               {createMut.isPending ? "创建中..." : "创建模板"}
@@ -219,12 +221,14 @@ export default function Templates() {
 
       {/* 编辑模板对话框 */}
       <Dialog open={editOpen} onOpenChange={(v) => { setEditOpen(v); if (!v) { setEditId(null); setForm(defaultForm); } }}>
-        <DialogContent className="bg-card border-border max-w-lg">
-          <DialogHeader>
+        <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>编辑消息模板</DialogTitle>
           </DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
           <FormFields form={form} setForm={setForm} />
-          <DialogFooter>
+          </div>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setEditOpen(false)} className="border-border">取消</Button>
             <Button onClick={() => updateMut.mutate({ id: editId!, name: form.name, content: form.content, weight: form.isDefault ? 10 : 1 })} disabled={!form.name || !form.content || updateMut.isPending}>
               {updateMut.isPending ? "保存中..." : "保存修改"}

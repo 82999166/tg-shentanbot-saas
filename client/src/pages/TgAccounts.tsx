@@ -444,14 +444,15 @@ export default function TgAccounts() {
 
       {/* ─── 批量导入 Session Dialog ────────────────────────────────────────── */}
       <Dialog open={addMode === "session_bulk"} onOpenChange={(o) => { if (!o) closeDialog(); }}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-5 h-5 text-cyan-400" /> 批量导入 Session
             </DialogTitle>
             <DialogDescription className="text-slate-400">支持文本粘贴或文件上传，单次最多导入 100 个账号</DialogDescription>
           </DialogHeader>
 
+          <div className="flex-1 overflow-y-auto min-h-0">
           {importStep === "input" && (
             <div className="space-y-4">
               <Tabs defaultValue="text" className="w-full">
@@ -566,7 +567,8 @@ export default function TgAccounts() {
             </div>
           )}
 
-          <DialogFooter className="gap-2">
+          </div>
+          <DialogFooter className="gap-2 shrink-0">
             <Button variant="ghost" onClick={closeDialog} className="text-slate-400 hover:text-white">
               {importStep === "done" ? "关闭" : "取消"}
             </Button>

@@ -266,7 +266,7 @@ export default function GroupSubmissions() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setSubmitDialog(false)}>取消</Button>
             <Button
               onClick={() =>
@@ -286,8 +286,8 @@ export default function GroupSubmissions() {
 
       {/* 拒绝对话框 */}
       <Dialog open={!!rejectDialog} onOpenChange={() => setRejectDialog(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>填写拒绝原因</DialogTitle>
           </DialogHeader>
           <Textarea
@@ -296,7 +296,7 @@ export default function GroupSubmissions() {
             onChange={(e) => setRejectReason(e.target.value)}
             rows={3}
           />
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setRejectDialog(null)}>取消</Button>
             <Button
               variant="destructive"

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, XCircle, Users, Eye, ArrowUpFromLine, Zap, Upload, Download, Copy, FileText } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, XCircle, Users, Eye, ArrowUpFromLine, Zap, Upload, Download, Copy, FileText, File } from "lucide-react";
 
 export default function AdminGroups() {
   const [addDialog, setAddDialog] = useState(false);
@@ -35,12 +35,15 @@ export default function AdminGroups() {
   const [viewStatusGroupId, setViewStatusGroupId] = useState<number | null>(null);
 
   // 批量导入状态
+  const [batchTab, setBatchTab] = useState<"paste" | "file">("paste");
   const [batchText, setBatchText] = useState("");
   const [batchParsed, setBatchParsed] = useState<string[]>([]);
   const [batchStep, setBatchStep] = useState<"input" | "preview" | "done">("input");
   const [batchResult, setBatchResult] = useState<{ added: number; skipped: number; failed: number } | null>(null);
   const [batchProgress, setBatchProgress] = useState(0);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
+  const [fileInfo, setFileInfo] = useState<{ name: string; count: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 导出状态
   const [onlyActive, setOnlyActive] = useState(true);
@@ -129,6 +132,21 @@ export default function AdminGroups() {
       );
   }
 
+  // 处理文件上传
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setBatchText(text);
+      const count = parseBatchText(text).length;
+      setFileInfo({ name: file.name, count });
+      toast.success(`已读取文件「${file.name}」，识别到 ${count} 个群组链接`);
+    };
+    reader.readAsText(file, "utf-8");
+  }
+
   function handleBatchPreview() {
     const parsed = parseBatchText(batchText);
     if (parsed.length === 0) {
@@ -167,6 +185,9 @@ export default function AdminGroups() {
     setBatchStep("input");
     setBatchResult(null);
     setBatchProgress(0);
+    setBatchTab("paste");
+    setFileInfo(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   // 导出功能
@@ -419,11 +440,11 @@ export default function AdminGroups() {
 
         {/* 添加群组对话框 */}
         <Dialog open={addDialog} onOpenChange={setAddDialog}>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>添加公共监控群组</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 py-2">
+            <div className="space-y-4 py-2 overflow-y-auto flex-1">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">群组 ID / 链接 <span className="text-destructive">*</span></label>
                 <Input
@@ -452,7 +473,7 @@ export default function AdminGroups() {
                 />
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="shrink-0">
               <Button variant="outline" onClick={() => setAddDialog(false)}>取消</Button>
               <Button
                 onClick={() => {
@@ -476,8 +497,8 @@ export default function AdminGroups() {
 
         {/* 批量导入对话框 */}
         <Dialog open={batchDialog} onOpenChange={(o) => { if (!o) closeBatchDialog(); }}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
+          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+            <DialogHeader className="shrink-0">
               <DialogTitle className="flex items-center gap-2">
                 <Upload className="w-5 h-5 text-blue-400" />
                 批量导入群组链接
@@ -487,109 +508,169 @@ export default function AdminGroups() {
               </DialogDescription>
             </DialogHeader>
 
-            {batchStep === "input" && (
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">群组链接列表</label>
-                  <Textarea
-                    placeholder={`每行一个，支持以下格式：\nhttps://t.me/groupname\n@groupusername\n-1001234567890\nt.me/groupname`}
-                    value={batchText}
-                    onChange={(e) => setBatchText(e.target.value)}
-                    className="min-h-[200px] font-mono text-sm"
-                  />
-                  {batchText && (
-                    <p className="text-xs text-green-400">
-                      已输入 {batchText.split(/[\n,，;；\s]+/).filter(s => s.trim()).length} 行，点击预览查看识别结果
+            {/* 内容区域：可滚动 */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {batchStep === "input" && (
+                <div className="space-y-4 pb-2">
+                  {/* Tab 切换：粘贴 / 文件 */}
+                  <div className="flex border border-border rounded-lg overflow-hidden">
+                    <button
+                      className={`flex-1 py-2 text-sm font-medium flex items-center justify-center gap-1.5 transition-colors ${batchTab === "paste" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50 text-muted-foreground"}`}
+                      onClick={() => { setBatchTab("paste"); setFileInfo(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                    >
+                      <FileText className="w-4 h-4" />
+                      粘贴链接
+                    </button>
+                    <button
+                      className={`flex-1 py-2 text-sm font-medium flex items-center justify-center gap-1.5 transition-colors ${batchTab === "file" ? "bg-primary text-primary-foreground" : "hover:bg-muted/50 text-muted-foreground"}`}
+                      onClick={() => setBatchTab("file")}
+                    >
+                      <File className="w-4 h-4" />
+                      文件导入
+                    </button>
+                  </div>
+
+                  {batchTab === "paste" ? (
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">群组链接列表</label>
+                      <Textarea
+                        placeholder={`每行一个，支持以下格式：\nhttps://t.me/groupname\n@groupusername\n-1001234567890\nt.me/groupname`}
+                        value={batchText}
+                        onChange={(e) => setBatchText(e.target.value)}
+                        className="min-h-[180px] max-h-[300px] font-mono text-sm resize-y"
+                      />
+                      {batchText && (
+                        <p className="text-xs text-green-400">
+                          已输入 {batchText.split(/[\n,，;；\s]+/).filter(s => s.trim()).length} 行，点击预览查看识别结果
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <label className="text-sm font-medium">选择文件</label>
+                      <div
+                        className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/20 transition-colors"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <File className="w-10 h-10 mx-auto text-muted-foreground/50 mb-3" />
+                        <p className="text-sm font-medium">点击选择文件或拖拽到此处</p>
+                        <p className="text-xs text-muted-foreground mt-1">支持 .txt、.csv 格式，每行一个群组链接</p>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".txt,.csv,.text"
+                          className="hidden"
+                          onChange={handleFileChange}
+                        />
+                      </div>
+                      {fileInfo && (
+                        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 flex items-center gap-3">
+                          <FileText className="w-5 h-5 text-green-400 shrink-0" />
+                          <div>
+                            <p className="text-sm font-medium text-green-400">{fileInfo.name}</p>
+                            <p className="text-xs text-muted-foreground">识别到 {fileInfo.count} 个有效群组链接</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="bg-muted/30 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+                    <p className="font-medium text-foreground">支持的格式：</p>
+                    <p>• Telegram 链接：https://t.me/groupname 或 t.me/groupname</p>
+                    <p>• 用户名格式：@groupname</p>
+                    <p>• 数字 ID：-1001234567890</p>
+                    <p>• 分隔符：换行、逗号、分号均可</p>
+                  </div>
+                </div>
+              )}
+
+              {batchStep === "preview" && (
+                <div className="space-y-4 pb-2">
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+                    <p className="text-sm font-medium text-blue-400">
+                      识别到 {batchParsed.length} 个群组，确认后开始批量添加
                     </p>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-1 border border-border rounded-lg p-2">
+                    {batchParsed.map((id, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm px-2 py-1 rounded hover:bg-muted/30">
+                        <span className="text-muted-foreground w-6 text-right shrink-0">{i + 1}.</span>
+                        <span className="font-mono">{id}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {isBatchRunning && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>正在导入...</span>
+                        <span>{batchProgress}%</span>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-2">
+                        <div
+                          className="bg-blue-500 h-2 rounded-full transition-all"
+                          style={{ width: `${batchProgress}%` }}
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
-                <div className="bg-muted/30 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
-                  <p className="font-medium text-foreground">支持的格式：</p>
-                  <p>• Telegram 链接：https://t.me/groupname 或 t.me/groupname</p>
-                  <p>• 用户名格式：@groupname</p>
-                  <p>• 数字 ID：-1001234567890</p>
-                  <p>• 分隔符：换行、逗号、分号均可</p>
+              )}
+
+              {batchStep === "done" && batchResult && (
+                <div className="space-y-4 pb-2">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+                      <p className="text-2xl font-bold text-green-400">{batchResult.added}</p>
+                      <p className="text-xs text-muted-foreground mt-1">新增成功</p>
+                    </div>
+                    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
+                      <p className="text-2xl font-bold text-yellow-400">{batchResult.skipped}</p>
+                      <p className="text-xs text-muted-foreground mt-1">已存在跳过</p>
+                    </div>
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                      <p className="text-2xl font-bold text-red-400">{batchResult.failed}</p>
+                      <p className="text-xs text-muted-foreground mt-1">导入失败</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground text-center">
+                    新增的群组已加入公共池，系统 TG 账号将自动申请加入这些群组
+                  </p>
                 </div>
-                <DialogFooter>
+              )}
+            </div>
+
+            {/* Footer 固定在底部，不随内容滚动 */}
+            <DialogFooter className="shrink-0 border-t border-border pt-4 mt-2">
+              {batchStep === "input" && (
+                <>
                   <Button variant="outline" onClick={closeBatchDialog}>取消</Button>
                   <Button onClick={handleBatchPreview} disabled={!batchText.trim()}>
                     预览识别结果
                   </Button>
-                </DialogFooter>
-              </div>
-            )}
-
-            {batchStep === "preview" && (
-              <div className="space-y-4">
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
-                  <p className="text-sm font-medium text-blue-400">
-                    识别到 {batchParsed.length} 个群组，确认后开始批量添加
-                  </p>
-                </div>
-                <div className="max-h-60 overflow-y-auto space-y-1 border border-border rounded-lg p-2">
-                  {batchParsed.map((id, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm px-2 py-1 rounded hover:bg-muted/30">
-                      <span className="text-muted-foreground w-6 text-right shrink-0">{i + 1}.</span>
-                      <span className="font-mono">{id}</span>
-                    </div>
-                  ))}
-                </div>
-                {isBatchRunning && (
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>正在导入...</span>
-                      <span>{batchProgress}%</span>
-                    </div>
-                    <div className="w-full bg-muted rounded-full h-2">
-                      <div
-                        className="bg-blue-500 h-2 rounded-full transition-all"
-                        style={{ width: `${batchProgress}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-                <DialogFooter>
+                </>
+              )}
+              {batchStep === "preview" && (
+                <>
                   <Button variant="outline" onClick={() => setBatchStep("input")} disabled={isBatchRunning}>
                     返回修改
                   </Button>
                   <Button onClick={handleBatchImport} disabled={isBatchRunning}>
                     {isBatchRunning ? `导入中 ${batchProgress}%...` : `确认导入 ${batchParsed.length} 个群组`}
                   </Button>
-                </DialogFooter>
-              </div>
-            )}
-
-            {batchStep === "done" && batchResult && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
-                    <p className="text-2xl font-bold text-green-400">{batchResult.added}</p>
-                    <p className="text-xs text-muted-foreground mt-1">新增成功</p>
-                  </div>
-                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
-                    <p className="text-2xl font-bold text-yellow-400">{batchResult.skipped}</p>
-                    <p className="text-xs text-muted-foreground mt-1">已存在跳过</p>
-                  </div>
-                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                    <p className="text-2xl font-bold text-red-400">{batchResult.failed}</p>
-                    <p className="text-xs text-muted-foreground mt-1">导入失败</p>
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground text-center">
-                  新增的群组已加入公共池，系统 TG 账号将自动申请加入这些群组
-                </p>
-                <DialogFooter>
-                  <Button onClick={closeBatchDialog}>完成</Button>
-                </DialogFooter>
-              </div>
-            )}
+                </>
+              )}
+              {batchStep === "done" && (
+                <Button onClick={closeBatchDialog}>完成</Button>
+              )}
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
         {/* 导出群组链接对话框 */}
         <Dialog open={exportDialog} onOpenChange={setExportDialog}>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
+          <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+            <DialogHeader className="shrink-0">
               <DialogTitle className="flex items-center gap-2">
                 <Download className="w-5 h-5 text-cyan-400" />
                 导出公共群组链接
@@ -598,7 +679,7 @@ export default function AdminGroups() {
                 导出系统公共群组池中的所有群组链接，支持复制和下载
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
+            <div className="space-y-4 flex-1 overflow-y-auto min-h-0">
               <div className="flex items-center gap-3">
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                   <input
@@ -665,7 +746,7 @@ export default function AdminGroups() {
                 </>
               )}
             </div>
-            <DialogFooter>
+            <DialogFooter className="shrink-0">
               <Button variant="outline" onClick={() => setExportDialog(false)}>关闭</Button>
             </DialogFooter>
           </DialogContent>
@@ -673,11 +754,11 @@ export default function AdminGroups() {
 
         {/* 账号加群状态对话框 */}
         <Dialog open={viewStatusGroupId !== null} onOpenChange={() => setViewStatusGroupId(null)}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
+          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+            <DialogHeader className="shrink-0">
               <DialogTitle>账号加群状态</DialogTitle>
             </DialogHeader>
-            <div className="py-2">
+            <div className="py-2 flex-1 overflow-y-auto min-h-0">
               {statusLoading ? (
                 <div className="text-center py-6 text-muted-foreground">加载中...</div>
               ) : joinStatus.length === 0 ? (
@@ -721,7 +802,7 @@ export default function AdminGroups() {
                 </Table>
               )}
             </div>
-            <DialogFooter>
+            <DialogFooter className="shrink-0">
               <Button variant="outline" onClick={() => setViewStatusGroupId(null)}>关闭</Button>
             </DialogFooter>
           </DialogContent>
