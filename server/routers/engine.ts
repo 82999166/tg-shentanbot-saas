@@ -687,6 +687,16 @@ export const engineRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // ── 去重检查：同一用户不允许添加重复关键词（不区分大小写）──
+      const existing = await db.select({ id: keywords.id }).from(keywords)
+        .where(and(
+          eq(keywords.userId, input.userId),
+          sql`LOWER(${keywords.keyword}) = LOWER(${input.keyword})`,
+          eq(keywords.isActive, true),
+        )).limit(1);
+      if (existing.length > 0) {
+        return { success: false, duplicate: true, message: "关键词已存在" };
+      }
       await db.insert(keywords).values({
         userId: input.userId,
         keyword: input.keyword,

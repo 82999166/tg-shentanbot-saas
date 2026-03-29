@@ -331,13 +331,20 @@ async def cmd_kw(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     added = []
+    duplicates = []
     for kw in context.args[:remaining]:
         r = await api_post("engine.botAddKeyword", {"userId": uid, "keyword": kw, "matchType": "contains"})
         if r and r.get("success"):
             added.append(kw)
-    msg = f"✅ 成功添加 {len(added)} 个关键词：\n" + "\n".join(f"  • `{k}`" for k in added)
+        elif r and r.get("duplicate"):
+            duplicates.append(kw)
+    msg = (f"✅ 成功添加 {len(added)} 个关键词：\n" + "\n".join(f"  • `{k}`" for k in added)) if added else ""
+    if duplicates:
+        msg += ("\n\n" if msg else "") + f"⚠️ 以下关键词已存在（跳过）：\n" + "\n".join(f"  • `{k}`" for k in duplicates)
+    if not msg:
+        msg = "❌ 未添加任何关键词"
     if len(context.args) > remaining:
-        msg += f"\n\n⚠️ 仅添加了 {remaining} 个（套餐限制）"
+        msg += f"\n\n⚠️ 仅处理了 {remaining} 个（套餐限制）"
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 # ─── /template ────────────────────────────────────────────────────────────────
@@ -1281,13 +1288,20 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"⚠️ 关键词已达上限，请升级套餐")
             return
         added = []
+        duplicates = []
         for kw in raw[:remaining]:
             r = await api_post("engine.botAddKeyword", {"userId": uid, "keyword": kw, "matchType": "contains"})
             if r and r.get("success"):
                 added.append(kw)
-        msg = f"✅ 成功添加 {len(added)} 个关键词：\n" + "\n".join(f"  • `{k}`" for k in added)
+            elif r and r.get("duplicate"):
+                duplicates.append(kw)
+        msg = (f"✅ 成功添加 {len(added)} 个关键词：\n" + "\n".join(f"  • `{k}`" for k in added)) if added else ""
+        if duplicates:
+            msg += ("\n\n" if msg else "") + f"⚠️ 以下关键词已存在（跳过）：\n" + "\n".join(f"  • `{k}`" for k in duplicates)
+        if not msg:
+            msg = "❌ 未添加任何关键词"
         if len(raw) > remaining:
-            msg += f"\n\n⚠️ 仅添加了 {remaining} 个（套餐限制）"
+            msg += f"\n\n⚠️ 仅处理了 {remaining} 个（套餐限制）"
         await update.message.reply_text(
             msg,
             reply_markup=InlineKeyboardMarkup([[
