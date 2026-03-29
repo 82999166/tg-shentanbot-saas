@@ -775,7 +775,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
         plan = PLAN_NAMES.get(s.get("planId", "free"), "免费版")
         limits = s.get("limits", {})
-        exp = str(s.get("planExpiresAt", ""))[:10] or "永久有效"
+        _raw_exp = s.get("planExpiresAt"); exp = str(_raw_exp)[:10] if _raw_exp else "永久有效"
         await q.edit_message_text(
             f"💎 **我的套餐**\n\n当前：**{plan}**\n有效期：{exp}\n\n"
             f"🔑 关键词：{s.get('keywordCount',0)}/{limits.get('maxKeywords',10)}\n"
@@ -913,7 +913,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
         plan = PLAN_NAMES.get(s.get("planId", "free"), "免费版")
-        exp = str(s.get("planExpiresAt", ""))[:10] or "永久有效"
+        _raw_exp = s.get("planExpiresAt"); exp = str(_raw_exp)[:10] if _raw_exp else "永久有效"
         await q.edit_message_text(
             f"⏰ **套餐到期时间**\n\n当前套餐：**{plan}**\n到期时间：**{exp}**\n\n"
             f"如需续费或升级，请点击「🎟 激活套餐」输入卡密。",
