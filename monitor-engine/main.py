@@ -397,10 +397,13 @@ async def send_bot_notification(
                 resp = await r.text()
                 if r.status != 200:
                     logger.warning(f"[BotNotify] 推送失败 {r.status}: {resp[:200]}")
+                    return False
                 else:
-                    logger.info(f"[BotNotify] 推送成功, resp_keys={list(__import__("json").loads(resp).get("result",{}).keys()) if r.status==200 else []}")
+                    logger.info(f"[BotNotify] 推送成功, resp_keys={list(__import__('json').loads(resp).get('result',{}).keys()) if r.status==200 else []}")
+                    return True
     except Exception as e:
         logger.warning(f"[BotNotify] 推送异常: {e}")
+        return False
 
 
 async def update_account_health(account_id: int, delta: int, status: str = None, reason: str = None):
@@ -670,40 +673,48 @@ async def _handle_match(
     # ── 推送去重：botChatId 和 collabChatId 相同时只推一次 ────────────────────
     # 优先使用 collabChatId（带完整按钮），如果两者不同则都推
     already_pushed_to: set = set()
-
+    _notify_kwargs = dict(
+        sender_username=sender_username,
+        sender_tg_id=sender_tg_id,
+        matched_keyword=matched_keywords[0]["pattern"],
+        group_name=chat_title,
+        group_username=chat_username,
+        message_text=text,
+        sender_name=sender_name,
+        hit_record_id=hit_record_id,
+        dm_status="queued" if dm_will_send else "disabled",
+        chat_id=str(chat_id),
+        message_id=message_id,
+        owner_user_id=user_id,
+    )
     if collab_chat_id_str and BOT_TOKEN:
-        # 使用 Bot API 推送到协作群（带完整按钮）
+        # 优先推送到协作群（带完整按钮）
         try:
-            await send_bot_notification(
-                bot_chat_id=str(collab_chat_id_str),
-                sender_username=sender_username,
-                sender_tg_id=sender_tg_id,
-                matched_keyword=matched_keywords[0]["pattern"],
-                group_name=chat_title,
-                group_username=chat_username,
-                message_text=text,
-                sender_name=sender_name,
-                hit_record_id=hit_record_id,
-                dm_status="queued" if dm_will_send else "disabled",
-                chat_id=str(chat_id),
-                message_id=message_id,
-                owner_user_id=user_id,
+            collab_ok = await send_bot_notification(
+                bot_chat_id=str(collab_chat_id_str), **_notify_kwargs
             )
-            already_pushed_to.add(str(collab_chat_id_str))
         except Exception as e:
-            logger.warning(f"[CollabPush] 协作群推送失败: {e}")
+            logger.warning(f"[CollabPush] 协作群推送异常: {e}")
+            collab_ok = False
+        if collab_ok:
+            already_pushed_to.add(str(collab_chat_id_str))
+        else:
+            # 协作群推送失败 → 自动降级到用户私聊
+            _fallback_id = str(bot_chat_id) if bot_chat_id and str(bot_chat_id) != str(collab_chat_id_str) else None
+            if _fallback_id:
+                logger.info(f"[CollabPush] 协作群推送失败，降级到私聊 {_fallback_id}")
+                try:
+                    await send_bot_notification(bot_chat_id=_fallback_id, **_notify_kwargs)
+                    already_pushed_to.add(_fallback_id)
+                except Exception as e2:
+                    logger.warning(f"[CollabPush] 降级私聊推送也失败: {e2}")
+            else:
+                logger.warning(f"[CollabPush] 协作群推送失败且无可用私聊 fallback (collab={collab_chat_id_str}, bot={bot_chat_id})")
 
     if bot_chat_id and str(bot_chat_id) not in already_pushed_to:
         # botChatId 与 collabChatId 不同时才额外推送，避免重复
         await send_bot_notification(
-            bot_chat_id=str(bot_chat_id), sender_username=sender_username,
-            sender_tg_id=sender_tg_id, matched_keyword=matched_keywords[0]["pattern"],
-            group_name=chat_title, group_username=chat_username, message_text=text,
-            sender_name=sender_name, hit_record_id=hit_record_id,
-            dm_status="queued" if dm_will_send else "disabled",
-            chat_id=str(chat_id),
-            message_id=message_id,
-            owner_user_id=user_id,
+            bot_chat_id=str(bot_chat_id), **_notify_kwargs
         )
 
     for kw in matched_keywords:
@@ -1169,6 +1180,178 @@ async def join_public_groups(worker: AccountWorker, account_id: int):
     )
 
 
+async def scrape_groups_task():
+    """群组采集任务：轮询 pending 任务，调用 TDLib searchPublicChats 采集群组"""
+    SCRAPE_INTERVAL = 60  # 每 60 秒轮询一次待执行任务
+    while True:
+        try:
+            # 选一个活跃的 monitor 账号来执行采集
+            worker = None
+            for w in active_workers.values():
+                if w.is_running and w.client:
+                    worker = w
+                    break
+            if not worker:
+                await asyncio.sleep(SCRAPE_INTERVAL)
+                continue
+
+            # 查询待执行任务
+            tasks = await api.get("/engine/scrape-tasks")
+            if not tasks:
+                await asyncio.sleep(SCRAPE_INTERVAL)
+                continue
+
+            for task in tasks:
+                task_id = task.get("id")
+                keywords = task.get("keywords", [])
+                min_members = task.get("minMemberCount", 1000)
+                max_results = task.get("maxResults", 50)
+
+                if not task_id or not keywords:
+                    continue
+
+                logger.info(f"[Scrape] 开始采集任务 #{task_id}，关键词: {keywords}")
+
+                # 标记任务开始运行
+                await api.post(f"/engine/scrape-task/{task_id}/start", {})
+
+                all_results = []
+                try:
+                    for kw in keywords:
+                        try:
+                            # 调用 TDLib searchPublicChats
+                            search_result = await worker.client.invoke({
+                                "@type": "searchPublicChats",
+                                "query": kw
+                            })
+
+                            if not search_result:
+                                continue
+
+                            # 解析返回的群组列表
+                            def _get(obj, key, default=None):
+                                if hasattr(obj, key):
+                                    return getattr(obj, key, default)
+                                elif isinstance(obj, dict):
+                                    return obj.get(key, default)
+                                return default
+
+                            # searchPublicChats 返回 Chats 对象，包含 chat_ids 列表
+                            chat_ids = _get(search_result, "chat_ids") or _get(search_result, "chatIds") or []
+                            if not chat_ids and hasattr(search_result, '__iter__'):
+                                chat_ids = list(search_result)
+
+                            logger.info(f"[Scrape] 关键词 '{kw}' 搜索到 {len(chat_ids)} 个群组")
+
+                            kw_count = 0
+                            for chat_id in chat_ids:
+                                if kw_count >= max_results:
+                                    break
+                                try:
+                                    # 获取群组详细信息
+                                    chat_info = await worker.client.invoke({
+                                        "@type": "getChat",
+                                        "chat_id": chat_id
+                                    })
+                                    if not chat_info:
+                                        continue
+
+                                    title = _get(chat_info, "title", "") or ""
+                                    chat_type_obj = _get(chat_info, "type", {})
+                                    type_name = (_get(chat_type_obj, "@type") or type(chat_type_obj).__name__) if chat_type_obj else ""
+
+                                    # 确定群组类型
+                                    if "channel" in type_name.lower():
+                                        group_type = "channel"
+                                    elif "supergroup" in type_name.lower():
+                                        group_type = "supergroup"
+                                    elif "basic" in type_name.lower():
+                                        group_type = "group"
+                                    else:
+                                        group_type = "group"
+
+                                    # 获取 username 和成员数
+                                    username = ""
+                                    member_count = 0
+                                    description = ""
+
+                                    if "supergroup" in type_name.lower():
+                                        sg_id = _get(chat_type_obj, "supergroup_id", 0)
+                                        if sg_id:
+                                            sg_info = await worker.client.invoke({
+                                                "@type": "getSupergroup",
+                                                "supergroup_id": sg_id
+                                            })
+                                            if sg_info:
+                                                username = _get(sg_info, "username", "") or ""
+                                                member_count = _get(sg_info, "member_count", 0) or 0
+                                            # 获取群组简介
+                                            try:
+                                                sg_full = await worker.client.invoke({
+                                                    "@type": "getSupergroupFullInfo",
+                                                    "supergroup_id": sg_id
+                                                })
+                                                if sg_full:
+                                                    description = _get(sg_full, "description", "") or ""
+                                                    if not member_count:
+                                                        member_count = _get(sg_full, "member_count", 0) or 0
+                                            except Exception:
+                                                pass
+
+                                    # 成员数过滤
+                                    if member_count < min_members:
+                                        logger.debug(f"[Scrape] 跳过 {title}({username}): 成员数 {member_count} < {min_members}")
+                                        continue
+
+                                    group_id = f"@{username}" if username else str(chat_id)
+
+                                    all_results.append({
+                                        "keyword": kw,
+                                        "groupId": group_id,
+                                        "groupTitle": title,
+                                        "groupType": group_type,
+                                        "memberCount": member_count,
+                                        "description": description[:500] if description else "",
+                                        "username": username,
+                                        "realId": str(chat_id),
+                                    })
+                                    kw_count += 1
+                                    logger.info(f"[Scrape] 采集到: {title} ({group_id}) 成员数: {member_count}")
+
+                                    # 防止请求过快
+                                    await asyncio.sleep(0.5)
+
+                                except Exception as e:
+                                    logger.warning(f"[Scrape] 获取群组详情失败 {chat_id}: {e}")
+                                    continue
+
+                            # 关键词间延迟
+                            await asyncio.sleep(2)
+
+                        except Exception as e:
+                            logger.warning(f"[Scrape] 搜索关键词 '{kw}' 失败: {e}")
+                            continue
+
+                    # 任务完成，回写结果
+                    logger.info(f"[Scrape] 任务 #{task_id} 完成，共采集 {len(all_results)} 个群组")
+                    await api.post(f"/engine/scrape-task/{task_id}/finish", {
+                        "status": "done",
+                        "results": all_results,
+                    })
+
+                except Exception as e:
+                    logger.error(f"[Scrape] 任务 #{task_id} 异常: {e}")
+                    await api.post(f"/engine/scrape-task/{task_id}/finish", {
+                        "status": "failed",
+                        "results": all_results,
+                    })
+
+        except Exception as e:
+            logger.error(f"[Scrape] 采集循环异常: {e}")
+
+        await asyncio.sleep(SCRAPE_INTERVAL)
+
+
 async def process_dm_queue():
     while True:
         try:
@@ -1368,7 +1551,7 @@ async def main():
                 os.execv(sys.executable, [sys.executable] + sys.argv)
             logger.info("等待 TG_API_ID 和 TG_API_HASH 配置...")
         return
-    await asyncio.gather(sync_config(), process_dm_queue(), heartbeat(), http_server())
+    await asyncio.gather(sync_config(), process_dm_queue(), heartbeat(), http_server(), scrape_groups_task())
 
 
 if __name__ == "__main__":
