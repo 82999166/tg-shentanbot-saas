@@ -421,7 +421,13 @@ async def handle_test_session(request: web.Request) -> web.Response:
 
         if account_id:
             files_dir = os.path.join(TDLIB_DATA_DIR, f"account_{account_id}")
-            if os.path.exists(files_dir) and os.path.exists(os.path.join(files_dir, "td.binlog")):
+            # 兼容两种目录结构：account_{id}/database/td.binlog 或 account_{id}/td.binlog
+            binlog_paths = [
+                os.path.join(files_dir, "database", "td.binlog"),
+                os.path.join(files_dir, "td.binlog"),
+            ]
+            binlog_exists = any(os.path.exists(p) for p in binlog_paths)
+            if os.path.exists(files_dir) and binlog_exists:
                 return web.json_response({"success": True, "message": "TDLib 数据目录存在", "files_directory": files_dir})
             else:
                 return web.json_response({"success": False, "error": "TDLib 数据目录不存在或未登录"}, status=404)

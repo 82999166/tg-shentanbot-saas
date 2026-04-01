@@ -31,7 +31,7 @@ export const groupScrapeRouter = router({
         name: z.string().min(1).max(128),
         keywords: z.array(z.string().min(1)).min(1),
         minMemberCount: z.number().int().min(0).default(1000),
-        maxResults: z.number().int().min(1).max(200).default(50),
+        maxResults: z.number().int().min(1).max(500).default(50),
         fissionEnabled: z.boolean().default(false),
         fissionDepth: z.number().int().min(1).max(3).default(1),
         fissionMaxPerSeed: z.number().int().min(1).max(50).default(10),
@@ -61,7 +61,7 @@ export const groupScrapeRouter = router({
         name: z.string().min(1).max(128).optional(),
         keywords: z.array(z.string().min(1)).min(1).optional(),
         minMemberCount: z.number().int().min(0).optional(),
-        maxResults: z.number().int().min(1).max(200).optional(),
+        maxResults: z.number().int().min(1).max(500).optional(),
         fissionEnabled: z.boolean().optional(),
         fissionDepth: z.number().int().min(1).max(3).optional(),
         fissionMaxPerSeed: z.number().int().min(1).max(50).optional(),
@@ -237,5 +237,47 @@ export const groupScrapeRouter = router({
         .set({ totalFound: 0, status: "idle" })
         .where(eq(groupScrapeTasks.id, input.taskId));
       return { success: true };
+    }),
+
+  // ── 从群组历史消息中提取 t.me 群组链接 ───────────────────────
+  extractFromGroup: adminProcedure
+    .input(
+      z.object({
+        accountId: z.number().int(),
+        groupUrl: z.string().min(1),
+        limit: z.number().int().min(50).max(5000).default(500),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const engineUrl = process.env.WEB_API_URL
+        ? process.env.WEB_API_URL.replace(/:3002$/, ":8765").replace(/\/api$/, "")
+        : "http://127.0.0.1:8765";
+      const engineSecret = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
+      try {
+        const resp = await fetch(`${engineUrl}/extract-group-links`, {
+          method: "POST",
+          headers: { "X-Engine-Secret": engineSecret, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            account_id: input.accountId,
+            group_url: input.groupUrl,
+            limit: input.limit,
+          }),
+          // @ts-ignore
+          signal: AbortSignal.timeout(120000),
+        });
+        const data = (await resp.json()) as any;
+        if (!resp.ok) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: data.error || `引擎响应 ${resp.status}` });
+        }
+        return {
+          success: true,
+          total: data.total ?? 0,
+          scanned: data.scanned ?? 0,
+          links: (data.links ?? []) as Array<{ url: string; slug: string }>,
+        };
+      } catch (err: any) {
+        if (err instanceof TRPCError) throw err;
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `无法连接引擎: ${err.message}` });
+      }
     }),
 });

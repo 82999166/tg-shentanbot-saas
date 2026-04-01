@@ -100,6 +100,7 @@ export const tgAccounts = mysqlTable("tg_accounts", {
   // 备注
   notes: text("notes"),
   isActive: boolean("isActive").default(true).notNull(),
+  inEngine: boolean("inEngine").default(false).notNull(),  // 是否加入监控引擎
   // 健康告警冷却（防止刷屏）
   lastAlertAt: timestamp("lastAlertAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

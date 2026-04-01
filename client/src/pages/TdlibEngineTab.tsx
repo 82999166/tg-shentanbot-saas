@@ -28,7 +28,7 @@ function HeartbeatCard({ heartbeat }: { heartbeat: any }) {
     );
   }
 
-  const lastSeen = heartbeat.timestamp ? new Date(heartbeat.timestamp) : null;
+  const lastSeen = heartbeat.timestamp ? new Date(heartbeat.timestamp > 1e12 ? heartbeat.timestamp : heartbeat.timestamp * 1000) : null;
   const secondsAgo = lastSeen ? Math.floor((Date.now() - lastSeen.getTime()) / 1000) : null;
   const isOnline = secondsAgo !== null && secondsAgo < 120;
 
@@ -208,7 +208,7 @@ function TdlibFeaturesCard() {
 
 // ── 主组件 ────────────────────────────────────────────────────────
 export default function TdlibEngineTab() {
-  const { data: heartbeatConfig, refetch, isLoading } = trpc.sysConfig.getPublic.useQuery(
+  const { data: heartbeatConfig, refetch, isLoading, isRefetching } = trpc.sysConfig.getPublic.useQuery(
     { key: "engine_last_heartbeat" },
     { refetchInterval: 30_000 }
   );
@@ -239,9 +239,9 @@ export default function TdlibEngineTab() {
           variant="outline"
           className="border-slate-600 text-slate-300 hover:bg-slate-700 h-8"
           onClick={() => refetch()}
-          disabled={isLoading}
+          disabled={isRefetching}
         >
-          <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isLoading ? "animate-spin" : ""}`} />
+          <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefetching ? "animate-spin" : ""}`} />
           刷新
         </Button>
       </div>

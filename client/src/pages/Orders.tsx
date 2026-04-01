@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ShoppingCart, RefreshCw, CheckCircle } from "lucide-react";
 
 export default function Orders() {
-  const { data: orders, refetch } = trpc.payment.adminOrders.useQuery({ limit: 100, offset: 0 });
+  const { data: orders, isRefetching, refetch } = trpc.payment.adminOrders.useQuery({ limit: 100, offset: 0 });
 
   const confirmMutation = trpc.payment.adminConfirmOrder.useMutation({
     onSuccess: (data) => {
@@ -45,8 +45,8 @@ export default function Orders() {
                 <ShoppingCart className="w-4 h-4 text-blue-400" />
                 订单列表
               </CardTitle>
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400" onClick={() => refetch()}>
-                <RefreshCw className="w-3 h-3" />
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400" onClick={() => refetch()} disabled={isRefetching}>
+                <RefreshCw className={`w-3 h-3 ${isRefetching ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </CardHeader>

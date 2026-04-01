@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import {
   Users, Crown, Loader2, Search, Eye, Key, Hash,
   Calendar, Tag, BarChart2, Activity, ChevronDown, ChevronUp,
-  Smartphone, Plus, Trash2, Settings
+  Smartphone, Plus, Trash2, Settings, RefreshCw
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import UserConfigPanel from "@/pages/UserConfigPanel";
@@ -333,7 +333,7 @@ export default function AdminUsers() {
   const [viewUserId, setViewUserId] = useState<number | null>(null);
   const utils = trpc.useUtils();
 
-  const { data: usersData, isLoading: usersLoading } = trpc.admin.users.useQuery({
+  const { data: usersData, isLoading: usersLoading, isRefetching: usersRefetching, refetch: refetchUsers } = trpc.admin.users.useQuery({
     page: userPage,
     pageSize: USER_PAGE_SIZE,
     search: userSearch || undefined,
@@ -365,9 +365,9 @@ export default function AdminUsers() {
             </h1>
             <p className="text-sm text-slate-400 mt-1">管理所有注册用户的套餐、关键词和监控配置</p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => utils.admin.users.invalidate()}
+          <Button variant="outline" size="sm" onClick={() => refetchUsers()} disabled={usersRefetching}
             className="border-slate-600 text-slate-300 hover:bg-slate-700">
-            刷新
+            <RefreshCw className={`w-4 h-4 mr-1 ${usersRefetching ? 'animate-spin' : ''}`} /> 刷新
           </Button>
         </div>
 

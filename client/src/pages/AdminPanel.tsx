@@ -2,7 +2,9 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -13,7 +15,8 @@ import {
   Users, Activity, Crown, Shield, Smartphone, RefreshCw,
   Trash2, CheckCircle2, XCircle, Zap, Loader2, Phone,
   TrendingUp, WifiOff, Wifi, Search, Eye, Key, Hash,
-  Calendar, Plus, Tag, BarChart2, ChevronDown, ChevronUp
+  Calendar, Plus, Tag, BarChart2, ChevronDown, ChevronUp,
+  UserPlus, Clock, Info, Settings2
 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
@@ -408,6 +411,145 @@ function AdminLoginForm() {
 }
 
 // ─── 主页面 ─────────────────────────────────────────────────────────────────────
+
+// ─── 加群配置面板（嵌入AdminPanel使用）──────────────────────────────────────────
+function JoinConfigPanel() {
+  const { data: joinConfig, isLoading } = trpc.sysConfig.getJoinConfig.useQuery(undefined, {
+    refetchInterval: 30000,
+  });
+  const totalCount = joinConfig?.totalGroups ?? 0;
+  const [joinIntervalMin, setJoinIntervalMin] = useState(30);
+  const [joinIntervalMax, setJoinIntervalMax] = useState(60);
+  const [maxGroupsPerAccount, setMaxGroupsPerAccount] = useState(100);
+  const [joinEnabled, setJoinEnabled] = useState(true);
+
+  useEffect(() => {
+    if (joinConfig) {
+      setJoinIntervalMin(joinConfig.joinIntervalMin);
+      setJoinIntervalMax(joinConfig.joinIntervalMax);
+      setMaxGroupsPerAccount(joinConfig.maxGroupsPerAccount);
+      setJoinEnabled(joinConfig.joinEnabled);
+    }
+  }, [joinConfig]);
+
+  const updateJoinConfig = trpc.sysConfig.updateJoinConfig.useMutation({
+    onSuccess: () => { toast.success("自动加群配置已保存"); },
+    onError: (e: any) => { toast.error(e.message); },
+  });
+
+  if (isLoading) {
+    return <div className="text-center py-8 text-slate-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* 统计卡片 */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card className="bg-slate-800/60 border-slate-700">
+          <CardContent className="pt-4 pb-4 text-center">
+            <div className="text-2xl font-bold text-white">{totalCount}</div>
+            <div className="text-xs text-slate-400 mt-1">公共群组总数</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-800/60 border-slate-700">
+          <CardContent className="pt-4 pb-4 text-center">
+            <div className="text-2xl font-bold text-white">{maxGroupsPerAccount}</div>
+            <div className="text-xs text-slate-400 mt-1">每账号上限</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-800/60 border-slate-700">
+          <CardContent className="pt-4 pb-4 text-center">
+            <div className="text-2xl font-bold text-white">{joinIntervalMin}-{joinIntervalMax}s</div>
+            <div className="text-xs text-slate-400 mt-1">当前加群间隔</div>
+          </CardContent>
+        </Card>
+      </div>
+      {/* 配置表单 */}
+      <Card className="bg-slate-800/60 border-slate-700">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base text-white">
+            <Settings2 className="h-5 w-5" /> 加群参数配置
+          </CardTitle>
+          <CardDescription className="text-slate-400">配置监控账号自动加入群组的行为规则</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* 启用开关 */}
+          <div className="flex items-center justify-between p-4 rounded-lg border border-slate-700 bg-slate-900/50">
+            <div className="flex items-center gap-3">
+              <Zap className="h-5 w-5 text-yellow-500" />
+              <div>
+                <Label className="text-sm font-medium text-slate-200">启用自动加群</Label>
+                <p className="text-xs text-slate-400 mt-0.5">引擎启动时自动让监控账号加入所有公共群组</p>
+              </div>
+            </div>
+            <Switch checked={joinEnabled} onCheckedChange={setJoinEnabled} />
+          </div>
+          {/* 加群间隔 */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-slate-400" />
+              <Label className="text-sm font-medium text-slate-200">加群间隔（秒）</Label>
+            </div>
+            <p className="text-xs text-slate-400">每次加群之间的随机等待时间，建议 30-120 秒防封号</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-400">最小间隔（秒）</Label>
+                <Input type="number" min={5} max={3600} value={joinIntervalMin}
+                  onChange={(e) => setJoinIntervalMin(parseInt(e.target.value) || 30)}
+                  className="bg-slate-900 border-slate-600 text-white" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-400">最大间隔（秒）</Label>
+                <Input type="number" min={5} max={3600} value={joinIntervalMax}
+                  onChange={(e) => setJoinIntervalMax(parseInt(e.target.value) || 60)}
+                  className="bg-slate-900 border-slate-600 text-white" />
+              </div>
+            </div>
+          </div>
+          {/* 每账号上限 */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-slate-400" />
+              <Label className="text-sm font-medium text-slate-200">每账号最多加入群组数</Label>
+            </div>
+            <p className="text-xs text-slate-400">单个监控账号最多加入的群组数量，超出部分由其他账号负责</p>
+            <Input type="number" min={1} max={500} value={maxGroupsPerAccount}
+              onChange={(e) => setMaxGroupsPerAccount(parseInt(e.target.value) || 100)}
+              className="bg-slate-900 border-slate-600 text-white" />
+            <p className="text-xs text-slate-400">当前共 {totalCount} 个群组，建议每账号不超过 200 个</p>
+          </div>
+          {/* 保存按钮 */}
+          <div className="pt-2">
+            <Button className="w-full bg-blue-600 hover:bg-blue-700"
+              onClick={() => updateJoinConfig.mutate({ joinIntervalMin, joinIntervalMax, maxGroupsPerAccount, joinEnabled })}
+              disabled={updateJoinConfig.isPending}>
+              {updateJoinConfig.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Settings2 className="h-4 w-4 mr-2" />}
+              保存配置
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+      {/* 操作提示 */}
+      <Card className="border-amber-800 bg-amber-950/20">
+        <CardContent className="pt-4 pb-4">
+          <div className="flex gap-3">
+            <Info className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <div className="space-y-1 text-sm text-amber-300">
+              <p className="font-medium">操作提醒</p>
+              <ul className="space-y-1 list-disc list-inside text-xs">
+                <li>修改配置后，引擎将在下次同步（约 30 秒）时自动应用新设置</li>
+                <li>如需立即生效，可在 TDLib 引擎管理页面手动重启引擎</li>
+                <li>Telegram 对频繁加群有限制，建议最小间隔不低于 30 秒</li>
+                <li>每账号加群数量建议不超过 200 个，避免账号被封</li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function AdminPanel() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
@@ -423,8 +565,8 @@ export default function AdminPanel() {
   }, [user]);
 
   const utils = trpc.useUtils();
-  const { data: stats, isLoading: statsLoading } = trpc.admin.stats.useQuery();
-  const { data: usersData, isLoading: usersLoading } = trpc.admin.users.useQuery({
+  const { data: stats, isLoading: statsLoading, isRefetching: statsRefetching, refetch: refetchStats } = trpc.admin.stats.useQuery();
+  const { data: usersData, isLoading: usersLoading, isRefetching: usersRefetching, refetch: refetchUsers } = trpc.admin.users.useQuery({
     page: userPage,
     pageSize: USER_PAGE_SIZE,
     search: userSearch || undefined,
@@ -432,7 +574,8 @@ export default function AdminPanel() {
   const users = usersData?.users ?? [];
   const usersTotal = usersData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(usersTotal / USER_PAGE_SIZE));
-  const { data: allAccounts = [], isLoading: accountsLoading } = trpc.admin.allTgAccounts.useQuery();
+  const { data: allAccounts = [], isLoading: accountsLoading, isRefetching: accountsRefetching, refetch: refetchAccounts } = trpc.admin.allTgAccounts.useQuery();
+  const isAdminRefetching = statsRefetching || usersRefetching || accountsRefetching;
 
   const updatePlanMut = trpc.admin.updateUserPlan.useMutation({
     onSuccess: () => { toast.success("套餐已更新"); utils.admin.users.invalidate(); },
@@ -448,6 +591,10 @@ export default function AdminPanel() {
   });
   const toggleActiveMut = trpc.tgAccounts.toggleActive.useMutation({
     onSuccess: () => { utils.admin.allTgAccounts.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const syncGroupsMut = trpc.tgAccounts.syncGroups.useMutation({
+    onSuccess: (r) => { toast.success(r.message); utils.admin.allTgAccounts.invalidate(); },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -495,9 +642,9 @@ export default function AdminPanel() {
             </h1>
             <p className="text-sm text-slate-400 mt-1">平台全局管理，仅管理员可见</p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => { utils.admin.stats.invalidate(); utils.admin.users.invalidate(); utils.admin.allTgAccounts.invalidate(); }}
+          <Button variant="outline" size="sm" onClick={() => { refetchStats(); refetchUsers(); refetchAccounts(); }} disabled={isAdminRefetching}
             className="border-slate-600 text-slate-300 hover:bg-slate-700">
-            <RefreshCw className="w-4 h-4 mr-1" /> 刷新
+            <RefreshCw className={`w-4 h-4 mr-1 ${isAdminRefetching ? 'animate-spin' : ''}`} /> 刷新
           </Button>
         </div>
 
@@ -558,6 +705,9 @@ export default function AdminPanel() {
             <TabsTrigger value="users" className="data-[state=active]:bg-slate-700 text-slate-300">
               <Users className="w-4 h-4 mr-2" /> 用户管理
             </TabsTrigger>
+            <TabsTrigger value="join-config" className="data-[state=active]:bg-slate-700 text-slate-300">
+              <UserPlus className="w-4 h-4 mr-2" /> 加群配置
+            </TabsTrigger>
           </TabsList>
 
           {/* ── Tab 1: 监控账号管理 ── */}
@@ -612,6 +762,7 @@ export default function AdminPanel() {
                                 {account.phone && <span><Phone className="w-3 h-3 inline mr-1" />{account.phone}</span>}
                                 <span>所属用户: {account.userName ?? `#${account.userId}`}</span>
                                 <span>今日发信: {account.dailyDmSent ?? 0}</span>
+                <span className="text-cyan-400 font-medium">已加入: {(account as any).joinedGroupCount ?? 0} 群</span>
                                 <span className={`font-medium ${healthColor(score)}`}>健康度: {score}</span>
                                 <span className="text-blue-400 font-mono">
                                   {account.engineType === "tdlib" ? "🚀 TDLib" : "🐍 Pyrogram"}
@@ -620,6 +771,10 @@ export default function AdminPanel() {
                             </div>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
+                            <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-cyan-400" title="同步群组（触发引擎为此账号加入所有公共群组）"
+                              onClick={() => syncGroupsMut.mutate({ id: account.id })}>
+                              {syncGroupsMut.isPending && syncGroupsMut.variables?.id === account.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                            </Button>
                             <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-blue-400" title="测试连接"
                               onClick={() => testConnMut.mutate({ id: account.id })}>
                               {testConnMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
@@ -825,6 +980,10 @@ export default function AdminPanel() {
                 )}
               </Card>
             )}
+          </TabsContent>
+          {/* ── Tab 3: 加群配置 ── */}
+          <TabsContent value="join-config" className="space-y-4">
+            <JoinConfigPanel />
           </TabsContent>
         </Tabs>
       </div>

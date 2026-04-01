@@ -34,7 +34,7 @@ export default function PublicGroupExport() {
   const [searchText, setSearchText] = useState("");
   const [copied, setCopied] = useState(false);
 
-  const { data, isLoading, refetch } = trpc.sysConfig.exportPublicGroupLinks.useQuery(
+  const { data, isLoading, isRefetching, refetch } = trpc.sysConfig.exportPublicGroupLinks.useQuery(
     { onlyActive, format: "links" },
     { refetchOnWindowFocus: false }
   );
@@ -103,9 +103,10 @@ export default function PublicGroupExport() {
             variant="outline"
             size="sm"
             onClick={() => refetch()}
+            disabled={isRefetching}
             className="border-slate-600 text-slate-300 hover:bg-slate-700"
           >
-            <RefreshCw className="w-4 h-4 mr-1" /> 刷新
+            <RefreshCw className={`w-4 h-4 mr-1 ${isRefetching ? 'animate-spin' : ''}`} /> 刷新
           </Button>
         </div>
 

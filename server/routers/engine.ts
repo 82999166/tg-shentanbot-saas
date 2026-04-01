@@ -1182,6 +1182,159 @@ export const engineRouter = router({
       return { hasEmail: email ? true : false, email };
     }),
 
+  // ── 立即同步群组配置（管理后台维护页面使用）────────────────────────────────
+  forceSync: publicProcedure.mutation(async () => {
+    try {
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8765";
+      const engineSecret = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
+      const resp = await fetch(`${engineUrl}/force-sync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Engine-Secret": engineSecret,
+        },
+        body: JSON.stringify({}),
+      });
+      if (!resp.ok) {
+        return { success: false, message: `引擎响应异常: ${resp.status}` };
+      }
+      const data = await resp.json() as any;
+      return { success: true, message: data.message || "已触发立即同步" };
+    } catch (e: any) {
+      return { success: false, message: `无法连接引擎: ${e.message}` };
+    }
+  }),
+
+  // ── 数据库记录统计（管理后台维护页面使用）────────────────────────────────
+  getRecordStats: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { hitRecords: 0, dmQueue: 0, senderHistory: 0, loginAttempts: 0 };
+    const { loginAttempts, senderHistory } = await import("../../drizzle/schema");
+    const [hitCount] = await db.select({ count: sql<number>`count(*)` }).from(hitRecords);
+    const [dmCount] = await db.select({ count: sql<number>`count(*)` }).from(dmQueue);
+    const [senderCount] = await db.select({ count: sql<number>`count(*)` }).from(senderHistory);
+    const [loginCount] = await db.select({ count: sql<number>`count(*)` }).from(loginAttempts);
+    return {
+      hitRecords: Number(hitCount?.count ?? 0),
+      dmQueue: Number(dmCount?.count ?? 0),
+      senderHistory: Number(senderCount?.count ?? 0),
+      loginAttempts: Number(loginCount?.count ?? 0),
+    };
+  }),
+
+  // ── 清理历史数据（管理后台维护页面使用）────────────────────────────────
+  cleanupRecords: publicProcedure
+    .input(
+      z.object({
+        hitRecordsDays: z.number().optional(),
+        dmQueueDays: z.number().optional(),
+        senderHistoryDays: z.number().optional(),
+        loginAttemptsDays: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { loginAttempts, senderHistory } = await import("../../drizzle/schema");
+      const details: Record<string, number> = {};
+      const now = new Date();
+      if (input.hitRecordsDays && input.hitRecordsDays > 0) {
+        const cutoff = new Date(now.getTime() - input.hitRecordsDays * 86400000);
+        const [before] = await db.select({ count: sql<number>`count(*)` }).from(hitRecords).where(sql`${hitRecords.createdAt} < ${cutoff}`);
+        await db.delete(hitRecords).where(sql`${hitRecords.createdAt} < ${cutoff}`);
+        details.hitRecords = Number(before?.count ?? 0);
+      }
+      if (input.dmQueueDays && input.dmQueueDays > 0) {
+        const cutoff = new Date(now.getTime() - input.dmQueueDays * 86400000);
+        const [before] = await db.select({ count: sql<number>`count(*)` }).from(dmQueue).where(sql`${dmQueue.createdAt} < ${cutoff}`);
+        await db.delete(dmQueue).where(sql`${dmQueue.createdAt} < ${cutoff}`);
+        details.dmQueue = Number(before?.count ?? 0);
+      }
+      if (input.senderHistoryDays && input.senderHistoryDays > 0) {
+        const cutoff = new Date(now.getTime() - input.senderHistoryDays * 86400000);
+        const [before] = await db.select({ count: sql<number>`count(*)` }).from(senderHistory).where(sql`${senderHistory.createdAt} < ${cutoff}`);
+        await db.delete(senderHistory).where(sql`${senderHistory.createdAt} < ${cutoff}`);
+        details.senderHistory = Number(before?.count ?? 0);
+      }
+      if (input.loginAttemptsDays && input.loginAttemptsDays > 0) {
+        const cutoff = new Date(now.getTime() - input.loginAttemptsDays * 86400000);
+        const [before] = await db.select({ count: sql<number>`count(*)` }).from(loginAttempts).where(sql`${loginAttempts.createdAt} < ${cutoff}`);
+        await db.delete(loginAttempts).where(sql`${loginAttempts.createdAt} < ${cutoff}`);
+        details.loginAttempts = Number(before?.count ?? 0);
+      }
+      const total = Object.values(details).reduce((a, b) => a + b, 0);
+      return {
+        success: true,
+        message: `已清理 ${total} 条历史记录`,
+        details,
+      };
+    }),
+
+  // ── 一键加群 ──────────────────────────────────────────────────────────────────
+  batchJoinGroups: publicProcedure
+    .input(
+      z.object({
+        accountIds: z.array(z.number()).min(1, "至少选择一个账号"),
+        groupIds: z.array(z.string()).optional(),
+        intervalMin: z.number().min(5).max(300).optional(),
+        intervalMax: z.number().min(5).max(600).optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8765";
+      const engineSecret = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
+      // 从数据库读取 join_interval 配置，优先使用前端传入的值
+      let intervalMin = input.intervalMin;
+      let intervalMax = input.intervalMax;
+      if (intervalMin === undefined || intervalMax === undefined) {
+        try {
+          const db = await getDb();
+          if (db) {
+            const cfgRows = await db.select().from(systemConfig)
+              .where(sql`${systemConfig.configKey} IN ('join_interval_min', 'join_interval_max')`);
+            const cfgMap: Record<string, string> = {};
+            for (const row of cfgRows) cfgMap[row.configKey] = row.configValue ?? "";
+            if (intervalMin === undefined) intervalMin = parseInt(cfgMap["join_interval_min"] || "10", 10);
+            if (intervalMax === undefined) intervalMax = parseInt(cfgMap["join_interval_max"] || "30", 10);
+          }
+        } catch (_) {}
+        if (intervalMin === undefined) intervalMin = 10;
+        if (intervalMax === undefined) intervalMax = 30;
+      }
+      const resp = await fetch(`${engineUrl}/batch-join-groups`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Engine-Secret": engineSecret,
+        },
+        body: JSON.stringify({
+          account_ids: input.accountIds,
+          group_ids: input.groupIds || [],
+          interval_min: intervalMin,
+          interval_max: intervalMax,
+        }),
+        signal: AbortSignal.timeout(600_000),
+      });
+      const data = await resp.json() as {
+        success?: boolean;
+        joined?: number;
+        failed?: number;
+        skipped?: number;
+        results?: Array<{ account_id: number; group_id: string; status: string; real_id?: number; reason?: string }>;
+        error?: string;
+      };
+      if (!data.success) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "批量加群失败" });
+      }
+      return {
+        success: true,
+        joined: data.joined ?? 0,
+        failed: data.failed ?? 0,
+        skipped: data.skipped ?? 0,
+        results: data.results ?? [],
+      };
+    }),
+
 });
 
 // ── 配置查询（独立函数，避免循环引用） ──────────────────────────────────────────────────────────────
@@ -1357,9 +1510,17 @@ function engineRouter_config() {
         groupId: pg.groupId,
         groupTitle: pg.groupTitle,
         isActive: pg.isActive,
+        realId: pg.realId || null,
       })),
       // 全局刷词过滤配置
       globalAntiSpam,
+      // 加群配置
+      joinConfig: {
+        joinEnabled: sysConfigMap["join_enabled"] !== "false",
+        joinIntervalMin: parseInt(sysConfigMap["join_interval_min"] || "30", 10),
+        joinIntervalMax: parseInt(sysConfigMap["join_interval_max"] || "60", 10),
+        maxGroupsPerAccount: parseInt(sysConfigMap["max_groups_per_account"] || "100", 10),
+      },
     };
   });
 }

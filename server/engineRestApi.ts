@@ -44,18 +44,26 @@ export function registerEngineRestRoutes(app: Router) {
       const db = await getDb();
       if (!db) return res.json({ accounts: [], userConfigs: {} });
 
-      // 获取所有系统监控账号（管理员 userId 下的账号，供引擎使用）
+      // 获取系统监控账号：公共群组加群只用管理员账号，私信发送账号全部加载
+      // 先查管理员用户ID列表
+      const adminUsers = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
+      const adminUserIds = adminUsers.map((u: { id: number }) => u.id);
       const accounts = await db
         .select()
         .from(tgAccounts)
         .where(
           and(
             eq(tgAccounts.isActive, true),
-            inArray(tgAccounts.accountRole, ["monitor", "sender", "both"])  // sender 账号也需要加载到引擎以发送私信
+            inArray(tgAccounts.accountRole, ["monitor", "sender", "both"])
           )
         );
+      // 标记每个账号是否属于管理员（用于引擎决定是否参与公共群组加群）
+      const adminAccountIds = new Set(
+        accounts.filter((a: { userId: number }) => adminUserIds.includes(a.userId)).map((a: { id: number }) => a.id)
+      );
 
-      // 新模式：获取所有有关键词或推送设置的用户（不依赖 tgAccounts）
+      // 新模式：获取所有需要生成配置的用户
+      // 包含：有关键词的用户 + 有推送设置的用户 + 有活跃账号的用户（admin 账号服务所有用户）
       const allUsersWithKeywords = await db
         .selectDistinct({ userId: keywords.userId })
         .from(keywords)
@@ -63,9 +71,15 @@ export function registerEngineRestRoutes(app: Router) {
       const allUsersWithPush = await db
         .selectDistinct({ userId: pushSettings.userId })
         .from(pushSettings);
+      // 有活跃账号的用户（包含 admin）也需要生成配置，以便引擎知道账号归属
+      const allUsersWithAccounts = await db
+        .selectDistinct({ userId: tgAccounts.userId })
+        .from(tgAccounts)
+        .where(eq(tgAccounts.isActive, true));
       const allUserIdSet = new Set<number>();
       allUsersWithKeywords.forEach(r => allUserIdSet.add(r.userId));
       allUsersWithPush.forEach(r => allUserIdSet.add(r.userId));
+      allUsersWithAccounts.forEach(r => allUserIdSet.add(r.userId));
       const userIds: number[] = Array.from(allUserIdSet);
       const userConfigs: Record<string, any> = {};
 
@@ -136,9 +150,10 @@ export function registerEngineRestRoutes(app: Router) {
         // 获取用户的 tgUserId（用于 Bot 推送命中通知）
         const userRow = await db.select({ tgUserId: users.tgUserId }).from(users)
           .where(eq(users.id, userId)).limit(1);
-        // 优先使用绑定的推送群组 ID，没有群组时才用个人 TG ID
+        // botChatId 固定使用用户的个人 TG ID（私聊推送）
+        // collabChatId 单独用于协作群推送，两者职责分离，避免重复推送
         const collaborationGroupId = pushConfig.collaborationGroupId || null;
-        const botChatId = collaborationGroupId || userRow[0]?.tgUserId || null;
+        const botChatId = userRow[0]?.tgUserId || null;
 
         userConfigs[String(userId)] = {
           botChatId,
@@ -201,7 +216,7 @@ export function registerEngineRestRoutes(app: Router) {
         maxMsgLen: parseInt(sysConfigMap["anti_spam_max_msg_len"] || "0", 10),
         // 全局消息过滤字段（与前端 Antiban 页面 global_* 配置对应）
         globalMaxMsgLen: parseInt(sysConfigMap["global_max_msg_length"] || "0", 10),
-        filterBot: sysConfigMap["global_filter_bot"] !== "false",
+        filterBot: sysConfigMap["global_filter_bot"] === "true",
         filterAds: sysConfigMap["global_filter_ads"] === "true",
         globalRateWindow: parseInt(sysConfigMap["global_rate_window"] || "0", 10),
         globalRateLimit: parseInt(sysConfigMap["global_rate_limit"] || "0", 10),
@@ -215,12 +230,20 @@ export function registerEngineRestRoutes(app: Router) {
           isActive: a.isActive,
           role: a.accountRole,
           status: a.sessionStatus,
+          isAdminAccount: adminAccountIds.has(a.id),  // 标记是否为管理员账号（用于决定是否加入公共群组）
         })),
         userConfigs,
         // 新模式：公共群组列表（引擎用每个会员的 globalKeywords 匹配这些群组的消息）
         publicGroups: publicGroupsList,
         // 全局反垃圾配置
         globalAntiSpam,
+        // 加群配置
+        joinConfig: {
+          joinEnabled: sysConfigMap["join_enabled"] !== "false",
+          joinIntervalMin: parseInt(sysConfigMap["join_interval_min"] || "30", 10),
+          joinIntervalMax: parseInt(sysConfigMap["join_interval_max"] || "60", 10),
+          maxGroupsPerAccount: parseInt(sysConfigMap["max_groups_per_account"] || "100", 10),
+        },
       });
     } catch (e: any) {
       console.error("[Engine API] config error:", e);
@@ -522,20 +545,38 @@ export function registerEngineRestRoutes(app: Router) {
   // POST /api/engine/heartbeat
   app.post("/api/engine/heartbeat", async (req: Request, res: Response) => {
     if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (db) {
+        const heartbeatData = JSON.stringify({
+          ...req.body,
+          timestamp: Math.floor(Date.now() / 1000),
+        });
+        await db.insert(systemConfig).values({ configKey: "engine_last_heartbeat", configValue: heartbeatData })
+          .onDuplicateKeyUpdate({ set: { configValue: heartbeatData } });
+      }
+    } catch (e) { /* ignore */ }
     res.json({ success: true, serverTime: Date.now() });
   });
 
-  // POST /api/engine/public-group/join-status - 上报监控账号加入公共群组的状态
+  // POST /api/engine/public-group/join-status - 上报监控账号订阅公共群组的状态
+  // status 取值：subscribed（已订阅监控）、not_found（账号未加入该群组）
+  // 兼容旧值：joined → subscribed，failed → not_found
   app.post("/api/engine/public-group/join-status", async (req: Request, res: Response) => {
     if (!checkSecret(req, res)) return;
     try {
       const db = await getDb();
       if (!db) return res.status(500).json({ error: "DB unavailable" });
 
-      const { publicGroupId, monitorAccountId, status, errorMsg, realId } = req.body;
+      const { publicGroupId, monitorAccountId, status: rawStatus, errorMsg, realId } = req.body;
       if (!publicGroupId || !monitorAccountId) {
         return res.status(400).json({ error: "publicGroupId and monitorAccountId are required" });
       }
+
+      // 兼容旧状态值映射：joined → subscribed，failed → not_found
+      const statusMap: Record<string, string> = { joined: "subscribed", failed: "not_found" };
+      const status = statusMap[rawStatus] ?? rawStatus ?? "subscribed";
+      const isSubscribed = status === "subscribed";
 
       // upsert: 先尝试 INSERT，冲突时改为 UPDATE（避免并发竞态条件）
       const now = new Date();
@@ -543,9 +584,9 @@ export function registerEngineRestRoutes(app: Router) {
         await db.insert(publicGroupJoinStatus).values({
           publicGroupId,
           monitorAccountId,
-          status: status || "joined",
+          status,
           errorMsg: errorMsg || null,
-          joinedAt: status === "joined" ? now : null,
+          joinedAt: isSubscribed ? now : null,
         });
       } catch (insertErr: any) {
         // 主键/唯一键冲突时改为 UPDATE
@@ -553,9 +594,9 @@ export function registerEngineRestRoutes(app: Router) {
           await db
             .update(publicGroupJoinStatus)
             .set({
-              status: status || "joined",
+              status,
               errorMsg: errorMsg || null,
-              ...(status === "joined" ? { joinedAt: now } : {}),
+              ...(isSubscribed ? { joinedAt: now } : {}),
               updatedAt: now,
             })
             .where(
@@ -569,8 +610,8 @@ export function registerEngineRestRoutes(app: Router) {
         }
       }
 
-      // 如果引擎上报了 realId，回写到 publicMonitorGroups 表（仅当 status=joined 且 realId 不为空时）
-      if (status === "joined" && realId) {
+      // 如果引擎上报了 realId，回写到 publicMonitorGroups 表（订阅成功时）
+      if (isSubscribed && realId) {
         try {
           await db
             .update(publicMonitorGroups)

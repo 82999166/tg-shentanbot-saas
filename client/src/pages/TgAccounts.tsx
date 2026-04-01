@@ -41,6 +41,10 @@ import {
   WifiOff,
   XCircle,
   Zap,
+  Server,
+  ServerOff,
+  PackagePlus,
+  FolderInput,
 } from "lucide-react";
 import { useState, useRef } from "react";
 
@@ -64,9 +68,21 @@ export default function TgAccounts() {
   const { user } = useAuth();
   const Layout = user?.role === "admin" ? AdminLayout : AppLayout;
   const utils = trpc.useUtils();
-  const { data: accounts = [], isLoading } = trpc.tgAccounts.list.useQuery();
+  const { data: accounts = [], isLoading, isRefetching, refetch } = trpc.tgAccounts.list.useQuery();
 
   const [addMode, setAddMode] = useState<AddMode>(null);
+  const [filterKeyword, setFilterKeyword] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterRole, setFilterRole] = useState("all");
+  const [filterOwner, setFilterOwner] = useState("all");
+  const filteredAccounts = accounts.filter((a) => {
+    const kw = filterKeyword.toLowerCase();
+    if (kw && !((a.tgFirstName ?? "").toLowerCase().includes(kw) || (a.phone ?? "").includes(kw) || (a.tgUsername ?? "").toLowerCase().includes(kw))) return false;
+    if (filterStatus !== "all" && a.sessionStatus !== filterStatus) return false;
+    if (filterRole !== "all" && (a.accountRole ?? "both") !== filterRole) return false;
+    if (filterOwner !== "all" && (a as any).ownerEmail !== filterOwner) return false;
+    return true;
+  });
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   // 编辑账号状态
@@ -96,8 +112,63 @@ export default function TgAccounts() {
   const deleteMut = trpc.tgAccounts.delete.useMutation();
   const testConn = trpc.tgAccounts.testConnection.useMutation();
   const toggleActive = trpc.tgAccounts.toggleActive.useMutation();
+  // 多选状态
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const toggleSelect = (id: number) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const selectAll = () => setSelectedIds(filteredAccounts.map(a => a.id));
+  const clearSelect = () => setSelectedIds([]);
+  const setInEngine = trpc.tgAccounts.setInEngine.useMutation({
+    onSuccess: (r: any) => { toast.success(`已更新 ${r.count} 个账号`); refresh(); clearSelect(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const syncGroups = trpc.tgAccounts.syncGroups.useMutation({
+    onSuccess: (r) => { toast.success(r.message); refresh(); },
+    onError: (e: any) => toast.error(e.message),
+  });
 
-  const refresh = () => utils.tgAccounts.list.invalidate();
+  // 导入群组到公共群组池
+  const [importChatsAccountId, setImportChatsAccountId] = useState<number | null>(null);
+  const [importChatsLoading, setImportChatsLoading] = useState(false);
+  const [importChatsList, setImportChatsList] = useState<Array<{ chatId: string; title: string; username: string; type: string }>>([]);
+  const [importChatsSelected, setImportChatsSelected] = useState<Set<string>>(new Set());
+  const [importChatsStep, setImportChatsStep] = useState<'loading' | 'select' | 'done' | 'error'>('loading');
+  const [importChatsError, setImportChatsError] = useState<string>('');
+  const getAccountChats = trpc.tgAccounts.getAccountChats.useMutation();
+  const importChatsToPublic = trpc.tgAccounts.importChatsToPublic.useMutation();
+
+  const openImportChats = async (accountId: number) => {
+    setImportChatsAccountId(accountId);
+    setImportChatsStep('loading');
+    setImportChatsList([]);
+    setImportChatsSelected(new Set());
+    setImportChatsError('');
+    setImportChatsLoading(true);
+    try {
+      const res = await getAccountChats.mutateAsync({ id: accountId });
+      setImportChatsList(res.chats);
+      setImportChatsSelected(new Set(res.chats.map(c => c.chatId)));
+      setImportChatsStep('select');
+    } catch (e: any) {
+      // 错误时不关闭弹窗，改为显示错误状态，方便用户查看原因
+      setImportChatsError(e.message ?? '获取群组列表失败');
+      setImportChatsStep('error');
+    } finally {
+      setImportChatsLoading(false);
+    }
+  };
+
+  const handleImportChats = async () => {
+    const selected = importChatsList.filter(c => importChatsSelected.has(c.chatId));
+    if (!selected.length) return toast.error('请至少选择一个群组');
+    try {
+      const res = await importChatsToPublic.mutateAsync({ chats: selected });
+      toast.success(res.message);
+      setImportChatsStep('done');
+      refresh();
+    } catch (e: any) { toast.error(e.message ?? '导入失败'); }
+  };
+
+  const refresh = () => refetch();
 
   const handleSendCode = async () => {
     if (!phoneForm.phone.trim()) return toast.error("请输入手机号");
@@ -183,8 +254,8 @@ export default function TgAccounts() {
             <p className="text-sm text-slate-400 mt-1">管理用于监控和发信的 Telegram 账号</p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" size="sm" onClick={refresh} className="border-slate-600 text-slate-300 hover:bg-slate-700">
-              <RefreshCw className="w-4 h-4 mr-1" /> 刷新
+            <Button variant="outline" size="sm" onClick={refresh} disabled={isRefetching} className="border-slate-600 text-slate-300 hover:bg-slate-700">
+              <RefreshCw className={`w-4 h-4 mr-1 ${isRefetching ? 'animate-spin' : ''}`} /> 刷新
             </Button>
             <Button size="sm" onClick={() => setAddMode("phone")} className="bg-blue-600 hover:bg-blue-700">
               <Phone className="w-4 h-4 mr-1" /> 手机号登录
@@ -194,7 +265,6 @@ export default function TgAccounts() {
             </Button>
           </div>
         </div>
-
         {/* 统计卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
@@ -218,99 +288,240 @@ export default function TgAccounts() {
             </Card>
           ))}
         </div>
-
-        {/* 账号列表 */}
+        {/* 条件筛选栏 */}
+        <div className="flex flex-wrap gap-3 items-center bg-slate-800/40 border border-slate-700 rounded-lg p-3">
+          <Input
+            placeholder="搜索账号名/手机号/@用户名..."
+            value={filterKeyword}
+            onChange={(e) => setFilterKeyword(e.target.value)}
+            className="bg-slate-800 border-slate-600 text-white placeholder-slate-500 w-56 h-8 text-sm"
+          />
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-8 text-sm w-32"><SelectValue placeholder="状态" /></SelectTrigger>
+            <SelectContent className="bg-slate-800 border-slate-600">
+              <SelectItem value="all">全部状态</SelectItem>
+              <SelectItem value="active">运行中</SelectItem>
+              <SelectItem value="inactive">未激活</SelectItem>
+              <SelectItem value="banned">已封禁</SelectItem>
+              <SelectItem value="error">异常</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={filterRole} onValueChange={setFilterRole}>
+            <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-8 text-sm w-36"><SelectValue placeholder="账号角色" /></SelectTrigger>
+            <SelectContent className="bg-slate-800 border-slate-600">
+              <SelectItem value="all">全部角色</SelectItem>
+              <SelectItem value="monitor">仅监控</SelectItem>
+              <SelectItem value="sender">仅发信</SelectItem>
+              <SelectItem value="both">监控+发信</SelectItem>
+            </SelectContent>
+          </Select>
+          {user?.role === "admin" && (
+            <Select value={filterOwner} onValueChange={setFilterOwner}>
+              <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-8 text-sm w-36"><SelectValue placeholder="归属用户" /></SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-600">
+                <SelectItem value="all">全部用户</SelectItem>
+                {Array.from(new Set(accounts.map((a) => (a as any).ownerEmail).filter(Boolean))).map((email) => (
+                  <SelectItem key={email as string} value={email as string}>{email as string}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <span className="text-xs text-slate-500 ml-auto">共 {filteredAccounts.length} 条</span>
+          {(filterKeyword || filterStatus !== "all" || filterRole !== "all" || filterOwner !== "all") && (
+            <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white h-8 text-xs"
+              onClick={() => { setFilterKeyword(""); setFilterStatus("all"); setFilterRole("all"); setFilterOwner("all"); }}>
+              清除筛选
+            </Button>
+          )}
+        </div>
+        {/* 账号表格 */}
         {isLoading ? (
           <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-blue-400" /></div>
-        ) : accounts.length === 0 ? (
+        ) : filteredAccounts.length === 0 ? (
           <Card className="bg-slate-800/60 border-slate-700 border-dashed">
             <CardContent className="py-16 text-center">
               <Smartphone className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-400 mb-2">还没有添加任何 TG 账号</p>
-              <p className="text-slate-500 text-sm mb-6">通过手机号登录或批量导入 Session 来添加账号</p>
-              <div className="flex gap-3 justify-center">
-                <Button onClick={() => setAddMode("phone")} className="bg-blue-600 hover:bg-blue-700">
-                  <Phone className="w-4 h-4 mr-2" /> 手机号登录
-                </Button>
-                <Button variant="outline" onClick={() => setAddMode("session_bulk")} className="border-slate-600 text-slate-300">
-                  <Upload className="w-4 h-4 mr-2" /> 导入 Session
-                </Button>
-              </div>
+              <p className="text-slate-400 mb-2">{accounts.length === 0 ? "还没有添加任何 TG 账号" : "没有符合筛选条件的账号"}</p>
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4">
-            {accounts.map((account) => {
-              const score = account.healthScore ?? 0;
-              const statusMap: Record<string, { label: string; cls: string }> = {
-                active: { label: "运行中", cls: "bg-green-900/50 text-green-300 border-green-700" },
-                pending: { label: "待激活", cls: "bg-slate-700 text-slate-300 border-slate-600" },
-                expired: { label: "已过期", cls: "bg-amber-900/50 text-amber-300 border-amber-700" },
-                banned: { label: "已封禁", cls: "bg-red-900/50 text-red-300 border-red-700" },
-              };
-              const roleMap: Record<string, string> = { monitor: "监控账号", sender: "发信账号", both: "监控+发信" };
-              const st = statusMap[account.sessionStatus ?? "pending"] ?? statusMap.pending;
-              return (
-                <Card key={account.id} className="bg-slate-800/60 border-slate-700 hover:border-slate-500 transition-colors">
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-center gap-4 flex-1 min-w-0">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold text-lg shrink-0">
-                          {(account.tgFirstName ?? account.phone ?? "?")[0]?.toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-white truncate">
-                              {account.tgFirstName ? `${account.tgFirstName} ${account.tgLastName ?? ""}`.trim() : account.phone ?? `账号 #${account.id}`}
+          <>
+          {/* 批量操作栏 */}
+          {selectedIds.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2 bg-blue-900/30 border border-blue-700/50 rounded-lg mb-3">
+              <span className="text-sm text-blue-300">已选 {selectedIds.length} 个账号</span>
+              <Button size="sm" variant="outline" className="h-7 text-xs border-green-600 text-green-400 hover:bg-green-900/30"
+                onClick={() => setInEngine.mutate({ ids: selectedIds, inEngine: true })}>
+                <Server className="w-3 h-3 mr-1" /> 加入监控引擎
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs border-slate-600 text-slate-400 hover:bg-slate-700/30"
+                onClick={() => setInEngine.mutate({ ids: selectedIds, inEngine: false })}>
+                <ServerOff className="w-3 h-3 mr-1" /> 移出引擎（备用）
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500" onClick={clearSelect}>取消选择</Button>
+            </div>
+          )}
+          <div className="bg-slate-800/60 border border-slate-700 rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-700 bg-slate-800/80">
+                    <th className="px-3 py-3 w-8">
+                      <input type="checkbox" className="rounded border-slate-600 bg-slate-700 cursor-pointer"
+                        title="全选/取消全选"
+                        checked={selectedIds.length === filteredAccounts.length && filteredAccounts.length > 0}
+                        onChange={(e) => e.target.checked ? selectAll() : clearSelect()} />
+                    </th>{/* th-checkbox-col */}
+                    <th className="text-left px-4 py-3 text-slate-400 font-medium">账号信息</th>
+                    {user?.role === "admin" && <th className="text-left px-4 py-3 text-slate-400 font-medium">归属用户</th>}
+                    <th className="text-left px-4 py-3 text-slate-400 font-medium">状态</th>
+                    <th className="text-left px-4 py-3 text-slate-400 font-medium">角色</th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="该账号监控的私有群组数">私有群组</span></th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="该账号正在订阅监控的公共群组数（账号已加入且在公共群组池中）">监控群组</span></th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium">总群组数</th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="该账号在 Telegram 中实际加入的群组总数（从引擎实时获取）">已加入群组</span></th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium">健康度</th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium">今日发信</th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium" title="是否加入监控引擎">引擎</th>
+                    <th className="text-right px-4 py-3 text-slate-400 font-medium">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAccounts.map((account, idx) => {
+                    const score = account.healthScore ?? 0;
+                    const statusMap: Record<string, { label: string; cls: string }> = {
+                      active: { label: "运行中", cls: "bg-green-900/40 text-green-400 border-green-700/50" },
+                      inactive: { label: "未激活", cls: "bg-slate-700/40 text-slate-400 border-slate-600/50" },
+                      banned: { label: "已封禁", cls: "bg-red-900/40 text-red-400 border-red-700/50" },
+                      error: { label: "异常", cls: "bg-orange-900/40 text-orange-400 border-orange-700/50" },
+                    };
+                    const roleMap: Record<string, string> = { monitor: "仅监控", sender: "仅发信", both: "监控+发信" };
+                    const st = statusMap[account.sessionStatus ?? "inactive"] ?? statusMap.inactive;
+                    const privateCount = (account as any).privateGroupCount ?? 0;
+                    const publicCount = (account as any).publicGroupCount ?? 0;
+                    const totalCount = (account as any).totalGroupCount ?? 0;
+                    const joinedCount = (account as any).joinedGroupCount;
+                    return (
+                      <tr key={account.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${idx % 2 === 0 ? "" : "bg-slate-800/20"}`}>
+                        {/* 复选框 */}
+                        <td className="px-3 py-3 w-8">{/* td-checkbox-col */}
+                          <input type="checkbox" className="rounded border-slate-600 bg-slate-700 cursor-pointer"
+                            checked={selectedIds.includes(account.id)}
+                            onChange={() => toggleSelect(account.id)} />
+                        </td>
+                        {/* 账号信息 */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                              {(account.tgFirstName ?? account.phone ?? "?")[0]?.toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-medium text-white">
+                                {account.tgFirstName ? `${account.tgFirstName} ${account.tgLastName ?? ""}`.trim() : `账号 #${account.id}`}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {account.phone && <span className="mr-2">{account.phone}</span>}
+                                {account.tgUsername && <span className="text-blue-400">@{account.tgUsername}</span>}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        {/* 归属用户（仅管理员） */}
+                        {user?.role === "admin" && (
+                          <td className="px-4 py-3">
+                            <span className="text-xs px-2 py-1 rounded bg-purple-900/40 text-purple-300 border border-purple-700/40">
+                              {(account as any).ownerName || (account as any).ownerEmail || `用户#${account.userId}`}
                             </span>
-                            {account.tgUsername && <span className="text-slate-400 text-sm">@{account.tgUsername}</span>}
-                            <Badge className={`text-xs border ${st.cls}`}>{st.label}</Badge>
-                            <Badge variant="outline" className="text-xs border-slate-600 text-slate-400">{roleMap[account.accountRole ?? "both"]}</Badge>
+                          </td>
+                        )}
+                        {/* 状态 */}
+                        <td className="px-4 py-3">
+                          <Badge className={`text-xs border ${st.cls}`}>{st.label}</Badge>
+                        </td>
+                        {/* 角色 */}
+                        <td className="px-4 py-3">
+                          <span className="text-xs text-slate-400">{roleMap[account.accountRole ?? "both"]}</span>
+                        </td>
+                        {/* 私有群组数 */}
+                        <td className="px-4 py-3 text-center">
+                          <span className={`text-sm font-bold ${privateCount > 0 ? "text-blue-400" : "text-slate-600"}`}>{privateCount}</span>
+                        </td>
+                        {/* 公共群组数 */}
+                        <td className="px-4 py-3 text-center">
+                          <span className={`text-sm font-bold ${publicCount > 0 ? "text-cyan-400" : "text-slate-600"}`}>{publicCount}</span>
+                        </td>
+                        {/* 总群组数 */}
+                        <td className="px-4 py-3 text-center">
+                          <span className={`text-sm font-bold ${totalCount > 0 ? "text-green-400" : "text-slate-600"}`}>{totalCount}</span>
+                        </td>
+                        {/* 已加入群组（引擎实时） */}
+                        <td className="px-4 py-3 text-center">
+                          {joinedCount == null ? (
+                            <span className="text-slate-600 text-xs">-</span>
+                          ) : (
+                            <span className={`text-sm font-bold ${joinedCount > 0 ? "text-orange-400" : "text-slate-600"}`}>{joinedCount}</span>
+                          )}
+                        </td>
+                        {/* 健康度 */}
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <span className={`text-sm font-bold ${healthColor(score)}`}>{score}</span>
+                            <Progress value={score} className="w-16 h-1.5" />
                           </div>
-                          <div className="flex items-center gap-4 mt-2 text-xs text-slate-500 flex-wrap">
-                            {account.phone && <span><Phone className="w-3 h-3 inline mr-1" />{account.phone}</span>}
-                            {account.tgUserId && <span>ID: {account.tgUserId}</span>}
-                            <span>今日发信: {account.dailyDmSent ?? 0}</span>
-                            {account.lastActiveAt && <span>最后活跃: {new Date(account.lastActiveAt).toLocaleString()}</span>}
+                        </td>
+                        {/* 今日发信 */}
+                        <td className="px-4 py-3 text-center">
+                          <span className="text-sm text-slate-400">{account.dailyDmSent ?? 0}</span>
+                        </td>
+                        {/* 引擎状态 */}
+                        <td className="px-4 py-3 text-center">
+                          {(account as any).inEngine ? (
+                            <span title="已加入监控引擎" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-900/40 text-green-400">
+                              <Server className="w-3 h-3" />
+                            </span>
+                          ) : (
+                            <span title="备用账号（未加入引擎）" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-700/40 text-slate-500">
+                              <ServerOff className="w-3 h-3" />
+                            </span>
+                          )}
+                        </td>
+                        {/* 操作 */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-400 hover:text-purple-400" title="从TG账号导入群组到公共群组池"
+                              onClick={() => openImportChats(account.id)}>
+                              {importChatsLoading && importChatsAccountId === account.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <FolderInput className="w-3 h-3" />}
+                            </Button>
+                            <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-400 hover:text-green-400" title="测试连接"
+                              onClick={async () => { const r = await testConn.mutateAsync({ id: account.id }); if (r.success) { toast.success(r.message); refresh(); } else toast.error(r.message); }}>
+                              {testConn.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                            </Button>
+                            <Button size="icon" variant="ghost"
+                              className={`w-7 h-7 ${account.isActive ? "text-green-400 hover:text-slate-400" : "text-slate-500 hover:text-green-400"}`}
+                              title={account.isActive ? "停用" : "启用"}
+                              onClick={async () => { await toggleActive.mutateAsync({ id: account.id, isActive: !account.isActive }); refresh(); toast.success(account.isActive ? "账号已停用" : "账号已启用"); }}>
+                              {account.isActive ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                            </Button>
+                            <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-400 hover:text-blue-400" title="编辑"
+                              onClick={() => setEditAccount({ id: account.id, accountRole: account.accountRole ?? "both", notes: account.notes ?? "" })}>
+                              <Edit2 className="w-3 h-3" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-400 hover:text-red-400" title="删除" onClick={() => setDeleteId(account.id)}>
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
                           </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 shrink-0">
-                        <div className="text-right hidden sm:block">
-                          <p className={`text-lg font-bold ${healthColor(score)}`}>{score}</p>
-                          <p className="text-xs text-slate-500">健康度</p>
-                          <Progress value={score} className="w-20 h-1.5 mt-1" />
-                        </div>
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-green-400" title="测试连接"
-                            onClick={async () => { const r = await testConn.mutateAsync({ id: account.id }); if (r.success) { toast.success(r.message); refresh(); } else toast.error(r.message); }}>
-                            {testConn.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                          </Button>
-                          <Button size="icon" variant="ghost"
-                            className={`w-8 h-8 ${account.isActive ? "text-green-400 hover:text-slate-400" : "text-slate-500 hover:text-green-400"}`}
-                            title={account.isActive ? "停用" : "启用"}
-                            onClick={async () => { await toggleActive.mutateAsync({ id: account.id, isActive: !account.isActive }); refresh(); toast.success(account.isActive ? "账号已停用" : "账号已启用"); }}>
-                            {account.isActive ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                          </Button>
-                          <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-blue-400" title="编辑"
-                            onClick={() => setEditAccount({ id: account.id, accountRole: account.accountRole ?? "both", notes: account.notes ?? "" })}>
-                            <Edit2 className="w-4 h-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-red-400" title="删除" onClick={() => setDeleteId(account.id)}>
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
+          </>
         )}
       </div>
-
-      {/* ─── 手机号登录 Dialog ─────────────────────────────────────────────── */}
+            {/* ─── 手机号登录 Dialog ─────────────────────────────────────────────── */}
       <Dialog open={addMode === "phone"} onOpenChange={(o) => { if (!o) closeDialog(); }}>
         <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
           <DialogHeader>
@@ -645,7 +856,104 @@ export default function TgAccounts() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── 删除确认 ───────────────────────────────────────────────────── */}
+       {/* ─── 导入群组到公共群组池 Dialog ─────────────────────────────────── */}
+      <Dialog open={importChatsAccountId !== null} onOpenChange={(o) => { if (!o) { setImportChatsAccountId(null); setImportChatsList([]); setImportChatsSelected(new Set()); setImportChatsStep('loading'); setImportChatsError(''); } }}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderInput className="w-5 h-5 text-purple-400" /> 从TG账号导入群组到公共群组池
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              读取该TG账号已加入的群组，选择后批量导入到公共群组池，引擎将自动订阅监控这些群组的消息
+            </DialogDescription>
+          </DialogHeader>
+
+          {importChatsStep === 'loading' && (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
+              <p className="text-slate-400 text-sm">正在从引擎读取群组列表，请稍候...</p>
+            </div>
+          )}
+
+          {importChatsStep === 'select' && (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-slate-400">共找到 <span className="text-white font-bold">{importChatsList.length}</span> 个群组，已选 <span className="text-purple-400 font-bold">{importChatsSelected.size}</span> 个</span>
+                <div className="flex gap-2">
+                  <button className="text-xs text-slate-400 hover:text-white underline" onClick={() => setImportChatsSelected(new Set(importChatsList.map(c => c.chatId)))}>全选</button>
+                  <button className="text-xs text-slate-400 hover:text-white underline" onClick={() => setImportChatsSelected(new Set())}>全不选</button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto space-y-1 max-h-96 pr-1">
+                {importChatsList.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500">
+                    <PackagePlus className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                    <p>该账号暂无已加入的群组（可能 session 已失效）</p>
+                  </div>
+                ) : importChatsList.map(chat => (
+                  <label key={chat.chatId} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-800 cursor-pointer">
+                    <input type="checkbox"
+                      className="rounded border-slate-600 bg-slate-700 cursor-pointer"
+                      checked={importChatsSelected.has(chat.chatId)}
+                      onChange={(e) => {
+                        const next = new Set(importChatsSelected);
+                        if (e.target.checked) next.add(chat.chatId); else next.delete(chat.chatId);
+                        setImportChatsSelected(next);
+                      }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-white truncate">{chat.title || chat.chatId}</p>
+                      <p className="text-xs text-slate-500">{chat.username ? `@${chat.username}` : `ID: ${chat.chatId}`} &middot; {chat.type === 'supergroup' ? '超级群组' : '普通群组'}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <DialogFooter className="gap-2 pt-2">
+                <Button variant="ghost" onClick={() => setImportChatsAccountId(null)} className="text-slate-400 hover:text-white">取消</Button>
+                <Button
+                  onClick={handleImportChats}
+                  disabled={importChatsToPublic.isPending || importChatsSelected.size === 0}
+                  className="bg-purple-600 hover:bg-purple-700">
+                  {importChatsToPublic.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                  导入选中的 {importChatsSelected.size} 个群组
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {importChatsStep === 'done' && (
+            <div className="flex flex-col items-center justify-center py-10 gap-3">
+              <CheckCircle2 className="w-12 h-12 text-green-400" />
+              <p className="text-white font-medium">导入完成！</p>
+              <p className="text-slate-400 text-sm">公共群组池已更新，引擎将在下次轮询时自动订阅监控这些群组的消息</p>
+              <Button onClick={() => setImportChatsAccountId(null)} className="bg-slate-700 hover:bg-slate-600">关闭</Button>
+            </div>
+          )}
+
+          {importChatsStep === 'error' && (
+            <div className="flex flex-col items-center justify-center py-10 gap-4">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                <span className="text-red-400 text-2xl">⚠</span>
+              </div>
+              <p className="text-white font-medium">获取群组列表失败</p>
+              <p className="text-slate-400 text-sm text-center max-w-sm">{importChatsError}</p>
+              <div className="text-xs text-slate-500 bg-slate-800 rounded-lg p-3 max-w-sm w-full">
+                <p className="font-medium text-slate-400 mb-1">常见原因：</p>
+                <p>• 账号 session 已失效，需要重新登录</p>
+                <p>• 账号未在引擎中运行，请先启用账号</p>
+                <p>• 引擎初始化中，请等待 30 秒后重试</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={() => setImportChatsAccountId(null)} className="text-slate-400 hover:text-white">关闭</Button>
+                <Button onClick={() => importChatsAccountId && openImportChats(importChatsAccountId)} className="bg-purple-600 hover:bg-purple-700">
+                  <RefreshCw className="w-4 h-4 mr-2" />重试
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── 删除确认 ─────────────────────────────────────────────────── */}
       <Dialog open={deleteId !== null} onOpenChange={(o) => { if (!o) setDeleteId(null); }}>
         <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-sm">
           <DialogHeader>

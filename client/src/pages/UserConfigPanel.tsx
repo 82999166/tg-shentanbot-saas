@@ -464,7 +464,7 @@ export default function UserConfigPanel() {
   const [selectedUserName, setSelectedUserName] = useState<string>("");
   const [showSelector, setShowSelector] = useState(true);
 
-  const { data: userData, isLoading, refetch } = trpc.admin.userDetail.useQuery(
+  const { data: userData, isLoading, isRefetching, refetch } = trpc.admin.userDetail.useQuery(
     { userId: selectedUserId! },
     { enabled: selectedUserId !== null }
   );
@@ -522,8 +522,8 @@ export default function UserConfigPanel() {
               正在配置：{selectedUserName}
             </span>
             <Button size="sm" variant="ghost" className="ml-auto h-6 text-slate-400 hover:text-white"
-              onClick={() => refetch()}>
-              <RefreshCw className="w-3 h-3" />
+              onClick={() => refetch()} disabled={isRefetching}>
+              <RefreshCw className={`w-3 h-3 ${isRefetching ? 'animate-spin' : ''}`} />
             </Button>
           </div>
 

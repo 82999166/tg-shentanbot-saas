@@ -6,13 +6,14 @@ import {
   deleteTgAccount,
   getAllPlans,
   getTgAccountById,
+  getTgAccountByIdAdmin,
   getTgAccountsByUserId,
   updateTgAccount,
 } from "../db";
 import { getDb } from "../db";
-import { systemSettings, tgAccounts } from "../../drizzle/schema";
-import { sql, eq } from "drizzle-orm";
-import { protectedProcedure, router } from "../_core/trpc";
+import { systemSettings, tgAccounts, users, monitorGroups, publicMonitorGroups, publicGroupJoinStatus } from "../../drizzle/schema";
+import { sql, eq, desc, count, inArray } from "drizzle-orm";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 
 // ─── Pyrogram 登录服务地址（本地 Python HTTP 服务）─────────────────────────
 const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5051";
@@ -66,6 +67,89 @@ function callLoginService(path: string, body: Record<string, any>): Promise<any>
 export const tgAccountsRouter = router({
   // ─── 获取用户的所有TG账号 ─────────────────────────────────────────────────
   list: protectedProcedure.query(async ({ ctx }) => {
+    // 管理员返回所有账号（含归属用户信息），普通用户只返回自己的账号
+    if ((ctx.user as any).role === "admin") {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db
+        .select({
+          id: tgAccounts.id,
+          userId: tgAccounts.userId,
+          phone: tgAccounts.phone,
+          tgFirstName: tgAccounts.tgFirstName,
+          tgLastName: tgAccounts.tgLastName,
+          tgUsername: tgAccounts.tgUsername,
+          accountRole: tgAccounts.accountRole,
+          sessionStatus: tgAccounts.sessionStatus,
+          isActive: tgAccounts.isActive,
+          inEngine: tgAccounts.inEngine,
+          notes: tgAccounts.notes,
+          proxyHost: tgAccounts.proxyHost,
+          proxyPort: tgAccounts.proxyPort,
+          proxyType: tgAccounts.proxyType,
+          createdAt: tgAccounts.createdAt,
+          updatedAt: tgAccounts.updatedAt,
+          healthScore: tgAccounts.healthScore,
+          healthStatus: tgAccounts.healthStatus,
+          lastActiveAt: tgAccounts.lastActiveAt,
+          dailyDmSent: tgAccounts.dailyDmSent,
+          totalMonitored: tgAccounts.totalMonitored,
+          ownerName: users.name,
+          ownerEmail: users.email,
+          ownerTgUsername: users.tgUsername,
+        })
+        .from(tgAccounts)
+        .leftJoin(users, eq(tgAccounts.userId, users.id))
+        .orderBy(desc(tgAccounts.createdAt));
+      // 查询每个账号的私有群组数量
+      const privateGroupCounts = await db
+        .select({ tgAccountId: monitorGroups.tgAccountId, cnt: count() })
+        .from(monitorGroups)
+        .where(eq(monitorGroups.isActive, true))
+        .groupBy(monitorGroups.tgAccountId);
+      const privateCountMap: Record<number, number> = {};
+      for (const r of privateGroupCounts) {
+        if (r.tgAccountId) privateCountMap[r.tgAccountId] = r.cnt;
+      }
+      // 查询每个账号的公共群组监控数量（subscribed = 已在监控中，兼容旧状态 joined）
+      const publicGroupCounts = await db
+        .select({ monitorAccountId: publicGroupJoinStatus.monitorAccountId, cnt: count() })
+        .from(publicGroupJoinStatus)
+        .where(inArray(publicGroupJoinStatus.status, ["subscribed", "joined"]))
+        .groupBy(publicGroupJoinStatus.monitorAccountId);
+      const publicCountMap: Record<number, number> = {};
+      for (const r of publicGroupCounts) {
+        if (r.monitorAccountId) publicCountMap[r.monitorAccountId] = r.cnt;
+      }
+      // 查询每个账号在引擎中实际加入的群组总数
+      const engineUrl = process.env.WEB_API_URL
+        ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
+        : 'http://127.0.0.1:8765';
+      const engineSecret = process.env.ENGINE_SECRET || 'tg-monitor-engine-secret';
+      const joinedCountMap: Record<number, number> = {};
+      await Promise.all(rows.map(async (r) => {
+        try {
+          const resp = await fetch(`${engineUrl}/get-account-chats`, {
+            method: 'POST',
+            headers: { 'X-Engine-Secret': engineSecret, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: r.id }),
+            // @ts-ignore
+            signal: AbortSignal.timeout(10000),
+          });
+          if (resp.ok) {
+            const data = await resp.json() as any;
+            joinedCountMap[r.id] = data.total ?? (data.chats ?? []).length;
+          }
+        } catch { /* 引擎不可达时忽略 */ }
+      }));
+      return rows.map(r => ({
+        ...r,
+        privateGroupCount: privateCountMap[r.id] ?? 0,
+        publicGroupCount: publicCountMap[r.id] ?? 0,
+        totalGroupCount: (privateCountMap[r.id] ?? 0) + (publicCountMap[r.id] ?? 0),
+        joinedGroupCount: joinedCountMap[r.id] ?? null,
+      }));
+    }
     return getTgAccountsByUserId(ctx.user.id);
   }),
 
@@ -290,9 +374,19 @@ export const tgAccountsRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const account = await getTgAccountById(input.id, ctx.user.id);
-      if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
-      await deleteTgAccount(input.id, ctx.user.id);
+      const isAdmin = (ctx.user as any).role === "admin";
+      if (isAdmin) {
+        // Admin 可以删除任何账号，不限制 userId
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库不可用" });
+        const rows = await db.select({ id: tgAccounts.id }).from(tgAccounts).where(eq(tgAccounts.id, input.id)).limit(1);
+        if (rows.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
+        await deleteTgAccount(input.id); // 不传 userId，跳过用户限制
+      } else {
+        const account = await getTgAccountById(input.id, ctx.user.id);
+        if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
+        await deleteTgAccount(input.id, ctx.user.id);
+      }
       return { success: true };
     }),
 
@@ -367,15 +461,136 @@ export const tgAccountsRouter = router({
     }),
 
   // ─── 启用/停用账号 ────────────────────────────────────────────────────────
+  // 设置账号是否加入监控引擎（支持批量）
+  setInEngine: adminProcedure
+    .input(z.object({ ids: z.array(z.number()), inEngine: z.boolean() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库连接失败" });
+      for (const id of input.ids) {
+        await db.update(tgAccounts)
+          .set({ inEngine: input.inEngine, updatedAt: new Date() })
+          .where(eq(tgAccounts.id, id));
+      }
+      return { success: true, count: input.ids.length };
+    }),
+
   toggleActive: protectedProcedure
     .input(z.object({ id: z.number(), isActive: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const account = await getTgAccountById(input.id, ctx.user.id);
+      const isAdmin = (ctx.user as any).role === "admin";
+      const account = isAdmin ? await getTgAccountByIdAdmin(input.id) : await getTgAccountById(input.id, ctx.user.id);
       if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
-      await updateTgAccount(input.id, ctx.user.id, {
+      await updateTgAccount(input.id, isAdmin ? (account as any).userId : ctx.user.id, {
+        isActive: input.isActive,
         sessionStatus: input.isActive ? "active" : "expired",
       });
       return { success: true };
+    }),
+  // ─── 同步账号群组（触发引擎为指定账号加入所有公共群组）────────────────────
+  syncGroups: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库不可用" });
+      // 验证账号存在
+      const rows = await db.select({ id: tgAccounts.id, isActive: tgAccounts.isActive })
+        .from(tgAccounts).where(eq(tgAccounts.id, input.id)).limit(1);
+      if (rows.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
+      if (!rows[0].isActive) throw new TRPCError({ code: "BAD_REQUEST", message: "账号未启用，请先启用账号" });
+      // 调用引擎 /sync-account 接口
+      const engineUrl = process.env.WEB_API_URL
+        ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
+        : 'http://127.0.0.1:8765';
+      const engineSecret = process.env.ENGINE_SECRET || 'tg-monitor-engine-secret';
+      try {
+        const resp = await fetch(`${engineUrl}/sync-account`, {
+          method: 'POST',
+          headers: {
+            'X-Engine-Secret': engineSecret,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ account_id: input.id }),
+          // @ts-ignore
+          signal: AbortSignal.timeout(10000),
+        });
+        const data = await resp.json() as any;
+        if (!resp.ok) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: data.error || `引擎响应 ${resp.status}` });
+        }
+        return { success: true, message: data.message || '已触发群组同步，请稍后刷新查看' };
+      } catch (err: any) {
+        if (err instanceof TRPCError) throw err;
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `无法连接引擎: ${err.message}` });
+      }
+    }),
+  // ─── 从TG账号获取群组列表（用于导入到公共群组池）──────────────────────────
+  getAccountChats: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const engineUrl = process.env.WEB_API_URL
+        ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
+        : 'http://127.0.0.1:8765';
+      const engineSecret = process.env.ENGINE_SECRET || 'tg-monitor-engine-secret';
+      try {
+        const resp = await fetch(`${engineUrl}/get-account-chats`, {
+          method: 'POST',
+          headers: { 'X-Engine-Secret': engineSecret, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: input.id }),
+          // @ts-ignore
+          signal: AbortSignal.timeout(60000),
+        });
+        const data = await resp.json() as any;
+        if (!resp.ok) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: data.error || `引擎响应 ${resp.status}` });
+        }
+        return { success: true, chats: (data.chats ?? []) as Array<{ chatId: string; title: string; username: string; type: string }>, total: data.total ?? 0 };
+      } catch (err: any) {
+        if (err instanceof TRPCError) throw err;
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `无法连接引擎: ${err.message}` });
+      }
+    }),
+  // ─── 批量导入群组到公共群组池 ──────────────────────────────────────────────
+  importChatsToPublic: adminProcedure
+    .input(z.object({
+      chats: z.array(z.object({
+        chatId: z.string(),
+        title: z.string(),
+        username: z.string(),
+        type: z.string(),
+      })).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '数据库不可用' });
+      let added = 0, skipped = 0;
+      for (const chat of input.chats) {
+        // 优先用 username，没有则用 chatId（数字 ID）
+        const groupId = chat.username ? chat.username : chat.chatId;
+        // 检查是否已存在
+        const existing = await db.select({ id: publicMonitorGroups.id })
+          .from(publicMonitorGroups)
+          .where(eq(publicMonitorGroups.groupId, groupId))
+          .limit(1);
+        if (existing.length > 0) {
+          // 已存在则重新激活
+          await db.update(publicMonitorGroups)
+            .set({ isActive: true, groupTitle: chat.title, updatedAt: new Date() })
+            .where(eq(publicMonitorGroups.id, existing[0].id));
+          skipped++;
+        } else {
+          await db.insert(publicMonitorGroups).values({
+            groupId,
+            groupTitle: chat.title || groupId,
+            groupType: chat.type || 'group',
+            isActive: true,
+            addedBy: ctx.user.id,
+            note: `从TG账号导入`,
+          });
+          added++;
+        }
+      }
+      return { success: true, added, skipped, message: `成功导入 ${added} 个群组${skipped > 0 ? `，${skipped} 个已存在（已重新激活）` : ''}` };
     }),
 });
 
@@ -392,17 +607,50 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
     const finalSession = sessionString.startsWith("/") && sessionString.includes("login_")
       ? `${process.env.TDLIB_DATA_DIR ?? "/home/hjroot/tg-monitor-tdlib/monitor-engine/tdlib_data"}/account_${accountId}`
       : sessionString;
+    // 如果 login_temp 目录存在，把最新的 td.binlog 复制到 account_{id} 目录（覆盖旧的）
+    const tdlibDataDir = process.env.TDLIB_DATA_DIR ?? "/home/hjroot/tg-monitor-tdlib/monitor-engine/tdlib_data";
+    const loginTempDir = `${tdlibDataDir}/login_temp_${phone.replace(/^\+/, '')}`;
+    const accountDir = `${tdlibDataDir}/account_${accountId}`;
+    try {
+      const { execSync } = await import('child_process');
+      // 确保目标目录存在
+      execSync(`mkdir -p "${accountDir}/database"`);
+      // 从 login_temp 复制最新 td.binlog（覆盖旧的，使新 session 生效）
+      for (const sub of ['database', 'db']) {
+        const src = `${loginTempDir}/${sub}/td.binlog`;
+        try {
+          execSync(`test -f "${src}" && cp -f "${src}" "${accountDir}/database/td.binlog"`, { stdio: 'ignore' });
+          break;
+        } catch (_) { /* 子目录不存在，继续尝试 */ }
+      }
+    } catch (_) { /* 文件操作失败不影响登录流程 */ }
     await db.update(tgAccounts)
       .set({
         sessionString: finalSession,
         sessionStatus: "active",
         isActive: true,
+        inEngine: true,
         healthScore: 90,
         healthStatus: "healthy",
         updatedAt: new Date(),
       })
       .where(eq(tgAccounts.phone, phone));
-    return { success: true, needs2FA: false, accountId, message: "账号重新登录成功，Session 已更新" };
+    // 触发引擎强制重新加载配置
+    const engineUrl = process.env.WEB_API_URL
+      ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
+      : 'http://127.0.0.1:8765';
+    const engineSecret = process.env.ENGINE_SECRET ?? 'tg-monitor-engine-secret';
+    try {
+      await fetch(`${engineUrl}/force-sync`, {
+        method: 'POST',
+        headers: { 'X-Engine-Secret': engineSecret },
+        // @ts-ignore
+        signal: AbortSignal.timeout(3000),
+      });
+    } catch (_) { /* 引擎不可达时忽略 */ }
+    // 后台异步：等引擎加载账号后，自动获取群组并写入公共群组池
+    autoSyncChatsToPublic(accountId, engineUrl, engineSecret, user.id).catch(() => {});
+    return { success: true, needs2FA: false, accountId, message: "账号重新登录成功，正在后台同步群组..." };
   }
 
   // 新账号：检查套餐配额
@@ -426,10 +674,122 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
     healthStatus: "healthy",
   });
 
-  // 登录成功后，将 sessionString 更新为 account_{id} 规范路径
+  // 登录成功后，将 sessionString 更新为 account_{id} 规范路径，并设置 inEngine=true
+  const tdlibDataDir2 = process.env.TDLIB_DATA_DIR ?? "/home/hjroot/tg-monitor-tdlib/monitor-engine/tdlib_data";
   if (sessionString.startsWith("/") && sessionString.includes("login_")) {
-    const finalSession = `${process.env.TDLIB_DATA_DIR ?? "/home/hjroot/tg-monitor-tdlib/monitor-engine/tdlib_data"}/account_${id}`;
-    await db.update(tgAccounts).set({ sessionString: finalSession }).where(eq(tgAccounts.id, id));
+    const finalSession2 = `${tdlibDataDir2}/account_${id}`;
+    // 复制 login_temp 的 td.binlog 到 account_{id} 目录
+    try {
+      const { execSync } = await import('child_process');
+      execSync(`mkdir -p "${finalSession2}/database"`);
+      for (const sub of ['database', 'db']) {
+        const src = `${sessionString}/${sub}/td.binlog`;
+        try {
+          execSync(`test -f "${src}" && cp -f "${src}" "${finalSession2}/database/td.binlog"`, { stdio: 'ignore' });
+          break;
+        } catch (_) { /* 继续尝试 */ }
+      }
+    } catch (_) { /* 文件操作失败不影响登录流程 */ }
+    await db.update(tgAccounts).set({ sessionString: finalSession2, inEngine: true }).where(eq(tgAccounts.id, id));
+  } else {
+    await db.update(tgAccounts).set({ inEngine: true }).where(eq(tgAccounts.id, id));
   }
-  return { success: true, needs2FA: false, accountId: id, message: "账号登录成功，已添加到账号列表" };
+  // 触发引擎强制重新加载配置
+  const engineUrl3 = process.env.WEB_API_URL
+    ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
+    : 'http://127.0.0.1:8765';
+  const engineSecret3 = process.env.ENGINE_SECRET ?? 'tg-monitor-engine-secret';
+  try {
+    await fetch(`${engineUrl3}/force-sync`, {
+      method: 'POST',
+      headers: { 'X-Engine-Secret': engineSecret3 },
+      // @ts-ignore
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch (_) { /* 引擎不可达时忽略 */ }
+  // 后台异步：等引擎加载账号后，自动获取群组并写入公共群组池
+  autoSyncChatsToPublic(id, engineUrl3, engineSecret3, user.id).catch(() => {});
+  return { success: true, needs2FA: false, accountId: id, message: "账号登录成功，正在后台同步群组..." };
+}
+
+// ─── 后台异步：登录成功后自动获取账号群组并写入公共群组池 ─────────────────────
+async function autoSyncChatsToPublic(
+  accountId: number,
+  engineUrl: string,
+  engineSecret: string,
+  userId: number,
+) {
+  // 等待引擎加载账号（最多等 90 秒，每 5 秒轮询一次）
+  let ready = false;
+  for (let i = 0; i < 18; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      const statusResp = await fetch(`${engineUrl}/status`, {
+        headers: { 'X-Engine-Secret': engineSecret },
+        // @ts-ignore
+        signal: AbortSignal.timeout(3000),
+      });
+      if (statusResp.ok) {
+        const statusData = await statusResp.json() as any;
+        const accounts: Array<{ accountId: number; chatCount: number }> = statusData.accounts ?? [];
+        const acc = accounts.find(a => a.accountId === accountId);
+        // chatCount >= 0 表示引擎已成功连接 TDLib
+        if (acc && acc.chatCount >= 0) { ready = true; break; }
+      }
+    } catch (_) { /* 继续等待 */ }
+  }
+  if (!ready) return; // 90 秒内未就绪，放弃
+
+  // 获取账号已加入的群组列表
+  let chats: Array<{ chatId: string; title: string; username: string; type: string }> = [];
+  try {
+    const chatResp = await fetch(`${engineUrl}/get-account-chats`, {
+      method: 'POST',
+      headers: { 'X-Engine-Secret': engineSecret, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId }),
+      // @ts-ignore
+      signal: AbortSignal.timeout(60000),
+    });
+    if (chatResp.ok) {
+      const chatData = await chatResp.json() as any;
+      chats = chatData.chats ?? [];
+    }
+  } catch (_) { return; }
+  if (!chats.length) return;
+
+  // 写入公共群组池
+  const db = await getDb();
+  if (!db) return;
+  for (const chat of chats) {
+    const groupId = chat.username ? chat.username : chat.chatId;
+    try {
+      const existing = await db.select({ id: publicMonitorGroups.id })
+        .from(publicMonitorGroups)
+        .where(eq(publicMonitorGroups.groupId, groupId))
+        .limit(1);
+      if (existing.length > 0) {
+        await db.update(publicMonitorGroups)
+          .set({ isActive: true, groupTitle: chat.title, updatedAt: new Date() })
+          .where(eq(publicMonitorGroups.id, existing[0].id));
+      } else {
+        await db.insert(publicMonitorGroups).values({
+          groupId,
+          groupTitle: chat.title || groupId,
+          groupType: chat.type || 'group',
+          isActive: true,
+          addedBy: userId,
+          note: `账号 #${accountId} 登录时自动导入`,
+        });
+      }
+    } catch (_) { /* 单条失败不影响其他 */ }
+  }
+  // 再次触发 force-sync，让引擎加载新的公共群组
+  try {
+    await fetch(`${engineUrl}/force-sync`, {
+      method: 'POST',
+      headers: { 'X-Engine-Secret': engineSecret },
+      // @ts-ignore
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch (_) { /* 忽略 */ }
 }

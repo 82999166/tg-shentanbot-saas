@@ -28,7 +28,7 @@ export default function HitRecords() {
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
-  const { data, isLoading } = trpc.hitRecords.list.useQuery({
+  const { data, isLoading, isRefetching, refetch } = trpc.hitRecords.list.useQuery({
     search: search || undefined,
     dmStatus: dmFilter === "all" ? undefined : dmFilter as any,
     offset: (page - 1) * 20,
@@ -113,8 +113,8 @@ export default function HitRecords() {
               <SelectItem value="failed">失败</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={() => utils.hitRecords.list.invalidate()} className="border-border">
-            <RefreshCw className="w-4 h-4 mr-2" /> 刷新
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching} className="border-border">
+            <RefreshCw className={`w-4 h-4 mr-2 ${isRefetching ? 'animate-spin' : ''}`} /> 刷新
           </Button>
           <Button variant="outline" size="sm" onClick={handleExport} className="border-border" disabled={records.length === 0}>
             <Download className="w-4 h-4 mr-2" /> 导出 CSV

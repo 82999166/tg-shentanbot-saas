@@ -81,6 +81,7 @@ function Router() {
       <Route path={"/admin-orders"} component={Orders} />
       <Route path={"/admin-redeem-codes"} component={RedeemCodes} />
       <Route path={"/admin-group-scrape"} component={GroupScrape} />
+      <Route path={"/admin-join-config"} component={JoinConfig} />
       <Route path={"/login"} component={Login} />
       <Route path={"/register"} component={Register} />
       <Route path={"/verify-email"} component={VerifyEmail} />

@@ -22,7 +22,7 @@ import {
 } from "../db";
 import { protectedProcedure, router, adminProcedure } from "../_core/trpc";
 import { getAllUsers, countAllUsers, getDb } from "../db";
-import { users, tgAccounts, keywords, monitorGroups, hitRecords, publicMonitorGroups } from "../../drizzle/schema";
+import { users, tgAccounts, keywords, monitorGroups, hitRecords, publicMonitorGroups, publicGroupJoinStatus } from "../../drizzle/schema";
 import { eq, and, desc, sql, or, like, gte, lt, inArray } from "drizzle-orm";
 
 // ============================================================
@@ -421,9 +421,20 @@ export const adminRouter = router({
     const allUsers = await getAllUsers(1000, 0);
     const userMap = new Map(allUsers.map((u) => [u.id, u.name ?? u.email ?? `#${u.id}`]));
     const accounts = await db.select().from(tgAccounts);
+    // 统计每个账号已成功加入的公共群组数量
+    const joinedRows = await db
+      .select({
+        monitorAccountId: publicGroupJoinStatus.monitorAccountId,
+        cnt: sql<number>`COUNT(*)`,
+      })
+      .from(publicGroupJoinStatus)
+      .where(sql`${publicGroupJoinStatus.status} = 'joined'`)
+      .groupBy(publicGroupJoinStatus.monitorAccountId);
+    const joinedMap = new Map(joinedRows.map((r) => [r.monitorAccountId, Number(r.cnt)]));
     return accounts.map((a) => ({
       ...a,
       userName: userMap.get(a.userId) ?? `用户 #${a.userId}`,
+      joinedGroupCount: joinedMap.get(a.id) ?? 0,
     }));
   }),
 

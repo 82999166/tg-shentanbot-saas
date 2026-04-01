@@ -815,7 +815,7 @@ function RedeemCodesTab() {
 // ── 订单管理 Tab ─────────────────────────────────────────────
 function OrdersTab() {
   const [orderFilter, setOrderFilter] = useState<"all" | "pending" | "completed" | "expired">("all");
-  const { data: orders, refetch } = trpc.payment.adminOrders.useQuery({
+  const { data: orders, isRefetching: ordersRefetching, refetch } = trpc.payment.adminOrders.useQuery({
     status: orderFilter,
     limit: 50,
     offset: 0,
@@ -849,8 +849,8 @@ function OrdersTab() {
             {f === "all" ? "全部" : f === "pending" ? "待支付" : f === "completed" ? "已完成" : "已过期"}
           </Button>
         ))}
-        <Button size="sm" variant="ghost" className="ml-auto h-7" onClick={() => refetch()}>
-          <RefreshCw className="w-3.5 h-3.5" />
+        <Button size="sm" variant="ghost" className="ml-auto h-7" onClick={() => refetch()} disabled={ordersRefetching}>
+          <RefreshCw className={`w-3.5 h-3.5 ${ordersRefetching ? 'animate-spin' : ''}`} />
         </Button>
       </div>
 
@@ -1137,7 +1137,7 @@ function SysConfigTab() {
   };
 
   const handleSave = () => {
-    const allKeys = ["support_username", "official_channel", "tutorial_text", "bot_name", "site_name", "anti_spam_enabled", "anti_spam_daily_limit", "anti_spam_rate_window", "anti_spam_rate_limit", "anti_spam_min_msg_len"];
+    const allKeys = ["support_username", "official_channel", "tutorial_text", "bot_name", "site_name", "anti_spam_enabled", "anti_spam_daily_limit", "anti_spam_rate_window", "anti_spam_rate_limit", "anti_spam_min_msg_len", "anti_spam_max_msg_len"];
     const configsToSave = allKeys.map((key) => ({ key, value: getValue(key) }));
     updateMutation.mutate({ configs: configsToSave });
   };
@@ -1270,6 +1270,16 @@ function SysConfigTab() {
                 className="bg-gray-900 border-gray-600 text-white"
               />
               <p className="text-gray-500 text-xs mt-1">0 = 不限制；设为 2 可过滤纯单字消息</p>
+            </div>
+            <div>
+              <Label className="text-gray-400 text-xs mb-1.5 block">最大消息长度（字符）</Label>
+              <Input
+                type="number" min={0} max={10000} placeholder="0"
+                value={getValue("anti_spam_max_msg_len") || "0"}
+                onChange={(e) => handleChange("anti_spam_max_msg_len", e.target.value)}
+                className="bg-gray-900 border-gray-600 text-white"
+              />
+              <p className="text-gray-500 text-xs mt-1">0 = 不限制；超过此长度的消息将被过滤</p>
             </div>
           </div>
         </CardContent>

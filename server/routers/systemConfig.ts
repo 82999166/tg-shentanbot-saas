@@ -222,6 +222,20 @@ export const systemConfigRouter = router({
       return { success: true };
     }),
 
+  // 批量删除公共群组
+  batchRemovePublicGroups: adminProcedure
+    .input(z.object({ ids: z.array(z.number()).min(1) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // 先删除关联的关键词和加群状态记录
+      await db.delete(publicGroupKeywords).where(inArray(publicGroupKeywords.publicGroupId, input.ids));
+      await db.delete(publicGroupJoinStatus).where(inArray(publicGroupJoinStatus.publicGroupId, input.ids));
+      // 再批量删除公共群组本身
+      await db.delete(publicMonitorGroups).where(inArray(publicMonitorGroups.id, input.ids));
+      return { success: true, deleted: input.ids.length };
+    }),
+
   // 一键同步私有群组到公共群组
   syncPrivateToPublic: adminProcedure
     .mutation(async ({ ctx }) => {
@@ -465,5 +479,39 @@ export const systemConfigRouter = router({
         if (err instanceof TRPCError) throw err;
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `无法连接引擎: ${err.message}` });
       }
+    }),
+  getJoinConfig: adminProcedure.query(async () => {
+    const db = await getDb();
+    const rows = await db.select().from(systemConfig);
+    const get = (k: string, def: string) => rows.find((r: any) => r.configKey === k)?.configValue ?? def;
+    return {
+      joinIntervalMin: parseInt(get("join_interval_min", "30")),
+      joinIntervalMax: parseInt(get("join_interval_max", "60")),
+      maxGroupsPerAccount: parseInt(get("max_groups_per_account", "100")),
+      joinEnabled: get("join_enabled", "true") === "true",
+    };
+  }),
+  updateJoinConfig: adminProcedure
+    .input(z.object({
+      joinIntervalMin: z.number().min(5).max(3600),
+      joinIntervalMax: z.number().min(5).max(3600),
+      maxGroupsPerAccount: z.number().min(1).max(500),
+      joinEnabled: z.boolean(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      const upsert = async (key: string, value: string) => {
+        const existing = await db.select().from(systemConfig).where(eq(systemConfig.configKey, key)).limit(1);
+        if (existing.length > 0) {
+          await db.update(systemConfig).set({ configValue: value }).where(eq(systemConfig.configKey, key));
+        } else {
+          await db.insert(systemConfig).values({ configKey: key, configValue: value });
+        }
+      };
+      await upsert("join_interval_min", String(input.joinIntervalMin));
+      await upsert("join_interval_max", String(input.joinIntervalMax));
+      await upsert("max_groups_per_account", String(input.maxGroupsPerAccount));
+      await upsert("join_enabled", String(input.joinEnabled));
+      return { success: true };
     }),
 });

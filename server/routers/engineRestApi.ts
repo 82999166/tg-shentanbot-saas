@@ -50,7 +50,7 @@ export function registerEngineRestRoutes(app: Router) {
         .from(tgAccounts)
         .where(
           and(
-            eq(tgAccounts.isActive, true),
+            eq(tgAccounts.inEngine, true),
             inArray(tgAccounts.accountRole, ["monitor", "sender", "both"])  // sender 账号也需要加载到引擎以发送私信
           )
         );
@@ -111,7 +111,7 @@ export function registerEngineRestRoutes(app: Router) {
           .where(
             and(
               eq(tgAccounts.userId, userId),
-              eq(tgAccounts.isActive, true),
+              eq(tgAccounts.inEngine, true),
               inArray(tgAccounts.accountRole, ["sender", "both"])
             )
           );
@@ -136,9 +136,10 @@ export function registerEngineRestRoutes(app: Router) {
         // 获取用户的 tgUserId（用于 Bot 推送命中通知）
         const userRow = await db.select({ tgUserId: users.tgUserId }).from(users)
           .where(eq(users.id, userId)).limit(1);
-        // 优先使用绑定的推送群组 ID，没有群组时才用个人 TG ID
         const collaborationGroupId = pushConfig.collaborationGroupId || null;
-        const botChatId = collaborationGroupId || userRow[0]?.tgUserId || null;
+        // botChatId 始终使用用户个人 TG ID（用于私聊推送）
+        // collabChatId 用于协作群推送，两者独立，引擎会自动去重避免重复推送
+        const botChatId = userRow[0]?.tgUserId || null;
 
         userConfigs[String(userId)] = {
           botChatId,
@@ -546,6 +547,23 @@ export function registerEngineRestRoutes(app: Router) {
   // POST /api/engine/heartbeat
   app.post("/api/engine/heartbeat", async (req: Request, res: Response) => {
     if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (db) {
+        const heartbeatData = {
+          ...req.body,
+          timestamp: req.body.timestamp ?? Math.floor(Date.now() / 1000),
+        };
+        const heartbeatJson = JSON.stringify(heartbeatData);
+        // upsert engine_last_heartbeat into system_config
+        await db
+          .insert(systemConfig)
+          .values({ configKey: "engine_last_heartbeat", configValue: heartbeatJson, description: "引擎最后心跳数据" })
+          .onDuplicateKeyUpdate({ set: { configValue: heartbeatJson } });
+      }
+    } catch (e: any) {
+      console.error("[Engine API] heartbeat save error:", e.message);
+    }
     res.json({ success: true, serverTime: Date.now() });
   });
 

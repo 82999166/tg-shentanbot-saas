@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import AdminLayout from "@/components/AdminLayout";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,21 +13,24 @@ import { toast } from "sonner";
 import { Settings2, Loader2, Info, Clock, Users, Zap } from "lucide-react";
 
 export default function JoinConfig() {
+  const [location] = useLocation();
+  const isAdmin = location.startsWith("/admin");
+  const Layout = isAdmin ? AdminLayout : DashboardLayout;
   const [joinIntervalMin, setJoinIntervalMin] = useState(30);
   const [joinIntervalMax, setJoinIntervalMax] = useState(60);
   const [maxGroupsPerAccount, setMaxGroupsPerAccount] = useState(100);
   const [joinEnabled, setJoinEnabled] = useState(true);
 
-  const { data: joinConfig, isLoading } = trpc.sysConfig.getJoinConfig.useQuery(undefined, {
-    onSuccess: (data) => {
-      if (data) {
-        setJoinIntervalMin(data.joinIntervalMin);
-        setJoinIntervalMax(data.joinIntervalMax);
-        setMaxGroupsPerAccount(data.maxGroupsPerAccount);
-        setJoinEnabled(data.joinEnabled);
-      }
-    },
-  });
+  const utils = trpc.useUtils();
+  const { data: joinConfig, isLoading } = trpc.sysConfig.getJoinConfig.useQuery();
+  useEffect(() => {
+    if (joinConfig) {
+      setJoinIntervalMin(joinConfig.joinIntervalMin);
+      setJoinIntervalMax(joinConfig.joinIntervalMax);
+      setMaxGroupsPerAccount(joinConfig.maxGroupsPerAccount);
+      setJoinEnabled(joinConfig.joinEnabled);
+    }
+  }, [joinConfig]);
 
   const { data: groupStats } = trpc.sysConfig.getPublicGroups.useQuery();
   const totalCount = groupStats?.length ?? 0;
@@ -33,6 +38,7 @@ export default function JoinConfig() {
 
   const updateJoinConfig = trpc.sysConfig.updateJoinConfig.useMutation({
     onSuccess: () => {
+      utils.sysConfig.getJoinConfig.invalidate();
       toast.success("自动加群配置已保存");
     },
     onError: (err) => {
@@ -41,7 +47,7 @@ export default function JoinConfig() {
   });
 
   return (
-    <DashboardLayout title="自动加群配置">
+    <Layout title="自动加群配置">
       <div className="p-6 max-w-2xl mx-auto space-y-6">
         {/* 说明卡片 */}
         <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-800">
@@ -189,6 +195,6 @@ export default function JoinConfig() {
           </CardContent>
         </Card>
       </div>
-    </DashboardLayout>
+    </Layout>
   );
 }

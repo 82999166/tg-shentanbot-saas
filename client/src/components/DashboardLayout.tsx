@@ -24,7 +24,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import {
   LayoutDashboard, LogOut, PanelLeft, Users, Key, Radio, MessageSquare,
   ListOrdered, FileText, Shield, CreditCard, Settings, Bot, Gift,
-  MessageCircle, BarChart2, Send, FolderPlus, Globe
+  MessageCircle, BarChart2, Send, FolderPlus, Globe, UserPlus
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -56,6 +56,7 @@ const adminMenuItems = [
   { icon: Users, label: "系统 TG 账号", path: "/accounts", group: "监控管理" },
   { icon: Bot, label: "Bot 配置", path: "/bot-config", group: "监控管理" },
   // 系统配置
+  { icon: UserPlus, label: "加群配置", path: "/join-config", group: "系统配置" },
   { icon: Shield, label: "防封设置", path: "/antiban", group: "系统配置" },
   { icon: Settings, label: "系统设置", path: "/system-settings", group: "系统配置" },
 ];
@@ -148,7 +149,7 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isAdmin = user?.role === "admin";
   // 管理后台路径只显示管理员菜单，用户后台路径只显示用户菜单
-  const adminPaths = ["/admin-groups", "/accounts", "/bot-config", "/antiban", "/system-settings"];
+  const adminPaths = ["/admin-groups", "/accounts", "/bot-config", "/antiban", "/system-settings", "/join-config"];
   const isAdminArea = adminPaths.some(p => location.startsWith(p));
   const menuItems = isAdminArea ? adminMenuItems : memberMenuItems;
   const activeMenuItem = menuItems.find(item => item.path === location);

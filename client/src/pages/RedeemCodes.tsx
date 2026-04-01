@@ -18,7 +18,7 @@ export default function RedeemCodes() {
   const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
   const [codeFilter, setCodeFilter] = useState<"all" | "unused" | "used" | "expired">("unused");
 
-  const { data: codes, refetch: refetchCodes } = trpc.payment.adminCodes.useQuery({
+  const { data: codes, isRefetching: codesRefetching, refetch: refetchCodes } = trpc.payment.adminCodes.useQuery({
     status: codeFilter,
     limit: 100,
     offset: 0,
@@ -154,8 +154,8 @@ export default function RedeemCodes() {
                     <SelectItem value="expired" className="text-gray-300 text-xs">已过期</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400" onClick={() => refetchCodes()}>
-                  <RefreshCw className="w-3 h-3" />
+                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400" onClick={() => refetchCodes()} disabled={codesRefetching}>
+                  <RefreshCw className={`w-3 h-3 ${codesRefetching ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
             </div>

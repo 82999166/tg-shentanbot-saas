@@ -33,7 +33,7 @@ export default function DmQueue() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
-  const { data, isLoading } = trpc.dmQueue.list.useQuery({
+  const { data, isLoading, isRefetching, refetch } = trpc.dmQueue.list.useQuery({
     status: statusFilter === "all" ? undefined : statusFilter as any,
     limit: 100,
   });
@@ -104,8 +104,8 @@ export default function DmQueue() {
               {STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={() => utils.dmQueue.list.invalidate()} className="border-border">
-            <RefreshCw className="w-4 h-4 mr-2" /> 刷新
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching} className="border-border">
+            <RefreshCw className={`w-4 h-4 mr-2 ${isRefetching ? 'animate-spin' : ''}`} /> 刷新
           </Button>
           {selectedIds.length > 0 && (
             <>

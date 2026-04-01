@@ -34,7 +34,7 @@ import { toast } from "sonner";
 import {
   Plus, Trash2, RefreshCw, Play, Search, Download,
   Users, CheckCircle2, XCircle, Clock, Loader2, Tag, Filter, ArrowRight,
-  Pencil, GitBranch
+  Pencil, GitBranch, Link2, MessageSquare, FileText, FileDown
 } from "lucide-react";
 
 // 预置关键词
@@ -72,6 +72,11 @@ type ScrapeResult = {
   importStatus: "pending" | "imported" | "ignored";
   importedAt: string | null;
   createdAt: string;
+};
+
+type ExtractedLink = {
+  url: string;
+  slug: string;
 };
 
 function StatusBadge({ status }: { status: Task["status"] }) {
@@ -202,11 +207,13 @@ function TaskForm({
           <label className="text-sm text-gray-300 block mb-1.5">每关键词最多采集数</label>
           <Input
             type="number"
+            min={1}
+            max={500}
             value={taskMaxResults}
-            onChange={e => setTaskMaxResults(parseInt(e.target.value) || 10)}
+            onChange={e => setTaskMaxResults(Math.min(500, Math.max(1, parseInt(e.target.value) || 10)))}
             className="bg-gray-800 border-gray-700 text-white"
           />
-          <p className="text-xs text-gray-500 mt-1">每个关键词最多采集条数</p>
+          <p className="text-xs text-gray-500 mt-1">每个关键词最多采集条数（1~500）</p>
         </div>
       </div>
 
@@ -262,7 +269,7 @@ function TaskForm({
 }
 
 export default function GroupScrape() {
-  const [activeTab, setActiveTab] = useState<"tasks" | "results">("tasks");
+  const [activeTab, setActiveTab] = useState<"tasks" | "results" | "extract">("tasks");
 
   // 新建任务状态
   const [createDialog, setCreateDialog] = useState(false);
@@ -297,18 +304,31 @@ export default function GroupScrape() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [importConfirmDialog, setImportConfirmDialog] = useState(false);
 
+  // ── 从群消息提取链接 状态 ──────────────────────────────────────
+  const [extractAccountId, setExtractAccountId] = useState<string>("");
+  const [extractGroupUrl, setExtractGroupUrl] = useState("");
+  const [extractLimit, setExtractLimit] = useState(500);
+  const [extractedLinks, setExtractedLinks] = useState<ExtractedLink[]>([]);
+  const [extractScanned, setExtractScanned] = useState(0);
+  const [extractSelectedUrls, setExtractSelectedUrls] = useState<Set<string>>(new Set());
+  const [extractImportDialog, setExtractImportDialog] = useState(false);
+
   const utils = trpc.useUtils();
 
   // 查询任务列表
-  const { data: tasks = [], isLoading: tasksLoading, refetch: refetchTasks } = trpc.groupScrape.listTasks.useQuery();
+  const { data: tasks = [], isLoading: tasksLoading, isRefetching: tasksRefetching, refetch: refetchTasks } = trpc.groupScrape.listTasks.useQuery();
 
   // 查询采集结果
-  const { data: resultsData, isLoading: resultsLoading, refetch: refetchResults } = trpc.groupScrape.listResults.useQuery({
+  const { data: resultsData, isLoading: resultsLoading, isRefetching: resultsRefetching, refetch: refetchResults } = trpc.groupScrape.listResults.useQuery({
     taskId: selectedTaskId,
     importStatus: importStatusFilter,
     page,
     pageSize: 20,
   });
+
+  // 查询 TG 账号列表（用于提取链接时选择账号）
+  const { data: accountsData } = trpc.tgAccounts.list.useQuery();
+  const accounts = (accountsData as any)?.accounts ?? accountsData ?? [];
 
   const results = resultsData?.items || [];
   const totalResults = resultsData?.total || 0;
@@ -354,7 +374,7 @@ export default function GroupScrape() {
     onError: (e) => toast.error(e.message),
   });
 
-  // 批量导入
+  // 批量导入（采集结果）
   const importToPool = trpc.groupScrape.importToPublicPool.useMutation({
     onSuccess: (data) => {
       toast.success(`成功导入 ${data.importedCount} 个群组，跳过 ${data.skippedCount} 个（已存在）`);
@@ -380,6 +400,27 @@ export default function GroupScrape() {
     onSuccess: () => {
       toast.success("采集结果已清空");
       refetchResults();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // 从群消息提取链接
+  const extractFromGroup = trpc.groupScrape.extractFromGroup.useMutation({
+    onSuccess: (data) => {
+      setExtractedLinks(data.links);
+      setExtractScanned(data.scanned);
+      setExtractSelectedUrls(new Set(data.links.map(l => l.url)));
+      toast.success(`扫描 ${data.scanned} 条消息，提取到 ${data.total} 个群组链接`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // 将提取的链接批量导入公共群池（直接调用 importChatsToPublic）
+  const importExtractedLinks = trpc.tgAccounts.importChatsToPublic.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`成功导入 ${data.added} 个群组，跳过 ${data.skipped} 个（已存在）`);
+      setExtractImportDialog(false);
+      setExtractSelectedUrls(new Set());
     },
     onError: (e) => toast.error(e.message),
   });
@@ -425,6 +466,23 @@ export default function GroupScrape() {
     }
   }
 
+  function toggleExtractSelect(url: string) {
+    setExtractSelectedUrls(prev => {
+      const next = new Set(prev);
+      if (next.has(url)) next.delete(url);
+      else next.add(url);
+      return next;
+    });
+  }
+
+  function toggleExtractSelectAll() {
+    if (extractSelectedUrls.size === extractedLinks.length) {
+      setExtractSelectedUrls(new Set());
+    } else {
+      setExtractSelectedUrls(new Set(extractedLinks.map(l => l.url)));
+    }
+  }
+
   const totalPages = Math.ceil(totalResults / 20);
 
   return (
@@ -438,7 +496,7 @@ export default function GroupScrape() {
               群组采集
             </h1>
             <p className="text-sm text-gray-400 mt-1">
-              通过关键词搜索公开群组，采集后人工审核，选择导入公共监控群组池
+              通过关键词搜索公开群组，或从群消息中提取群链接，导入公共监控群组池
             </p>
           </div>
           <div className="flex gap-2">
@@ -477,6 +535,15 @@ export default function GroupScrape() {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab("extract")}
+            className={`px-4 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1.5 ${
+              activeTab === "extract" ? "bg-orange-600 text-white" : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            从群消息提取链接
+          </button>
         </div>
 
         {/* ── 采集任务 Tab ── */}
@@ -485,8 +552,8 @@ export default function GroupScrape() {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-white text-base">采集任务列表</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => refetchTasks()} className="text-gray-400 hover:text-white">
-                  <RefreshCw className="w-4 h-4" />
+                <Button variant="ghost" size="sm" onClick={() => refetchTasks()} disabled={tasksRefetching} className="text-gray-400 hover:text-white">
+                  <RefreshCw className={`w-4 h-4 ${tasksRefetching ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
             </CardHeader>
@@ -639,8 +706,8 @@ export default function GroupScrape() {
                 </SelectContent>
               </Select>
 
-              <Button variant="ghost" size="sm" onClick={() => refetchResults()} className="text-gray-400 hover:text-white">
-                <RefreshCw className="w-4 h-4" />
+              <Button variant="ghost" size="sm" onClick={() => refetchResults()} disabled={resultsRefetching} className="text-gray-400 hover:text-white">
+                <RefreshCw className={`w-4 h-4 ${resultsRefetching ? 'animate-spin' : ''}`} />
               </Button>
 
               <div className="ml-auto flex gap-2">
@@ -818,6 +885,243 @@ export default function GroupScrape() {
             </Card>
           </div>
         )}
+
+        {/* ── 从群消息提取链接 Tab ── */}
+        {activeTab === "extract" && (
+          <div className="space-y-4">
+            {/* 配置卡片 */}
+            <Card className="bg-gray-900 border-gray-800">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-white text-base flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-orange-400" />
+                  从群组历史消息中提取群链接
+                </CardTitle>
+                <p className="text-xs text-gray-400 mt-1">
+                  选择一个已登录的 TG 账号，输入目标群组链接，系统将扫描该群的历史消息，自动提取所有 t.me 群组链接
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  {/* 选择账号 */}
+                  <div>
+                    <label className="text-sm text-gray-300 block mb-1.5">选择 TG 账号</label>
+                    <Select value={extractAccountId} onValueChange={setExtractAccountId}>
+                      <SelectTrigger className="bg-gray-800 border-gray-700 text-gray-200">
+                        <SelectValue placeholder="请选择账号" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-gray-900 border-gray-700">
+                        {(Array.isArray(accounts) ? accounts : []).map((acc: any) => (
+                          <SelectItem key={acc.id} value={String(acc.id)}>
+                            {acc.phone || acc.tgUsername || `账号 #${acc.id}`}
+                            {acc.tgUsername ? ` (@${acc.tgUsername})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500 mt-1">账号需已加入目标群组</p>
+                  </div>
+
+                  {/* 群组链接 */}
+                  <div>
+                    <label className="text-sm text-gray-300 block mb-1.5">目标群组链接</label>
+                    <Input
+                      value={extractGroupUrl}
+                      onChange={e => setExtractGroupUrl(e.target.value)}
+                      placeholder="https://t.me/+xxx 或 @username"
+                      className="bg-gray-800 border-gray-700 text-white"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">支持邀请链接或 @用户名</p>
+                  </div>
+
+                  {/* 扫描消息数 */}
+                  <div>
+                    <label className="text-sm text-gray-300 block mb-1.5">最多扫描消息数</label>
+                    <Select value={String(extractLimit)} onValueChange={v => setExtractLimit(parseInt(v))}>
+                      <SelectTrigger className="bg-gray-800 border-gray-700 text-gray-200">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-gray-900 border-gray-700">
+                        <SelectItem value="200">200 条（快速）</SelectItem>
+                        <SelectItem value="500">500 条（推荐）</SelectItem>
+                        <SelectItem value="1000">1000 条</SelectItem>
+                        <SelectItem value="2000">2000 条</SelectItem>
+                        <SelectItem value="5000">5000 条（较慢）</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500 mt-1">消息越多耗时越长</p>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => {
+                    if (!extractAccountId) { toast.error("请选择 TG 账号"); return; }
+                    if (!extractGroupUrl.trim()) { toast.error("请输入目标群组链接"); return; }
+                    setExtractedLinks([]);
+                    setExtractSelectedUrls(new Set());
+                    extractFromGroup.mutate({
+                      accountId: parseInt(extractAccountId),
+                      groupUrl: extractGroupUrl.trim(),
+                      limit: extractLimit,
+                    });
+                  }}
+                  disabled={extractFromGroup.isPending}
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                >
+                  {extractFromGroup.isPending ? (
+                    <><Loader2 className="w-4 h-4 animate-spin mr-2" />扫描中，请稍候...</>
+                  ) : (
+                    <><Search className="w-4 h-4 mr-2" />开始扫描提取</>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* 提取结果 */}
+            {extractedLinks.length > 0 && (
+              <Card className="bg-gray-900 border-gray-800">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-white text-base flex items-center gap-2">
+                      <Link2 className="w-4 h-4 text-orange-400" />
+                      提取结果
+                      <span className="text-sm font-normal text-gray-400">
+                        扫描 {extractScanned} 条消息，找到 {extractedLinks.length} 个群组链接
+                      </span>
+                    </CardTitle>
+                    <div className="flex gap-2">
+                      {/* 导出 TXT */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const lines = extractedLinks.map(l => l.url).join("\n");
+                          const blob = new Blob([lines], { type: "text/plain;charset=utf-8" });
+                          const a = document.createElement("a");
+                          a.href = URL.createObjectURL(blob);
+                          a.download = `tg_group_links_${Date.now()}.txt`;
+                          a.click();
+                          URL.revokeObjectURL(a.href);
+                        }}
+                        className="border-gray-600 text-gray-300 hover:text-white hover:bg-gray-700"
+                      >
+                        <FileText className="w-4 h-4 mr-1" />
+                        导出 TXT
+                      </Button>
+                      {/* 导出 CSV */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const header = "url,type";
+                          const rows = extractedLinks.map(l => {
+                            const t = (l.url.includes("/+") || l.url.includes("/joinchat")) ? "私有邀请链接" : "公开用户名";
+                            return `"${l.url}","${t}"`;
+                          });
+                          const csv = [header, ...rows].join("\n");
+                          const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+                          const a = document.createElement("a");
+                          a.href = URL.createObjectURL(blob);
+                          a.download = `tg_group_links_${Date.now()}.csv`;
+                          a.click();
+                          URL.revokeObjectURL(a.href);
+                        }}
+                        className="border-gray-600 text-gray-300 hover:text-white hover:bg-gray-700"
+                      >
+                        <FileDown className="w-4 h-4 mr-1" />
+                        导出 CSV
+                      </Button>
+                      {extractSelectedUrls.size > 0 && (
+                        <Button
+                          size="sm"
+                          onClick={() => setExtractImportDialog(true)}
+                          className="bg-green-700 hover:bg-green-600 text-white"
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          导入选中 ({extractSelectedUrls.size})
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-gray-800">
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={extractSelectedUrls.size === extractedLinks.length && extractedLinks.length > 0}
+                            onCheckedChange={toggleExtractSelectAll}
+                            className="border-gray-600"
+                          />
+                        </TableHead>
+                        <TableHead className="text-gray-400">群组链接</TableHead>
+                        <TableHead className="text-gray-400">链接类型</TableHead>
+                        <TableHead className="text-gray-400 text-right">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {extractedLinks.map((link) => {
+                        const isInvite = link.url.includes("/+") || link.url.includes("/joinchat");
+                        return (
+                          <TableRow key={link.url} className="border-gray-800 hover:bg-gray-800/50">
+                            <TableCell>
+                              <Checkbox
+                                checked={extractSelectedUrls.has(link.url)}
+                                onCheckedChange={() => toggleExtractSelect(link.url)}
+                                className="border-gray-600"
+                              />
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">
+                              <a
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-400 hover:text-blue-300 hover:underline"
+                              >
+                                {link.url}
+                              </a>
+                            </TableCell>
+                            <TableCell>
+                              <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                isInvite
+                                  ? "bg-purple-900/40 text-purple-300"
+                                  : "bg-gray-800 text-gray-300"
+                              }`}>
+                                {isInvite ? "私有邀请链接" : "公开用户名"}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setExtractSelectedUrls(new Set([link.url]));
+                                  setExtractImportDialog(true);
+                                }}
+                                className="text-green-400 hover:text-green-300 hover:bg-green-900/20 text-xs"
+                              >
+                                <Download className="w-3 h-3 mr-1" />
+                                导入
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 无结果提示 */}
+            {!extractFromGroup.isPending && extractedLinks.length === 0 && extractScanned > 0 && (
+              <div className="text-center py-12 text-gray-500">
+                <Link2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                <p>未在该群组的 {extractScanned} 条消息中找到任何群组链接</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── 新建任务弹窗 ── */}
@@ -930,7 +1234,7 @@ export default function GroupScrape() {
         </DialogContent>
       </Dialog>
 
-      {/* ── 导入确认弹窗 ── */}
+      {/* ── 导入确认弹窗（采集结果）── */}
       <Dialog open={importConfirmDialog} onOpenChange={setImportConfirmDialog}>
         <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-sm">
           <DialogHeader>
@@ -947,6 +1251,42 @@ export default function GroupScrape() {
               className="bg-green-700 hover:bg-green-600 text-white"
             >
               {importToPool.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Download className="w-4 h-4 mr-1" />}
+              确认导入
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── 导入确认弹窗（提取的链接）── */}
+      <Dialog open={extractImportDialog} onOpenChange={setExtractImportDialog}>
+        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle>确认导入群组链接</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              将选中的 <strong className="text-white">{extractSelectedUrls.size}</strong> 个群组链接导入公共监控群组池。
+              <br />
+              <span className="text-yellow-400 text-xs mt-1 block">注意：私有邀请链接（t.me/+xxx）需要账号先加入该群才能监控。</span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setExtractImportDialog(false)} className="text-gray-400">取消</Button>
+            <Button
+              onClick={() => {
+                const chats = Array.from(extractSelectedUrls).map(url => {
+                  const slug = url.replace(/^https?:\/\/t\.me\//, "").replace(/^@/, "");
+                  return {
+                    chatId: url,
+                    title: url,
+                    username: slug,
+                    type: "supergroup",
+                  };
+                });
+                importExtractedLinks.mutate({ chats });
+              }}
+              disabled={importExtractedLinks.isPending}
+              className="bg-green-700 hover:bg-green-600 text-white"
+            >
+              {importExtractedLinks.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Download className="w-4 h-4 mr-1" />}
               确认导入
             </Button>
           </DialogFooter>

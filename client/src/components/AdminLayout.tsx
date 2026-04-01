@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Globe, Users, Bot, Shield, Settings, LogOut, ShieldCheck, PanelLeft,
+  Globe, Users, Bot, Shield, Settings, LogOut, ShieldCheck, PanelLeft, UserPlus,
   MessageCircle, BarChart2, Send, UserCog, Wrench, ShoppingCart, Key, KeyRound, Search
 } from "lucide-react";
 import { useState } from "react";
@@ -26,6 +26,7 @@ const adminMenuItems = [
   { icon: Search, label: "群组采集", path: "/admin-group-scrape", group: "监控管理" },
   { icon: Users, label: "系统 TG 账号", path: "/admin-accounts", group: "监控管理" },
   { icon: Bot, label: "Bot 配置", path: "/bot-config", group: "监控管理" },
+  { icon: UserPlus, label: "加群配置", path: "/admin-join-config", group: "监控管理" },
 
   // 推送配置
   { icon: Send, label: "推送设置", path: "/admin-push-settings", group: "推送配置" },

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, XCircle, Users, Eye, ArrowUpFromLine, Zap, Upload, Download, Copy, FileText, File } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, XCircle, Users, Eye, ArrowUpFromLine, Zap, Upload, Download, Copy, FileText, File, Smartphone, Search, UserPlus, Loader2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function AdminGroups() {
   const [addDialog, setAddDialog] = useState(false);
@@ -45,13 +47,39 @@ export default function AdminGroups() {
   const [fileInfo, setFileInfo] = useState<{ name: string; count: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 从TG账号导入状态
+  const [accountImportDialog, setAccountImportDialog] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [accountChats, setAccountChats] = useState<Array<{ chatId: string; title: string; username: string; type: string }>>([]);
+  const [accountChatsLoading, setAccountChatsLoading] = useState(false);
+  const [selectedChatIds, setSelectedChatIds] = useState<Set<string>>(new Set());
+  const [chatSearchText, setChatSearchText] = useState("");
+  const [accountImportStep, setAccountImportStep] = useState<"select" | "choose" | "done">("select");
+  const [accountImportResult, setAccountImportResult] = useState<{ added: number; skipped: number } | null>(null);
+
+  // 一键加群状态
+  const [joinGroupDialog, setJoinGroupDialog] = useState(false);
+  const [joinSelectedAccountIds, setJoinSelectedAccountIds] = useState<Set<number>>(new Set());
+  const [joinIntervalMin, setJoinIntervalMin] = useState(30);
+  const [joinIntervalMax, setJoinIntervalMax] = useState(60);
+  const [joinRunning, setJoinRunning] = useState(false);
+  const [joinResult, setJoinResult] = useState<{ joined: number; failed: number; skipped: number; results: Array<{ account_id: number; group_id: string; status: string; reason?: string }> } | null>(null);
+  const [joinProgress, setJoinProgress] = useState<{ current: number; total: number; currentGroup: string } | null>(null);
+
   // 导出状态
   const [onlyActive, setOnlyActive] = useState(true);
   const [copied, setCopied] = useState(false);
+  // 批量删除状态
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const utils = trpc.useUtils();
 
-  const { data: groups = [], isLoading, refetch } = trpc.sysConfig.getPublicGroups.useQuery();
+  const { data: groups = [], isLoading, isRefetching, refetch } = trpc.sysConfig.getPublicGroups.useQuery();
+  const { data: accountsData } = trpc.tgAccounts.list.useQuery();
+  const tgAccounts = (Array.isArray(accountsData) ? accountsData : accountsData?.accounts) ?? [];
+
+  const getAccountChatsMut = trpc.tgAccounts.getAccountChats.useMutation();
+  const importChatsToPublicMut = trpc.tgAccounts.importChatsToPublic.useMutation();
 
   const { data: exportData, isLoading: exportLoading, refetch: refetchExport } = trpc.sysConfig.exportPublicGroupLinks.useQuery(
     { onlyActive, format: "links" },
@@ -77,6 +105,15 @@ export default function AdminGroups() {
   });
 
   const addGroupMut = trpc.sysConfig.addPublicGroup.useMutation();
+
+  const batchRemoveGroups = trpc.sysConfig.batchRemovePublicGroups.useMutation({
+    onSuccess: (data) => {
+      toast.success(`已删除 ${data.deleted} 个群组`);
+      setSelectedIds([]);
+      refetch();
+    },
+    onError: (err) => toast.error("批量删除失败: " + err.message),
+  });
 
   const removeGroup = trpc.sysConfig.removePublicGroup.useMutation({
     onSuccess: () => {
@@ -106,12 +143,89 @@ export default function AdminGroups() {
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
+  const batchJoinMut = trpc.engine.batchJoinGroups.useMutation();
+
+  async function handleBatchJoin() {
+    if (joinSelectedAccountIds.size === 0) { toast.error("请至少选择一个账号"); return; }
+    setJoinRunning(true);
+    setJoinResult(null);
+    setJoinProgress({ current: 0, total: 0, currentGroup: '正在连接引擎，执行加群操作...' });
+    try {
+      const res = await batchJoinMut.mutateAsync({
+        accountIds: Array.from(joinSelectedAccountIds),
+        intervalMin: joinIntervalMin,
+        intervalMax: joinIntervalMax,
+      });
+      setJoinProgress(null);
+      setJoinResult(res);
+      toast.success(`加群完成：成功 ${res.joined}，跳过 ${res.skipped}，失败 ${res.failed}`);
+    } catch (e: any) {
+      setJoinProgress(null);
+      toast.error("加群失败: " + e.message);
+    } finally {
+      setJoinRunning(false);
+    }
+  }
+
+  function closeJoinGroupDialog() {
+    setJoinGroupDialog(false);
+    setJoinSelectedAccountIds(new Set());
+    setJoinResult(null);
+    setJoinRunning(false);
+    setJoinProgress(null);
+  }
+
   const triggerSync = trpc.sysConfig.triggerEngineSync.useMutation({
     onSuccess: () => {
       toast.success("已触发引擎立即同步，新群组将在几秒内开始监控");
     },
     onError: (e: { message: string }) => toast.error(`同步失败: ${e.message}`),
   });
+
+  // 从TG账号导入：加载群组列表
+  async function handleLoadAccountChats() {
+    if (!selectedAccountId) return;
+    setAccountChatsLoading(true);
+    setAccountChats([]);
+    setSelectedChatIds(new Set());
+    try {
+      const res = await getAccountChatsMut.mutateAsync({ id: Number(selectedAccountId) });
+      setAccountChats(res.chats);
+      setAccountImportStep("choose");
+    } catch (e: any) {
+      toast.error("获取群组列表失败: " + e.message);
+    } finally {
+      setAccountChatsLoading(false);
+    }
+  }
+
+  async function handleImportSelectedChats() {
+    const selected = accountChats.filter(c => selectedChatIds.has(c.chatId));
+    if (selected.length === 0) { toast.error("请至少选择一个群组"); return; }
+    try {
+      const res = await importChatsToPublicMut.mutateAsync({ chats: selected });
+      setAccountImportResult({ added: res.added, skipped: res.skipped });
+      setAccountImportStep("done");
+      utils.sysConfig.getPublicGroups.invalidate();
+      toast.success(res.message);
+    } catch (e: any) {
+      toast.error("导入失败: " + e.message);
+    }
+  }
+
+  function closeAccountImportDialog() {
+    setAccountImportDialog(false);
+    setSelectedAccountId("");
+    setAccountChats([]);
+    setSelectedChatIds(new Set());
+    setChatSearchText("");
+    setAccountImportStep("select");
+    setAccountImportResult(null);
+  }
+
+  const filteredAccountChats = accountChats.filter(c =>
+    !chatSearchText || c.title.toLowerCase().includes(chatSearchText.toLowerCase()) || c.username.toLowerCase().includes(chatSearchText.toLowerCase())
+  );
 
   const activeGroups = groups.filter((g: { isActive: boolean }) => g.isActive);
   const inactiveGroups = groups.filter((g: { isActive: boolean }) => !g.isActive);
@@ -246,8 +360,8 @@ export default function AdminGroups() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              <RefreshCw className="w-4 h-4 mr-1" />
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching}>
+              <RefreshCw className={`w-4 h-4 mr-1 ${isRefetching ? 'animate-spin' : ''}`} />
               刷新
             </Button>
             <Button
@@ -284,6 +398,19 @@ export default function AdminGroups() {
             <Button variant="outline" size="sm" onClick={() => setBatchDialog(true)}>
               <Upload className="w-4 h-4 mr-1" />
               批量导入
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setAccountImportDialog(true)}>
+              <Smartphone className="w-4 h-4 mr-1" />
+              从TG账号导入
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setJoinGroupDialog(true)}
+              className="border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+            >
+              <UserPlus className="w-4 h-4 mr-1" />
+              一键加群
             </Button>
             <Button size="sm" onClick={() => setAddDialog(true)}>
               <Plus className="w-4 h-4 mr-1" />
@@ -360,9 +487,44 @@ export default function AdminGroups() {
                 </div>
               </div>
             ) : (
+              <>
+              {selectedIds.length > 0 && (
+                <div className="flex items-center gap-3 px-4 py-2 mb-2 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <span className="text-sm text-blue-400">已选择 <strong>{selectedIds.length}</strong> 个群组</span>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm(`确认删除选中的 ${selectedIds.length} 个群组？
+此操作不可恢复，关联的关键词配置也将一并删除。`)) {
+                        batchRemoveGroups.mutate({ ids: selectedIds });
+                      }
+                    }}
+                    disabled={batchRemoveGroups.isPending}
+                  >
+                    <Trash2 className="w-4 h-4 mr-1" />
+                    {batchRemoveGroups.isPending ? "删除中..." : "批量删除"}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedIds([])}>
+                    取消选择
+                  </Button>
+                </div>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={groups.length > 0 && selectedIds.length === groups.length}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedIds(groups.map((g: any) => g.id));
+                          } else {
+                            setSelectedIds([]);
+                          }
+                        }}
+                      />
+                    </TableHead>
                     <TableHead>群组 ID</TableHead>
                     <TableHead>群组名称</TableHead>
                     <TableHead>备注</TableHead>
@@ -373,7 +535,19 @@ export default function AdminGroups() {
                 </TableHeader>
                 <TableBody>
                   {groups.map((group: any) => (
-                    <TableRow key={group.id}>
+                    <TableRow key={group.id} className={selectedIds.includes(group.id) ? "bg-blue-500/5" : ""}>
+                      <TableCell className="w-10">
+                        <Checkbox
+                          checked={selectedIds.includes(group.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedIds(prev => [...prev, group.id]);
+                            } else {
+                              setSelectedIds(prev => prev.filter(id => id !== group.id));
+                            }
+                          }}
+                        />
+                      </TableCell>
                       <TableCell className="font-mono text-sm">
                         {group.groupId}
                       </TableCell>
@@ -434,6 +608,7 @@ export default function AdminGroups() {
                   ))}
                 </TableBody>
               </Table>
+              </>
             )}
           </CardContent>
         </Card>
@@ -491,6 +666,144 @@ export default function AdminGroups() {
               >
                 {addGroup.isPending ? "添加中..." : "添加群组"}
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 从TG账号导入对话框 */}
+        <Dialog open={accountImportDialog} onOpenChange={(o) => { if (!o) closeAccountImportDialog(); }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+            <DialogHeader className="shrink-0">
+              <DialogTitle className="flex items-center gap-2">
+                <Smartphone className="w-5 h-5 text-green-400" />
+                从TG账号导入群组
+              </DialogTitle>
+              <DialogDescription>
+                选择一个TG账号，读取该账号已加入的群组，勾选需要监控的群组导入到公共群组池
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-4">
+              {accountImportStep === "select" && (
+                <div className="space-y-4 py-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">选择TG账号</label>
+                    <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="请选择一个TG账号" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tgAccounts.map((acc: any) => (
+                          <SelectItem key={acc.id} value={String(acc.id)}>
+                            {acc.username ? `@${acc.username}` : acc.phone} {acc.sessionStatus === "active" ? "✓" : "(离线)"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="bg-muted/30 rounded-lg p-3 text-xs text-muted-foreground">
+                    <p>选择账号后，系统将从引擎读取该账号已加入的所有群组（超级群组、频道等），您可以从中勾选要加入公共群组池的群组。</p>
+                  </div>
+                </div>
+              )}
+
+              {accountImportStep === "choose" && (
+                <div className="space-y-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">共 {accountChats.length} 个群组，已选 {selectedChatIds.size} 个</span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setSelectedChatIds(new Set(filteredAccountChats.map(c => c.chatId)))}>
+                        全选
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setSelectedChatIds(new Set())}>
+                        清空
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      className="w-full pl-9 pr-3 py-2 text-sm bg-muted/30 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                      placeholder="搜索群组名称或用户名..."
+                      value={chatSearchText}
+                      onChange={e => setChatSearchText(e.target.value)}
+                    />
+                  </div>
+                  <div className="border border-border rounded-lg overflow-hidden">
+                    <div className="max-h-80 overflow-y-auto">
+                      {filteredAccountChats.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground text-sm">没有找到匹配的群组</div>
+                      ) : (
+                        <table className="w-full text-sm">
+                          <thead className="bg-muted/50 sticky top-0">
+                            <tr>
+                              <th className="w-10 px-3 py-2"></th>
+                              <th className="text-left px-3 py-2">群组名称</th>
+                              <th className="text-left px-3 py-2">用户名</th>
+                              <th className="text-left px-3 py-2">类型</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredAccountChats.map(chat => (
+                              <tr
+                                key={chat.chatId}
+                                className="border-t border-border hover:bg-muted/20 cursor-pointer"
+                                onClick={() => {
+                                  const next = new Set(selectedChatIds);
+                                  if (next.has(chat.chatId)) next.delete(chat.chatId); else next.add(chat.chatId);
+                                  setSelectedChatIds(next);
+                                }}
+                              >
+                                <td className="px-3 py-2">
+                                  <Checkbox checked={selectedChatIds.has(chat.chatId)} onCheckedChange={() => {}} />
+                                </td>
+                                <td className="px-3 py-2 font-medium">{chat.title}</td>
+                                <td className="px-3 py-2 text-muted-foreground font-mono text-xs">{chat.username ? `@${chat.username}` : chat.chatId}</td>
+                                <td className="px-3 py-2">
+                                  <Badge variant="outline" className="text-xs">{chat.type}</Badge>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {accountImportStep === "done" && accountImportResult && (
+                <div className="py-8 text-center space-y-3">
+                  <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto" />
+                  <p className="text-lg font-semibold">导入完成</p>
+                  <p className="text-sm text-muted-foreground">
+                    新增 <strong className="text-green-400">{accountImportResult.added}</strong> 个群组，
+                    跳过 <strong className="text-muted-foreground">{accountImportResult.skipped}</strong> 个（已存在）
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="shrink-0 border-t border-border pt-4 mt-2">
+              {accountImportStep === "select" && (
+                <>
+                  <Button variant="outline" onClick={closeAccountImportDialog}>取消</Button>
+                  <Button onClick={handleLoadAccountChats} disabled={!selectedAccountId || accountChatsLoading}>
+                    {accountChatsLoading ? "读取中..." : "读取群组列表"}
+                  </Button>
+                </>
+              )}
+              {accountImportStep === "choose" && (
+                <>
+                  <Button variant="outline" onClick={() => setAccountImportStep("select")}>返回</Button>
+                  <Button onClick={handleImportSelectedChats} disabled={selectedChatIds.size === 0 || importChatsToPublicMut.isPending}>
+                    {importChatsToPublicMut.isPending ? "导入中..." : `导入选中的 ${selectedChatIds.size} 个群组`}
+                  </Button>
+                </>
+              )}
+              {accountImportStep === "done" && (
+                <Button onClick={closeAccountImportDialog}>完成</Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -807,6 +1120,189 @@ export default function AdminGroups() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      {/* 一键加群 Dialog */}
+      <Dialog open={joinGroupDialog} onOpenChange={(open) => { if (!open) closeJoinGroupDialog(); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-orange-400" />
+              一键加群
+            </DialogTitle>
+            <DialogDescription>
+              选择要执行加群的 TG 账号，系统将自动让这些账号加入所有尚未加入的公共群组。
+              加群间隔遵循防封配置，请耐心等待。
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 加群中进度显示 */}
+          {joinRunning && (
+            <div className="bg-muted/30 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-orange-400 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium">{joinProgress?.currentGroup || '正在执行加群操作...'}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">引擎正在处理，请耐心等待（每次加群间隔 {joinIntervalMin}–{joinIntervalMax} 秒）</p>
+                </div>
+              </div>
+              {/* 连续动画进度条 */}
+              <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                <div className="bg-orange-500 h-1.5 rounded-full animate-[progress-indeterminate_1.5s_ease-in-out_infinite]" style={{ width: '40%', animation: 'indeterminate 1.5s ease-in-out infinite' }} />
+              </div>
+              <style>{`@keyframes indeterminate { 0% { transform: translateX(-100%); width: 40%; } 50% { width: 60%; } 100% { transform: translateX(300%); width: 40%; } }`}</style>
+            </div>
+          )}
+
+          {!joinResult ? (
+            <div className="space-y-4">
+              {/* 账号选择 */}
+              <div>
+                <p className="text-sm font-medium mb-2">选择执行账号（可多选）</p>
+                <div className="max-h-48 overflow-y-auto border border-border rounded-lg divide-y divide-border">
+                  {tgAccounts.length === 0 ? (
+                    <div className="text-center py-4 text-sm text-muted-foreground">暂无可用账号</div>
+                  ) : (
+                    tgAccounts.map((acc: any) => (
+                      <label key={acc.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/50">
+                        <Checkbox
+                          checked={joinSelectedAccountIds.has(acc.id)}
+                          onCheckedChange={(checked) => {
+                            const next = new Set(joinSelectedAccountIds);
+                            if (checked) next.add(acc.id); else next.delete(acc.id);
+                            setJoinSelectedAccountIds(next);
+                          }}
+                          disabled={joinRunning}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{acc.phone || acc.tgUsername || `ID:${acc.id}`}</p>
+                          {acc.tgUsername && <p className="text-xs text-muted-foreground">@{acc.tgUsername}</p>}
+                        </div>
+                        <Badge variant={acc.sessionStatus === 'active' ? 'default' : 'secondary'} className="text-xs shrink-0">
+                          {acc.sessionStatus === 'active' ? '在线' : '离线'}
+                        </Badge>
+                      </label>
+                    ))
+                  )}
+                </div>
+                <div className="flex gap-2 mt-1">
+                  <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setJoinSelectedAccountIds(new Set(tgAccounts.map((a: any) => a.id)))} disabled={joinRunning}>全选</Button>
+                  <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setJoinSelectedAccountIds(new Set())} disabled={joinRunning}>取消全选</Button>
+                  <span className="text-xs text-muted-foreground ml-auto self-center">已选 {joinSelectedAccountIds.size} 个账号</span>
+                </div>
+              </div>
+
+              {/* 加群间隔 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">最小间隔（秒）</p>
+                  <input
+                    type="number"
+                    min={5}
+                    max={300}
+                    value={joinIntervalMin}
+                    onChange={(e) => setJoinIntervalMin(Number(e.target.value))}
+                    disabled={joinRunning}
+                    className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
+                  />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">最大间隔（秒）</p>
+                  <input
+                    type="number"
+                    min={5}
+                    max={600}
+                    value={joinIntervalMax}
+                    onChange={(e) => setJoinIntervalMax(Number(e.target.value))}
+                    disabled={joinRunning}
+                    className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
+                <p>⚠️ 注意事项：</p>
+                <ul className="mt-1 space-y-1 list-disc list-inside">
+                  <li>已加入的群组将自动跳过，不会重复加入</li>
+                  <li>私密群（邀请链接）需要有效的邀请链接才能加入</li>
+                  <li>加群间隔建议设置 30-60 秒，避免账号被限制</li>
+                  <li>群组数量较多时，此操作可能需要较长时间</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            /* 结果展示 */
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="text-center p-3 bg-green-500/10 rounded-lg">
+                  <p className="text-2xl font-bold text-green-400">{joinResult.joined}</p>
+                  <p className="text-xs text-muted-foreground mt-1">成功加入</p>
+                </div>
+                <div className="text-center p-3 bg-yellow-500/10 rounded-lg">
+                  <p className="text-2xl font-bold text-yellow-400">{joinResult.skipped}</p>
+                  <p className="text-xs text-muted-foreground mt-1">已跳过</p>
+                </div>
+                <div className="text-center p-3 bg-red-500/10 rounded-lg">
+                  <p className="text-2xl font-bold text-red-400">{joinResult.failed}</p>
+                  <p className="text-xs text-muted-foreground mt-1">失败</p>
+                </div>
+              </div>
+              {joinResult.results.length > 0 && (
+                <div className="max-h-48 overflow-y-auto border border-border rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/50 sticky top-0">
+                      <tr>
+                        <th className="text-left px-3 py-2">账号</th>
+                        <th className="text-left px-3 py-2">群组</th>
+                        <th className="text-left px-3 py-2">结果</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {joinResult.results.map((r, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-1.5 text-muted-foreground">
+                            {tgAccounts.find((a: any) => a.id === r.account_id)?.phone || `ID:${r.account_id}`}
+                          </td>
+                          <td className="px-3 py-1.5 font-mono truncate max-w-[120px]">{r.group_id}</td>
+                          <td className="px-3 py-1.5">
+                            {r.status === 'joined' ? (
+                              <span className="text-green-400">✓ 已加入</span>
+                            ) : r.status === 'skipped' ? (
+                              <span className="text-yellow-400">→ 跳过</span>
+                            ) : (
+                              <span className="text-red-400" title={r.reason}>✗ 失败</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            {!joinResult ? (
+              <>
+                <Button variant="outline" onClick={closeJoinGroupDialog}>{joinRunning ? '关闭（后台继续）' : '取消'}</Button>
+                <Button
+                  onClick={handleBatchJoin}
+                  disabled={joinRunning || joinSelectedAccountIds.size === 0}
+                  className="bg-orange-500 hover:bg-orange-600 text-white"
+                >
+                  {joinRunning ? (
+                    <><Loader2 className="w-4 h-4 mr-1 animate-spin" />加群中...</>
+                  ) : (
+                    <><UserPlus className="w-4 h-4 mr-1" />开始加群</>
+                  )}
+                </Button>
+              </>
+            ) : (
+              <Button onClick={closeJoinGroupDialog}>关闭</Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       </div>
     </AdminLayout>
   );

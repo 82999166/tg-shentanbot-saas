@@ -19,6 +19,7 @@ import {
   messageTemplates,
   monitorGroups,
   plans,
+  publicGroupJoinStatus,
   tgAccounts,
   users,
 } from "../drizzle/schema";
@@ -166,6 +167,12 @@ export async function getTgAccountById(id: number, userId: number) {
   const result = await db.select().from(tgAccounts).where(and(eq(tgAccounts.id, id), eq(tgAccounts.userId, userId))).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
+export async function getTgAccountByIdAdmin(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(tgAccounts).where(eq(tgAccounts.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
 
 export async function createTgAccount(data: InsertTgAccount) {
   const db = await getDb();
@@ -180,10 +187,21 @@ export async function updateTgAccount(id: number, userId: number, data: Partial<
   await db.update(tgAccounts).set({ ...data, updatedAt: new Date() }).where(and(eq(tgAccounts.id, id), eq(tgAccounts.userId, userId)));
 }
 
-export async function deleteTgAccount(id: number, userId: number) {
+export async function deleteTgAccount(id: number, userId?: number) {
   const db = await getDb();
   if (!db) return;
-  await db.update(tgAccounts).set({ isActive: false }).where(and(eq(tgAccounts.id, id), eq(tgAccounts.userId, userId)));
+  const cond = userId !== undefined ? and(eq(tgAccounts.id, id), eq(tgAccounts.userId, userId)) : eq(tgAccounts.id, id);
+  // 先查出账号 id（防止 userId 条件不匹配）
+  const target = await db.select({ id: tgAccounts.id }).from(tgAccounts).where(cond).limit(1);
+  if (!target.length) return;
+  const accountId = target[0].id;
+  // 级联删除所有关联数据（避免重新添加同一账号时出现旧数据残留）
+  await db.delete(publicGroupJoinStatus).where(eq(publicGroupJoinStatus.monitorAccountId, accountId));
+  await db.delete(monitorGroups).where(eq(monitorGroups.tgAccountId, accountId));
+  await db.delete(hitRecords).where(eq(hitRecords.tgAccountId, accountId));
+  await db.delete(dmQueue).where(eq(dmQueue.senderAccountId, accountId));
+  // 最后删除账号本身
+  await db.delete(tgAccounts).where(eq(tgAccounts.id, accountId));
 }
 
 // ============================================================

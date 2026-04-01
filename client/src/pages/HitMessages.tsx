@@ -1,5 +1,6 @@
 import AdminLayout from "@/components/AdminLayout";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
@@ -72,20 +73,22 @@ export default function HitMessages() {
 
   const utils = trpc.useUtils();
 
-  const isAdmin = user?.role === "admin";
+  const [location] = useLocation();
+  const isAdmin = location.startsWith("/admin") || user?.role === "admin";
   // 管理员使用 adminList 查全平台数据，普通用户使用 list 查自己的数据
-  const { data: adminData, isLoading: adminLoading, refetch: adminRefetch } = trpc.hitMessages.adminList.useQuery({
+  const { data: adminData, isLoading: adminLoading, isRefetching: adminRefetching, refetch: adminRefetch } = trpc.hitMessages.adminList.useQuery({
     page,
     pageSize: 20,
     isProcessed: filterProcessed === "all" ? undefined : filterProcessed === "processed",
   }, { enabled: isAdmin });
-  const { data: userData, isLoading: userLoading, refetch: userRefetch } = trpc.hitMessages.list.useQuery({
+  const { data: userData, isLoading: userLoading, isRefetching: userRefetching, refetch: userRefetch } = trpc.hitMessages.list.useQuery({
     page,
     pageSize: 20,
     isProcessed: filterProcessed === "all" ? undefined : filterProcessed === "processed",
   }, { enabled: !isAdmin });
   const data = isAdmin ? adminData : userData;
   const isLoading = isAdmin ? adminLoading : userLoading;
+  const isRefetching = isAdmin ? adminRefetching : userRefetching;
   const refetch = isAdmin ? adminRefetch : userRefetch;
 
   const markHandled = trpc.hitMessages.markHandled.useMutation({
@@ -162,8 +165,8 @@ export default function HitMessages() {
             管理关键词命中的消息记录，标记处理状态或屏蔽发送者
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4 mr-2" />
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${isRefetching ? 'animate-spin' : ''}`} />
           刷新
         </Button>
       </div>

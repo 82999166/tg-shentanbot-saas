@@ -11,11 +11,14 @@ import { toast } from "sonner";
 import { Shield, ShieldCheck, ShieldAlert, Clock, Zap, Globe, AlertTriangle, Filter } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useLocation } from "wouter";
 
 export default function Antiban() {
   const utils = trpc.useUtils();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const [location] = useLocation();
+  // 使用路由路径判断是否为管理员视图，避免依赖异步加载的 user.role
+  const isAdmin = location.startsWith("/admin") || user?.role === "admin";
   const Layout = isAdmin ? AdminLayout : AppLayout;
 
   const { data: settings } = trpc.antiban.get.useQuery();
@@ -25,18 +28,22 @@ export default function Antiban() {
   });
 
   // 管理员：全局消息过滤配置
-  const { data: filterConfigs } = trpc.systemConfig.getAll.useQuery(undefined, { enabled: isAdmin });
-  const updateConfigMut = trpc.systemConfig.update.useMutation({
-    onSuccess: () => { utils.systemConfig.getAll.invalidate(); },
+  const { data: filterConfigs } = trpc.sysConfig.getAll.useQuery(undefined, { enabled: isAdmin });
+  const updateConfigMut = trpc.sysConfig.update.useMutation({
+    onSuccess: () => { utils.sysConfig.getAll.invalidate(); },
+    onError: (err: any) => toast.error(err.message),
+  });
+  const updateBatchMut = trpc.sysConfig.updateBatch.useMutation({
+    onSuccess: () => { utils.sysConfig.getAll.invalidate(); toast.success("消息过滤规则已保存"); },
     onError: (err: any) => toast.error(err.message),
   });
 
   const [filterForm, setFilterForm] = useState({
     global_filter_ads: false,
-    global_filter_bot: true,
-    global_max_msg_length: 500,
-    global_rate_window: 60,
-    global_rate_limit: 5,
+    global_filter_bot: false,
+    global_max_msg_length: 0,
+    global_rate_window: 0,
+    global_rate_limit: 0,
   });
 
   useEffect(() => {
@@ -44,34 +51,27 @@ export default function Antiban() {
       const get = (key: string) => filterConfigs.find((c: any) => c.key === key)?.value ?? "";
       setFilterForm({
         global_filter_ads: get("global_filter_ads") === "true",
-        global_filter_bot: get("global_filter_bot") !== "false",
-        global_max_msg_length: parseInt(get("global_max_msg_length") || "500", 10),
-        global_rate_window: parseInt(get("global_rate_window") || "60", 10),
-        global_rate_limit: parseInt(get("global_rate_limit") || "5", 10),
+        global_filter_bot: get("global_filter_bot") === "true",
+        global_max_msg_length: parseInt(get("global_max_msg_length") || "0", 10),
+        global_rate_window: parseInt(get("global_rate_window") || "0", 10),
+        global_rate_limit: parseInt(get("global_rate_limit") || "0", 10),
       });
     }
   }, [filterConfigs]);
 
   const saveFilterConfig = async () => {
-    const entries = [
+    const configs = [
       { key: "global_filter_ads", value: String(filterForm.global_filter_ads) },
       { key: "global_filter_bot", value: String(filterForm.global_filter_bot) },
       { key: "global_max_msg_length", value: String(filterForm.global_max_msg_length) },
       { key: "global_rate_window", value: String(filterForm.global_rate_window) },
       { key: "global_rate_limit", value: String(filterForm.global_rate_limit) },
     ];
-    try {
-      for (const entry of entries) {
-        await updateConfigMut.mutateAsync(entry);
-      }
-      toast.success("消息过滤规则已保存");
-    } catch (e: any) {
-      toast.error(e.message);
-    }
+    updateBatchMut.mutate({ configs });
   };
 
   const [form, setForm] = useState({
-    dailyDmLimit: 30,
+    dailyDmLimit: 1,
     minIntervalSeconds: 60,
     maxIntervalSeconds: 180,
     activeHourStart: 9,
@@ -85,7 +85,7 @@ export default function Antiban() {
   useEffect(() => {
     if (settings) {
       setForm({
-        dailyDmLimit: settings.dailyDmLimit ?? 30,
+        dailyDmLimit: settings.dailyDmLimit ?? 1,
         minIntervalSeconds: settings.minIntervalSeconds ?? 60,
         maxIntervalSeconds: settings.maxIntervalSeconds ?? 180,
         activeHourStart: settings.activeHourStart ?? 9,
@@ -98,7 +98,7 @@ export default function Antiban() {
       });
     }
   }, [settings]);
-  const riskLevel = form.dailyDmLimit <= 20 ? "low" : form.dailyDmLimit <= 40 ? "medium" : "high";
+  const riskLevel = form.dailyDmLimit <= 30 ? "low" : form.dailyDmLimit <= 80 ? "medium" : "high";
   const riskConfig = {
     low: { label: "低风险", color: "text-emerald-400", bg: "bg-emerald-900/30 border-emerald-800", icon: ShieldCheck },
     medium: { label: "中等风险", color: "text-amber-400", bg: "bg-amber-900/30 border-amber-800", icon: Shield },
@@ -208,11 +208,6 @@ export default function Antiban() {
                 </CardContent>
               </Card>
             </div>
-            <div className="flex justify-end">
-              <Button onClick={saveFilterConfig} disabled={updateConfigMut.isPending} variant="outline" className="border-blue-600 text-blue-400 hover:bg-blue-900/20">
-                {updateConfigMut.isPending ? "保存中..." : "保存消息过滤规则"}
-              </Button>
-            </div>
             <hr className="border-border" />
           </div>
         )}
@@ -252,7 +247,7 @@ export default function Antiban() {
                   <Slider
                     value={[form.dailyDmLimit]}
                     onValueChange={([v]) => setForm({ ...form, dailyDmLimit: v })}
-                    min={0} max={100} step={5}
+                    min={1} max={500} step={1}
                     className="flex-1"
                   />
                   <span className="text-sm font-mono w-8 text-right">{form.dailyDmLimit}</span>
@@ -383,8 +378,15 @@ export default function Antiban() {
           </Card>
         </div>
         <div className="flex justify-end">
-          <Button onClick={() => updateMut.mutate(form)} disabled={updateMut.isPending}>
-            {updateMut.isPending ? "保存中..." : "保存防封策略"}
+          <Button
+            onClick={async () => {
+              // 同时保存防封策略和消息过滤规则
+              updateMut.mutate(form);
+              saveFilterConfig();
+            }}
+            disabled={updateMut.isPending || updateBatchMut.isPending}
+          >
+            {(updateMut.isPending || updateBatchMut.isPending) ? "保存中..." : "保存所有设置"}
           </Button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import AdminLayout from "@/components/AdminLayout";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
@@ -50,13 +51,15 @@ export default function PushSettings() {
   const utils = trpc.useUtils();
 
   const { data: settings, isLoading } = trpc.hitMessages.getPushSettings.useQuery();
-  const isAdmin = user?.role === "admin";
-  const { data: blocked, refetch: refetchBlocked } = trpc.hitMessages.blockedList.useQuery(
+  const [location] = useLocation();
+  const isAdmin = location.startsWith("/admin") || user?.role === "admin";
+  const { data: blocked, isRefetching: blockedRefetching, refetch: refetchBlocked } = trpc.hitMessages.blockedList.useQuery(
     undefined, { enabled: !isAdmin }
   );
-  const { data: adminBlocked, refetch: refetchAdminBlocked } = trpc.hitMessages.adminBlockedList.useQuery(
+  const { data: adminBlocked, isRefetching: adminBlockedRefetching, refetch: refetchAdminBlocked } = trpc.hitMessages.adminBlockedList.useQuery(
     undefined, { enabled: isAdmin }
   );
+  const isBlockedRefetching = isAdmin ? adminBlockedRefetching : blockedRefetching;
   const refetchBlockedAll = () => { isAdmin ? refetchAdminBlocked() : refetchBlocked(); };
 
   const [pushEnabled, setPushEnabled] = useState(true);
@@ -365,8 +368,8 @@ export default function PushSettings() {
                 <Badge variant="secondary">{blockedRows.length} 人</Badge>
               )}
             </CardTitle>
-            <Button variant="outline" size="sm" onClick={() => refetchBlockedAll()}>
-              <RefreshCw className="h-4 w-4 mr-2" />刷新
+            <Button variant="outline" size="sm" onClick={() => refetchBlockedAll()} disabled={isBlockedRefetching}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isBlockedRefetching ? 'animate-spin' : ''}`} />刷新
             </Button>
           </div>
         </CardHeader>

@@ -37,10 +37,11 @@ export default function GroupSubmissions() {
   const utils = trpc.useUtils();
 
   // 管理员看全部，普通用户看自己的
-  const { data: allData, isLoading: allLoading, refetch: refetchAll } =
+  const { data: allData, isLoading: allLoading, isRefetching: allRefetching, refetch: refetchAll } =
     trpc.hitMessages.listSubmissions.useQuery({ status: undefined });
-  const { data: myData, isLoading: myLoading, refetch: refetchMy } =
+  const { data: myData, isLoading: myLoading, isRefetching: myRefetching, refetch: refetchMy } =
     trpc.hitMessages.mySubmissions.useQuery();
+  const isRefetching = allRefetching || myRefetching;
 
   const submitGroup = trpc.hitMessages.submitGroup.useMutation({
     onSuccess: () => {
@@ -182,8 +183,8 @@ export default function GroupSubmissions() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => { refetchAll(); refetchMy(); }}>
-            <RefreshCw className="h-4 w-4 mr-2" />刷新
+          <Button variant="outline" size="sm" onClick={() => { refetchAll(); refetchMy(); }} disabled={isRefetching}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isRefetching ? 'animate-spin' : ''}`} />刷新
           </Button>
           <Button size="sm" onClick={() => setSubmitDialog(true)}>
             <Plus className="h-4 w-4 mr-2" />提交群组
