@@ -794,6 +794,17 @@ export const engineRouter = router({
         .limit(input.limit);
     }),
 
+  // ── Bot API：通过 hitRecordId 获取命中记录详情（含 senderUsername）────
+  botGetHitById: engineProcedure
+    .input(z.object({ hitRecordId: z.number(), userId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const rows = await db.select().from(hitRecords)
+        .where(and(eq(hitRecords.id, input.hitRecordId), eq(hitRecords.userId, input.userId)))
+        .limit(1);
+      return rows[0] || null;
+    }),
   // ── Bot API：标记命中记录为已处理 ─────────────────────────
   botMarkProcessed: engineProcedure
     .input(z.object({ hitRecordId: z.number(), userId: z.number() }))

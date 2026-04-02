@@ -85,6 +85,13 @@
       "when": 1774112618893,
       "tag": "0011_pale_paladin",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1775145678008,
+      "tag": "0012_wooden_stepford_cuckoos",
+      "breakpoints": true
     }
   ]
 }

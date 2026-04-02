@@ -255,6 +255,7 @@ async def send_bot_notification(
             user_display = f'<a href="https://t.me/{sender_username}">{sender_name or "@" + sender_username}</a>'
             mention_entity = None  # 有 username 时用 HTML 链接，不需要 entity
         else:
+<<<<<<< Updated upstream
             # 无用户名：用 text_mention 实体，桌面/手机/网页版均可点击
             _display_name = sender_name or f"用户{sender_tg_id}"
             user_display = _display_name  # 纯文本占位，实际通过 entity 渲染
@@ -269,6 +270,16 @@ async def send_bot_notification(
         # 如果 group_name 是数字ID但有 group_username，尝试从 username 生成名称
         if not _group_display_name and group_username:
             _group_display_name = f"@{group_username}"
+=======
+            user_display = f"ID:{sender_tg_id}"
+
+        # 用户名行（@username，如有）
+        username_line = ""
+        if sender_username:
+            username_line = f'  <a href="https://t.me/{sender_username}">@{sender_username}</a>\n'
+
+        # 来源：群组名称（如有 username 则做超链接）
+>>>>>>> Stashed changes
         if group_username:
             # 有 username，生成消息直链 t.me/username/messageId
             _label = _group_display_name or f"@{group_username}"
@@ -308,10 +319,12 @@ async def send_bot_notification(
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         text = (
             f"用户：{user_display}\n"
+            f"{username_line}"
             f"来源：{source_display}\n"
             f"内容：{highlighted_text}\n"
             f"时间：{now_str}"
         )
+<<<<<<< Updated upstream
         rid = str(hit_record_id) if hit_record_id else "0"
         # 私聊按钮：有 username 用 t.me 链接，无 username 用 callback_data 方式
         # 注意：Telegram Bot API InlineKeyboardButton url 不支持 tg:// 协议
@@ -322,6 +335,13 @@ async def send_bot_notification(
         else:
             # 无用户名：用 callback_data，bot.py 收到后发临时纯文本超链接消息（tg://openmessage）
             chat_btn = {"text": "私聊", "callback_data": f"dm:{rid}:{sender_tg_id}"}
+=======
+
+        # 操作按鈕（Inline Keyboard）
+        # callback_data 格式: action:hit_record_id:sender_tg_id:sender_username
+        rid = str(hit_record_id) if hit_record_id else "0"
+        uname = sender_username or ""
+>>>>>>> Stashed changes
         inline_keyboard = [
             [
                 {"text": "历史", "callback_data": f"history:{rid}:{sender_tg_id}"},
@@ -330,7 +350,11 @@ async def send_bot_notification(
             ],
             [
                 {"text": "删除", "callback_data": f"delete:{rid}:{sender_tg_id}"},
+<<<<<<< Updated upstream
                 chat_btn,
+=======
+                {"text": "私聊", "callback_data": f"dm_user:{rid}:{sender_tg_id}:{uname}"},
+>>>>>>> Stashed changes
             ]
         ]
         # 无用户名时用 entities 模式（text_mention），有用户名时用 HTML 模式

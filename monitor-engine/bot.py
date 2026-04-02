@@ -849,21 +849,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
         records = await api_get("engine.botGetSenderHistory", {"userId": uid, "senderTgId": sender_tg_id_str, "limit": 10}) or []
         if not records:
-            text = "📋 *发送者历史记录*\n\n该用户暂无命中记录"
+            await q.answer("该用户暂无命中记录", show_alert=True)
         else:
-            lines = []
+            # 统计关键词出现次数，仿截图格式：最近搜索：关键词1(N) 关键词2(M)
+            kw_count: dict = {}
             for r in records:
-                kw = r.get("keyword", "")
-                grp = r.get("groupName", "")
-                t = str(r.get("createdAt", ""))[:16]
-                lines.append(f"• {t} [{kw}] {grp}")
-            cnt = len(records)
-            text = f"📋 *发送者历史命中（最近{cnt}条）*\n\n" + "\n".join(lines)
-        await q.answer()
-        try:
-            await q.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
-        except Exception:
-            await context.bot.send_message(chat_id=q.message.chat_id, text=text, parse_mode=ParseMode.MARKDOWN)
+                kw = r.get("matchedKeyword", "") or r.get("keyword", "")
+                if kw:
+                    for k in kw.split(","):
+                        k = k.strip()
+                        if k:
+                            kw_count[k] = kw_count.get(k, 0) + 1
+            recent_str = " ".join(f"{k}({v})" for k, v in list(kw_count.items())[:6])
+            await q.answer(f"最近搜索：{recent_str}" if recent_str else "暂无命中记录", show_alert=True)
     elif data.startswith("block:"):
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
@@ -916,6 +914,56 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await q.answer("❌ 删除失败，请重试", show_alert=True)
         except Exception as e:
             await q.answer(f"❌ 操作失败: {e}", show_alert=True)
+    elif data.startswith("dm_user:"):
+        # 私聊按鈕：弹窗显示用户名和私聊链接
+        parts = data.split(":")
+        rid_str = parts[1] if len(parts) > 1 else "0"
+        sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
+        uname = parts[3] if len(parts) > 3 else ""
+
+        # 如果 callback_data 中没有 username，尝试从数据库查询
+        if not uname and rid_str != "0":
+            try:
+                hit = await api_get("engine.botGetHitById", {"hitRecordId": int(rid_str), "userId": uid})
+                if hit:
+                    uname = hit.get("senderUsername") or ""
+            except Exception:
+                pass
+
+        if uname:
+            tg_url = f"https://t.me/{uname}"
+            await q.answer(
+                f"用户：@{uname}\n点击下方按鈕开始私聊",
+                show_alert=True
+            )
+            # 发送一条带跳转链接的消息
+            try:
+                await context.bot.send_message(
+                    chat_id=q.message.chat_id,
+                    text=f"💬 私聊用户 @{uname}",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton(f"💬 开始私聊 @{uname}", url=tg_url)]
+                    ])
+                )
+            except Exception:
+                pass
+        else:
+            # 没有 username，尝试用数字 ID 构造链接
+            tg_url = f"https://t.me/+{sender_tg_id_str}"
+            await q.answer(
+                f"该用户未设置用户名\nID: {sender_tg_id_str}",
+                show_alert=True
+            )
+            try:
+                await context.bot.send_message(
+                    chat_id=q.message.chat_id,
+                    text=f"💬 私聊用户 ID:{sender_tg_id_str}",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton(f"💬 尝试私聊", url=tg_url)]
+                    ])
+                )
+            except Exception:
+                pass
     elif data == "menu_expiry":
         await q.answer()
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
