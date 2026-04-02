@@ -45,13 +45,14 @@ logger = logging.getLogger("tg-monitor")
 API_BASE = os.getenv("WEB_API_BASE", "http://localhost:3000/api")
 ENGINE_SECRET = os.getenv("ENGINE_SECRET", "tg-monitor-engine-secret")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "30"))
-DM_WORKER_INTERVAL = int(os.getenv("DM_WORKER_INTERVAL", "10"))
+DM_WORKER_INTERVAL = int(os.getenv("DM_WORKER_INTERVAL", "2"))  # 兜底轮询间隔（秒），事件触发时立即处理
 TG_API_ID = int(os.getenv("TG_API_ID", "0"))
 TG_API_HASH = os.getenv("TG_API_HASH", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 TDLIB_DATA_DIR = os.getenv("TDLIB_DATA_DIR", os.path.join(_BASE_DIR, "tdlib_data"))
 
 active_workers: dict = {}
+dm_trigger_event: asyncio.Event = asyncio.Event()  # 用于立即触发 DM 发送
 monitor_config: dict = {}
 public_groups: list = []
 force_sync_event: asyncio.Event = None  # 将在 main() 中初始化
@@ -1062,36 +1063,74 @@ class AccountWorker:
         return None
 
     async def send_message(self, chat_id: int, text: str) -> bool:
+        """兼容旧接口，内部调用 send_dm"""
+        return await self.send_dm(str(chat_id), text)
+
+    async def send_dm(self, target: str, text: str) -> bool:
+        """
+        发送私信。target 可以是数字 user_id（字符串）或 @username。
+        流程：
+          1. 若 target 是数字 → 直接 createPrivateChat(user_id)
+          2. 若 target 是 username → searchPublicChat 获取 chat，直接用 chat.id 发送
+          3. createPrivateChat 失败时，尝试 searchPublicChat 兜底
+        """
         if not self.client or not self.is_running:
             return False
         try:
             import pytdbot.types as _tdt
-            # TDLib 发送私信前必须先通过 createPrivateChat 确保对话已建立
-            # 否则会报 Chat not found (400)
-            chat_result = await self.client.invoke({
-                "@type": "createPrivateChat",
-                "user_id": chat_id,
-                "force": True
-            })
-            if isinstance(chat_result, _tdt.Error):
-                logger.warning(f"[Account {self.account_id}] 创建私聊失败: code={chat_result.code} msg={chat_result.message}")
-                return False
-            # 使用返回的真实 chat_id（可能与 user_id 不同）
-            real_chat_id = getattr(chat_result, 'id', chat_id)
+
+            def _attr(obj, key, default=None):
+                if hasattr(obj, key): return getattr(obj, key, default)
+                if isinstance(obj, dict): return obj.get(key, default)
+                return default
+
+            real_chat_id = None
+            target_str = str(target).strip()
+            is_numeric = target_str.lstrip("-").isdigit()
+
+            if is_numeric:
+                # 数字 user_id：先尝试 createPrivateChat
+                user_id = int(target_str)
+                chat_result = await self.client.invoke({
+                    "@type": "createPrivateChat",
+                    "user_id": user_id,
+                    "force": True
+                })
+                if isinstance(chat_result, _tdt.Error):
+                    logger.warning(f"[Account {self.account_id}] createPrivateChat({user_id}) 失败: {chat_result.message}")
+                    return False
+                real_chat_id = _attr(chat_result, 'id', user_id)
+            else:
+                # username：用 searchPublicChat 从服务器查询，不依赖本地缓存
+                username = target_str.lstrip("@")
+                search_result = await self.client.invoke({
+                    "@type": "searchPublicChat",
+                    "username": username
+                })
+                if isinstance(search_result, _tdt.Error):
+                    logger.warning(f"[Account {self.account_id}] searchPublicChat(@{username}) 失败: {search_result.message}")
+                    return False
+                real_chat_id = _attr(search_result, 'id')
+                if not real_chat_id:
+                    logger.warning(f"[Account {self.account_id}] searchPublicChat(@{username}) 未返回 chat id")
+                    return False
+                logger.info(f"[Account {self.account_id}] searchPublicChat @{username} -> chat_id={real_chat_id}")
+
+            # 发送消息
             result = await self.client.invoke({
-                "@type": "sendMessage", "chat_id": real_chat_id,
+                "@type": "sendMessage",
+                "chat_id": real_chat_id,
                 "input_message_content": {
                     "@type": "inputMessageText",
                     "text": {"@type": "formattedText", "text": text}
                 }
             })
-            # 检查返回值是否为错误（pytdbot.invoke 失败时返回 Error 对象而非抛异常）
             if isinstance(result, _tdt.Error):
-                logger.warning(f"[Account {self.account_id}] 发送消息失败: code={result.code} msg={result.message}")
+                logger.warning(f"[Account {self.account_id}] sendMessage 失败: code={result.code} msg={result.message}")
                 return False
             return True
         except Exception as e:
-            logger.warning(f"[Account {self.account_id}] 发送消息异常: {e}")
+            logger.warning(f"[Account {self.account_id}] send_dm 异常: {e}")
             return False
 
     async def get_chat_count(self) -> int:
@@ -1740,14 +1779,20 @@ async def scrape_groups_task():
 
 
 async def process_dm_queue():
+    global dm_trigger_event
     while True:
         try:
-            queue = await api.get("/engine/dm-queue?limit=5")
+            # 等待触发事件或超时兜底（whichever comes first）
+            try:
+                await asyncio.wait_for(dm_trigger_event.wait(), timeout=DM_WORKER_INTERVAL)
+            except asyncio.TimeoutError:
+                pass
+            dm_trigger_event.clear()
+            queue = await api.get("/engine/dm-queue?limit=20")
             if not queue:
-                await asyncio.sleep(DM_WORKER_INTERVAL)
                 continue
             items = queue if isinstance(queue, list) else queue.get("items", [])
-            for item in items[:5]:
+            for item in items[:20]:
                 queue_id = item.get("id")
                 account_id = item.get("senderAccountId")
                 target_tg_id = str(item.get("targetTgId", ""))
@@ -1763,12 +1808,14 @@ async def process_dm_queue():
                 # 直接发送，不等待延迟（用户要求立即触发）
                 logger.info(f"[DM] 准备发送 account={account_id} target={target_username or target_tg_id}")
                 try:
-                    target_id = int(target_tg_id) if target_tg_id.lstrip("-").isdigit() else None
-                    if target_id:
-                        success = await worker.send_message(target_id, content)
+                    # 优先用 username（searchPublicChat 直接从服务器查，不依赖本地缓存）
+                    # 若只有数字 ID，则用 createPrivateChat
+                    if target_username:
+                        success = await worker.send_dm(f"@{target_username}", content)
+                    elif target_tg_id:
+                        success = await worker.send_dm(target_tg_id, content)
                     else:
-                        resolved_id = await worker.resolve_chat_id(f"@{target_username}" if target_username else target_tg_id)
-                        success = await worker.send_message(resolved_id, content) if resolved_id else False
+                        success = False
                     if success:
                         cache_key = f"{account_id}:{target_tg_id}"
                         sent_dm_cache[cache_key] = time.time()
@@ -1783,7 +1830,6 @@ async def process_dm_queue():
                     await api.post("/engine/dm-queue/fail", {"id": queue_id, "error": str(e)[:200]})
         except Exception as e:
             logger.error(f"[DM Worker] 异常: {e}")
-        await asyncio.sleep(DM_WORKER_INTERVAL)
 
 
 async def sync_config():
@@ -2516,6 +2562,13 @@ async def http_server():
             "results": results,
         })
 
+    async def handle_trigger_dm(request: web.Request):
+        secret = request.headers.get("X-Engine-Secret", "")
+        if secret != ENGINE_SECRET:
+            return web.json_response({"error": "unauthorized"}, status=401)
+        dm_trigger_event.set()
+        return web.json_response({"success": True, "message": "已触发 DM 发送"})
+    app.router.add_post("/trigger-dm", handle_trigger_dm)
     app.router.add_post("/force-sync", handle_force_sync)
     app.router.add_post("/sync-account", handle_sync_account)
     app.router.add_post("/get-account-chats", handle_get_account_chats)

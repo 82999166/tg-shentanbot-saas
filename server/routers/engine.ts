@@ -228,6 +228,17 @@ export const engineRouter = router({
         scheduledAt: new Date(),
       });
 
+      // 写入队列后立即通知引擎触发发送（不等待轮询间隔）
+      try {
+        const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8765";
+        const engineSecret = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
+        await fetch(`${engineUrl}/trigger-dm`, {
+          method: "POST",
+          headers: { "X-Engine-Secret": engineSecret },
+          signal: AbortSignal.timeout(2000),
+        }).catch(() => {}); // 忘记错误，引擎轮询作为兆底保障
+      } catch (_) {}
+
       return { success: true };
     }),
 
