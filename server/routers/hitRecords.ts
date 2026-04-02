@@ -96,12 +96,8 @@ export const hitRecordsRouter = router({
       }
 
       if (isAdmin) {
-<<<<<<< Updated upstream
         // admin 时附加用户信息 + 群组信息
-        const userIds = [...new Set(records.map(r => r.userId))];
-=======
         const userIds = Array.from(new Set(records.map(r => r.userId)));
->>>>>>> Stashed changes
         let userMap: Map<number, string> = new Map();
         if (userIds.length > 0) {
           const userRows = await db.select({ id: users.id, name: users.name, email: users.email })
