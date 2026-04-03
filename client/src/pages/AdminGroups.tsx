@@ -241,9 +241,11 @@ export default function AdminGroups() {
       }
     }
     const accounts: Array<{ accountId: number; accountName: string; status: string }> = g.joinedAccounts || [];
-    if (joinFilter === "joined") return accounts.some((a: any) => a.status === "joined");
-    if (joinFilter === "failed") return accounts.some((a: any) => a.status === "failed");
-    if (joinFilter === "not_joined") return accounts.length === 0 || accounts.every((a: any) => a.status !== "joined" && a.status !== "failed");
+    const isJoined = (s: string) => s === "joined" || s === "subscribed";
+    const isFailed = (s: string) => s === "failed" || s === "not_found";
+    if (joinFilter === "joined") return accounts.some((a: any) => isJoined(a.status));
+    if (joinFilter === "failed") return accounts.some((a: any) => isFailed(a.status));
+    if (joinFilter === "not_joined") return accounts.length === 0 || accounts.every((a: any) => !isJoined(a.status) && !isFailed(a.status));
     return true;
   });
 
@@ -625,9 +627,9 @@ export default function AdminGroups() {
                                   key={a.accountId}
                                   variant="outline"
                                   className={`text-xs px-1.5 py-0 ${
-                                    a.status === "joined"
+                                    (a.status === "joined" || a.status === "subscribed")
                                       ? "border-green-500/40 text-green-400 bg-green-500/10"
-                                      : a.status === "failed"
+                                      : (a.status === "failed" || a.status === "not_found")
                                       ? "border-red-500/40 text-red-400 bg-red-500/10"
                                       : "border-yellow-500/40 text-yellow-400 bg-yellow-500/10"
                                   }`}
