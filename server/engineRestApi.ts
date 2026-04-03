@@ -23,7 +23,7 @@ import {
   publicGroupJoinStatus,
   systemConfig,
 } from "../drizzle/schema";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql, desc } from "drizzle-orm";
 
 const ENGINE_SECRET = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
 
@@ -466,6 +466,38 @@ export function registerEngineRestRoutes(app: Router) {
       await db.update(tgAccounts).set(updates).where(eq(tgAccounts.id, accountId));
       res.json({ success: true });
     } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/engine/sender-history?userId=&senderTgId=&limit= - 查询发送者最近命中关键词统计
+  app.get("/api/engine/sender-history", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB unavailable" });
+      const userId = parseInt(req.query.userId as string);
+      const senderTgId = req.query.senderTgId as string;
+      const limit = parseInt((req.query.limit as string) || "20");
+      if (!userId || !senderTgId) return res.status(400).json({ error: "userId and senderTgId required" });
+      const rows = await db.select({ matchedKeyword: hitRecords.matchedKeyword })
+        .from(hitRecords)
+        .where(and(eq(hitRecords.userId, userId), eq(hitRecords.senderTgId, senderTgId)))
+        .orderBy(desc(hitRecords.createdAt))
+        .limit(limit);
+      // 聚合关键词计数
+      const kwCount: Record<string, number> = {};
+      for (const row of rows) {
+        const kw = row.matchedKeyword || "";
+        if (kw) kwCount[kw] = (kwCount[kw] || 0) + 1;
+      }
+      // 按出现次数降序排列
+      const keywords = Object.entries(kwCount)
+        .sort((a, b) => b[1] - a[1])
+        .map(([keyword, count]) => ({ keyword, count }));
+      res.json({ keywords, total: rows.length });
+    } catch (e: any) {
+      console.error("[Engine API] GET sender-history error:", e);
       res.status(500).json({ error: e.message });
     }
   });

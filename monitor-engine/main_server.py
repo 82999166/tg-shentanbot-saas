@@ -310,16 +310,37 @@ async def send_bot_notification(
         if len(message_text) > 200:
             highlighted_text += "..."
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 查询该用户的最近搜索词，直接显示在消息正文中
+        recent_line = ""
+        try:
+            _hist = await api.get(
+                f"/engine/sender-history?userId={owner_user_id}&senderTgId={sender_tg_id}&limit=20"
+            )
+            if _hist and _hist.get("keywords"):
+                _kws = _hist["keywords"]
+                _kw_parts = []
+                for _k in _kws[:8]:  # 最多显岈8个
+                    _kw_parts.append(f"{_k['keyword']}({_k['count']})"
+                        if _k['count'] > 1 else _k['keyword'])
+                if _kw_parts:
+                    recent_line = f"\n----------\n最近搜索：{'  '.join(_kw_parts)}"
+        except Exception as _e:
+            logger.debug(f"[BotNotify] 获取最近搜索词失败: {_e}")
         text = (
             f"用户：{user_display}\n"
             f"{username_line}"
             f"来源：{source_display}\n"
             f"内容：{highlighted_text}\n"
             f"时间：{now_str}"
+            f"{recent_line}"
         )
         rid = str(hit_record_id) if hit_record_id else "0"
         uname = sender_username or ""
-        # 私聊按钮：统一用 callback_data，bot.py 收到后弹窗显示用户名并发送私聊链接
+        # 私聊按钮：有 username 直接用 url 跳转（无需中间消息），无 username 才用 callback
+        if uname:
+            dm_btn = {"text": "私聊", "url": f"https://t.me/{uname}"}
+        else:
+            dm_btn = {"text": "私聊", "callback_data": f"dm_user:{rid}:{sender_tg_id}:"}
         inline_keyboard = [
             [
                 {"text": "历史", "callback_data": f"history:{rid}:{sender_tg_id}"},
@@ -328,7 +349,7 @@ async def send_bot_notification(
             ],
             [
                 {"text": "删除", "callback_data": f"delete:{rid}:{sender_tg_id}"},
-                {"text": "私聊", "callback_data": f"dm_user:{rid}:{sender_tg_id}:{uname}"},
+                dm_btn,
             ]
         ]
         # 无用户名时用 entities 模式（text_mention），有用户名时用 HTML 模式
@@ -348,6 +369,7 @@ async def send_bot_notification(
                 f"来源：{plain_source}\n"
                 f"内容：{plain_highlighted}\n"
                 f"时间：{now_str}"
+                f"{recent_line}"
             )
             # 重新计算 mention offset（"用户：" 在 plain_text 中的偏移）
             mention_entity["offset"] = plain_text.index(user_display)
