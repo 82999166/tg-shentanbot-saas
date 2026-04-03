@@ -605,6 +605,7 @@ export const engineRouter = router({
     .input(z.object({ userId: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
       const rows = await db.select().from(pushSettings)
         .where(eq(pushSettings.userId, input.userId)).limit(1);
       if (rows.length === 0) {
@@ -645,6 +646,7 @@ export const engineRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
       const { userId, ...updateData } = input;
       // 过滤掉 undefined 值
       const cleanData = Object.fromEntries(

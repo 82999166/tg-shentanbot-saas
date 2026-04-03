@@ -1292,19 +1292,67 @@ class AccountWorker:
 
 async def join_public_groups(worker: AccountWorker, account_id: int, force: bool = False):
     """
-    订阅监控公共群组：不调用 joinChat，只解析群组真实 chat_id 建立监控映射。
-    账号本身已加入这些群组，引擎只需知道 groupId -> real_chat_id 的映射，
-    即可在收到消息时正确过滤和推送。
+    加入公共监控群组（分片分配、真正加群、详细日志）：
+    1. 从服务器获取所有管理员监控账号列表（按 ID 排序）
+    2. 根据当前账号在列表中的序号（rank）分片：group_index % account_count == rank
+    3. 只处理分配到当前账号的群组，确保账号间群组不重复
+    4. 真正调用 joinChat 加入群组，并上报详细日志
     """
     global public_group_real_ids
     if not public_groups:
         return
-
     active_groups = [pg for pg in public_groups if pg.get("isActive", True)]
-    logger.info(f"[Account {account_id}] 开始订阅监控：共 {len(active_groups)} 个公共群组")
+    if not active_groups:
+        return
 
+    # 步骤 1：获取所有管理员监控账号列表（用于分片）
+    admin_accounts = []
+    try:
+        resp = await api.get("/engine/admin-accounts")
+        admin_accounts = resp.get("accounts", []) if isinstance(resp, dict) else []
+        admin_accounts.sort(key=lambda x: x.get("id", 0))  # 按 ID 排序，保证分片顺序一致
+    except Exception as e:
+        logger.warning(f"[Account {account_id}] 获取管理员账号列表失败: {e}")
+
+    # 步骤 2：计算当前账号的分片序号
+    account_count = len(admin_accounts)
+    account_rank = -1
+    for i, acc in enumerate(admin_accounts):
+        if acc.get("id") == account_id:
+            account_rank = i
+            break
+
+    # 步骤 3：确定当前账号负责的群组（分片分配）
+    if account_rank >= 0 and account_count > 0:
+        assigned_groups = [pg for i, pg in enumerate(active_groups) if i % account_count == account_rank]
+        logger.info(f"[Account {account_id}] 分片分配：账号序号 {account_rank}/{account_count}，负责 {len(assigned_groups)}/{len(active_groups)} 个群组")
+    else:
+        logger.info(f"[Account {account_id}] 账号不在管理员列表，仅建立群组映射不执行加群")
+        assigned_groups = []
+    assigned_group_ids = set(pg.get("id") for pg in assigned_groups)
+
+    # 步骤 4：获取当前账号已加入的群组列表
+    joined_chat_ids: set = set()
+    try:
+        import pytdbot.types as _tdt_bj
+        for _ in range(3):
+            try:
+                await worker.client.invoke({"@type": "loadChats", "chat_list": {"@type": "chatListMain"}, "limit": 500})
+            except Exception:
+                break
+        chats_r = await worker.client.invoke({"@type": "getChats", "chat_list": {"@type": "chatListMain"}, "limit": 9999})
+        if chats_r and not isinstance(chats_r, _tdt_bj.Error):
+            cids = getattr(chats_r, "chat_ids", None) or (chats_r.get("chat_ids", []) if isinstance(chats_r, dict) else [])
+            joined_chat_ids = set(int(c) for c in (cids or []))
+        logger.info(f"[Account {account_id}] 已加入 {len(joined_chat_ids)} 个群组")
+    except Exception as e:
+        logger.warning(f"[Account {account_id}] 获取已加入群组列表失败: {e}")
+
+    import random as _rand
     subscribed_count = 0
+    joined_count = 0
     not_found_count = 0
+    failed_count = 0
 
     for pg in active_groups:
         pg_id = pg.get("id")
@@ -1312,68 +1360,121 @@ async def join_public_groups(worker: AccountWorker, account_id: int, force: bool
         if not group_id:
             continue
 
-        # 如果已有 real_id 映射，直接跳过（无需重复解析）
-        if group_id in public_group_real_ids:
-            subscribed_count += 1
-            continue
-
-        real_id = None
-        try:
-            group_id_str = str(group_id)
-            # 数字 ID：直接使用
-            if group_id_str.lstrip("-").isdigit():
-                real_id = int(group_id_str)
-            else:
-                # username 格式（@xxx 或 xxx）：通过 searchPublicChat 解析真实 chat_id
-                username = group_id_str.lstrip("@")
-                result = await worker.client.invoke({
-                    "@type": "searchPublicChat",
-                    "username": username
-                })
-                if result:
-                    def _get(obj, key, default=None):
-                        if hasattr(obj, key): return getattr(obj, key, default)
-                        elif isinstance(obj, dict): return obj.get(key, default)
-                        return default
-                    real_id = _get(result, "id")
-        except Exception as e:
-            logger.debug(f"[Account {account_id}] 解析群组 {group_id} 失败: {e}")
-
+        # 先尝试解析 real_id
+        real_id = public_group_real_ids.get(group_id)
+        if not real_id and pg.get("realId"):
+            real_id = int(pg["realId"])
+            public_group_real_ids[group_id] = real_id
+        if not real_id:
+            try:
+                if group_id.lstrip("-").isdigit():
+                    real_id = int(group_id)
+                else:
+                    username = group_id.lstrip("@")
+                    result = await worker.client.invoke({"@type": "searchPublicChat", "username": username})
+                    if result:
+                        _rid = getattr(result, "id", None) or (result.get("id") if isinstance(result, dict) else None)
+                        if _rid:
+                            real_id = int(_rid)
+            except Exception as e:
+                logger.debug(f"[Account {account_id}] 解析群组 {group_id} 失败: {e}")
         if real_id:
             public_group_real_ids[group_id] = int(real_id)
+
+        # 判断是否分配给当前账号
+        is_assigned = pg_id in assigned_group_ids
+
+        if not is_assigned:
+            # 未分配给当前账号，只建立映射
+            if real_id:
+                subscribed_count += 1
+            await asyncio.sleep(0.02)
+            continue
+
+        # 分配给当前账号：判断是否已加入
+        already_joined = real_id and int(real_id) in joined_chat_ids
+
+        if already_joined:
             subscribed_count += 1
-            logger.debug(f"[Account {account_id}] 订阅群组 {group_id} -> real_id: {real_id}")
+            logger.debug(f"[Account {account_id}] 群组 {group_id} 已加入，建立映射")
             if pg_id:
                 try:
-                    await api.post("/engine/public-group/join-status", {
+                    await api.post("/engine/public-group/join-log", {
                         "publicGroupId": pg_id, "monitorAccountId": account_id,
-                        "status": "subscribed", "realId": str(real_id),
+                        "status": "subscribed", "realId": str(real_id) if real_id else None,
+                        "logEntry": "账号已在群组中，建立监控映射",
                     })
                 except Exception:
                     pass
         else:
-            not_found_count += 1
-            logger.warning(f"[Account {account_id}] 无法解析群组 {group_id}（账号可能未加入该群组）")
+            # 尝试加入群组
+            logger.info(f"[Account {account_id}] 正在加入群组 {group_id}...")
             if pg_id:
                 try:
-                    await api.post("/engine/public-group/join-status", {
+                    await api.post("/engine/public-group/join-log", {
                         "publicGroupId": pg_id, "monitorAccountId": account_id,
-                        "status": "not_found", "errorMsg": "无法解析群组ID，账号可能未加入该群组",
+                        "status": "pending", "logEntry": "正在尝试加入群组...",
                     })
                 except Exception:
                     pass
+            try:
+                joined_real_id = await worker.join_chat(group_id)
+                if joined_real_id:
+                    public_group_real_ids[group_id] = int(joined_real_id)
+                    joined_chat_ids.add(int(joined_real_id))
+                    joined_count += 1
+                    logger.info(f"[Account {account_id}] 成功加入群组 {group_id} -> {joined_real_id}")
+                    if pg_id:
+                        try:
+                            await api.post("/engine/public-group/join-log", {
+                                "publicGroupId": pg_id, "monitorAccountId": account_id,
+                                "status": "subscribed", "realId": str(joined_real_id),
+                                "logEntry": f"成功加入，real_id={joined_real_id}",
+                            })
+                        except Exception:
+                            pass
+                    # 加群间隔（防封）
+                    delay = _rand.uniform(
+                        join_config.get("joinIntervalMin", 30),
+                        join_config.get("joinIntervalMax", 60)
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    failed_count += 1
+                    logger.warning(f"[Account {account_id}] 加入群组 {group_id} 失败（返回 None）")
+                    if pg_id:
+                        try:
+                            await api.post("/engine/public-group/join-log", {
+                                "publicGroupId": pg_id, "monitorAccountId": account_id,
+                                "status": "not_found", "errorMsg": "加入失败（返回 None）",
+                                "logEntry": "加入失败，群组可能不存在或需要邀请链接",
+                            })
+                        except Exception:
+                            pass
+            except Exception as e:
+                err_msg = str(e)
+                failed_count += 1
+                logger.warning(f"[Account {account_id}] 加入群组 {group_id} 异常: {e}")
+                if pg_id:
+                    try:
+                        await api.post("/engine/public-group/join-log", {
+                            "publicGroupId": pg_id, "monitorAccountId": account_id,
+                            "status": "not_found", "errorMsg": err_msg[:200],
+                            "logEntry": f"加入异常: {err_msg[:100]}",
+                        })
+                    except Exception:
+                        pass
 
-        # 短暂让出事件循环，避免阻塞
         await asyncio.sleep(0.05)
 
     logger.info(
-        f"[Account {account_id}] ===== 订阅监控完成 =====\n"
-        f"  已订阅: {subscribed_count}/{len(active_groups)} 个群组\n"
-        f"  未找到: {not_found_count} 个（账号未加入或群组不存在）\n"
-        f"  real_ids 映射总数: {len(public_group_real_ids)}\n"
-        f"  监控已生效，将实时接收这些群组的消息"
+        f"[Account {account_id}] ===== 加群完成 =====\n"
+        f"  分配群组数: {len(assigned_groups)}/{len(active_groups)}\n"
+        f"  已在群中: {subscribed_count}\n"
+        f"  新加入: {joined_count}\n"
+        f"  失败: {failed_count}\n"
+        f"  real_ids 映射总数: {len(public_group_real_ids)}"
     )
-    # 订阅完成后刷新真实群组数缓存
     if worker and worker.is_running:
         asyncio.create_task(worker._refresh_group_count())
 

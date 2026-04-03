@@ -367,16 +367,23 @@ export const systemConfigRouter = router({
 
       const statusMap = new Map(statusRecords.map(r => [r.monitorAccountId, r]));
 
-      return accounts.map(acc => ({
-        accountId: acc.id,
-        phone: acc.phone,
-        tgUsername: acc.tgUsername,
-        tgFirstName: acc.tgFirstName,
-        sessionStatus: acc.sessionStatus,
-        joinStatus: statusMap.get(acc.id)?.status ?? "pending",
-        errorMsg: statusMap.get(acc.id)?.errorMsg ?? null,
-        joinedAt: statusMap.get(acc.id)?.joinedAt ?? null,
-      }));
+      return accounts.map(acc => {
+        const rec = statusMap.get(acc.id);
+        let parsedLog: any[] = [];
+        if (rec?.joinLog) { try { parsedLog = JSON.parse(rec.joinLog); } catch {} }
+        return {
+          accountId: acc.id,
+          phone: acc.phone,
+          tgUsername: acc.tgUsername,
+          tgFirstName: acc.tgFirstName,
+          sessionStatus: acc.sessionStatus,
+          joinStatus: rec?.status ?? "pending",
+          errorMsg: rec?.errorMsg ?? null,
+          joinedAt: rec?.joinedAt ?? null,
+          assignedAccountId: rec?.assignedAccountId ?? null,
+          joinLog: parsedLog,
+        };
+      });
     }),
 
   // Engine REST API：上报加群状态（供 main.py 调用）
@@ -482,6 +489,7 @@ export const systemConfigRouter = router({
     }),
   getJoinConfig: adminProcedure.query(async () => {
     const db = await getDb();
+    if (!db) return { joinIntervalMin: 30, joinIntervalMax: 60, maxGroupsPerAccount: 100, joinEnabled: true };
     const rows = await db.select().from(systemConfig);
     const get = (k: string, def: string) => rows.find((r: any) => r.configKey === k)?.configValue ?? def;
     return {
@@ -500,12 +508,13 @@ export const systemConfigRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
       const upsert = async (key: string, value: string) => {
-        const existing = await db.select().from(systemConfig).where(eq(systemConfig.configKey, key)).limit(1);
+        const existing = await db!.select().from(systemConfig).where(eq(systemConfig.configKey, key)).limit(1);
         if (existing.length > 0) {
-          await db.update(systemConfig).set({ configValue: value }).where(eq(systemConfig.configKey, key));
+          await db!.update(systemConfig).set({ configValue: value }).where(eq(systemConfig.configKey, key));
         } else {
-          await db.insert(systemConfig).values({ configKey: key, configValue: value });
+          await db!.insert(systemConfig).values({ configKey: key, configValue: value });
         }
       };
       await upsert("join_interval_min", String(input.joinIntervalMin));
@@ -513,5 +522,119 @@ export const systemConfigRouter = router({
       await upsert("max_groups_per_account", String(input.maxGroupsPerAccount));
       await upsert("join_enabled", String(input.joinEnabled));
       return { success: true };
+    }),
+
+  // 获取所有公共群组的加群状态汇总（管理员）
+  getAllJoinStatus: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    // 获取所有管理员账号（role=admin 用户下的 TG 账号）
+    const { users } = await import('../../drizzle/schema');
+    const adminUsers = await db.select({ id: users.id }).from(users).where(eq(users.role, 'admin'));
+    const adminUserIds = adminUsers.map((u: { id: number }) => u.id);
+    if (adminUserIds.length === 0) return [];
+    const accounts = await db.select({
+      id: tgAccounts.id,
+      phone: tgAccounts.phone,
+      tgUsername: tgAccounts.tgUsername,
+      tgFirstName: tgAccounts.tgFirstName,
+      sessionStatus: tgAccounts.sessionStatus,
+    }).from(tgAccounts).where(
+      and(eq(tgAccounts.isActive, true), inArray(tgAccounts.userId, adminUserIds))
+    );
+    const groups = await db.select().from(publicMonitorGroups).where(eq(publicMonitorGroups.isActive, true));
+    const statusRecords = await db.select().from(publicGroupJoinStatus);
+    // 按账号聚合统计
+    return accounts.map(acc => {
+      const accStatuses = statusRecords.filter(s => s.monitorAccountId === acc.id);
+      const subscribed = accStatuses.filter(s => s.status === 'subscribed').length;
+      const failed = accStatuses.filter(s => s.status === 'failed').length;
+      const joining = accStatuses.filter(s => s.status === 'joining').length;
+      const pending = groups.length - accStatuses.length + accStatuses.filter(s => s.status === 'pending').length;
+      return {
+        accountId: acc.id,
+        phone: acc.phone,
+        tgUsername: acc.tgUsername,
+        tgFirstName: acc.tgFirstName,
+        sessionStatus: acc.sessionStatus,
+        totalGroups: groups.length,
+        subscribed,
+        failed,
+        joining,
+        pending,
+        assignedCount: accStatuses.filter(s => s.assignedAccountId === acc.id).length,
+      };
+    });
+  }),
+
+  // Engine REST API：上报加群进度（供 main.py 调用，支持详细日志）
+  reportJoinProgress: publicProcedure
+    .input(z.object({
+      publicGroupId: z.number(),
+      monitorAccountId: z.number(),
+      status: z.enum(['pending', 'joining', 'subscribed', 'not_found', 'failed']),
+      errorMsg: z.string().optional(),
+      logEntry: z.string().optional(), // 单条日志文本，追加到 joinLog
+      assignedAccountId: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      const existing = await db.select().from(publicGroupJoinStatus)
+        .where(and(
+          eq(publicGroupJoinStatus.publicGroupId, input.publicGroupId),
+          eq(publicGroupJoinStatus.monitorAccountId, input.monitorAccountId)
+        )).limit(1);
+      const now = new Date().toISOString();
+      const newLogEntry = input.logEntry ? `[${now}] ${input.logEntry}` : null;
+      if (existing.length > 0) {
+        const oldLog = existing[0].joinLog ? JSON.parse(existing[0].joinLog) : [];
+        if (newLogEntry) oldLog.push(newLogEntry);
+        await db.update(publicGroupJoinStatus).set({
+          status: input.status,
+          errorMsg: input.errorMsg ?? existing[0].errorMsg,
+          joinedAt: input.status === 'subscribed' ? new Date() : existing[0].joinedAt,
+          assignedAccountId: input.assignedAccountId ?? existing[0].assignedAccountId,
+          joinLog: JSON.stringify(oldLog),
+        }).where(eq(publicGroupJoinStatus.id, existing[0].id));
+      } else {
+        const logArr = newLogEntry ? [newLogEntry] : [];
+        await db.insert(publicGroupJoinStatus).values({
+          publicGroupId: input.publicGroupId,
+          monitorAccountId: input.monitorAccountId,
+          status: input.status,
+          errorMsg: input.errorMsg ?? null,
+          joinedAt: input.status === 'subscribed' ? new Date() : null,
+          assignedAccountId: input.assignedAccountId ?? null,
+          joinLog: JSON.stringify(logArr),
+        });
+      }
+      return { success: true };
+    }),
+
+  // 获取某账号的加群日志详情
+  getAccountJoinLog: adminProcedure
+    .input(z.object({ monitorAccountId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const records = await db.select({
+        id: publicGroupJoinStatus.id,
+        publicGroupId: publicGroupJoinStatus.publicGroupId,
+        status: publicGroupJoinStatus.status,
+        errorMsg: publicGroupJoinStatus.errorMsg,
+        joinedAt: publicGroupJoinStatus.joinedAt,
+        assignedAccountId: publicGroupJoinStatus.assignedAccountId,
+        joinLog: publicGroupJoinStatus.joinLog,
+        groupTitle: publicMonitorGroups.groupTitle,
+        groupId: publicMonitorGroups.groupId,
+      }).from(publicGroupJoinStatus)
+        .leftJoin(publicMonitorGroups, eq(publicGroupJoinStatus.publicGroupId, publicMonitorGroups.id))
+        .where(eq(publicGroupJoinStatus.monitorAccountId, input.monitorAccountId))
+        .orderBy(publicGroupJoinStatus.updatedAt);
+      return records.map(r => ({
+        ...r,
+        joinLog: r.joinLog ? JSON.parse(r.joinLog) : [],
+      }));
     }),
 });

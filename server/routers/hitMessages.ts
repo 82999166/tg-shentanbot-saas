@@ -56,7 +56,7 @@ export const hitMessagesRouter = router({
         .where(and(...conditions));
 
       // 关联 public_monitor_groups 表获取群组信息
-      const groupIds = [...new Set(rows.map(r => r.monitorGroupId).filter(id => id > 0))];
+      const groupIds = Array.from(new Set(rows.map(r => r.monitorGroupId).filter(id => id > 0)));
       let groupMap: Map<number, { groupTitle: string | null; groupId: string }> = new Map();
       if (groupIds.length > 0) {
         const groupRows = await db
@@ -115,7 +115,7 @@ export const hitMessagesRouter = router({
         .limit(input.pageSize)
         .offset(offset);
       // 获取用户邮箱映射
-      const userIds = [...new Set(rows.map(r => r.userId))];
+      const userIds = Array.from(new Set(rows.map(r => r.userId)));
       let userEmailMap: Map<number, string | null> = new Map();
       if (userIds.length > 0) {
         const userRows = await db
@@ -129,7 +129,7 @@ export const hitMessagesRouter = router({
         .from(hitRecords)
         .where(whereClause);
       // 关联 public_monitor_groups 表获取群组信息
-      const groupIds = [...new Set(rows.map(r => r.monitorGroupId).filter(id => id && id > 0))] as number[];
+      const groupIds = Array.from(new Set(rows.map(r => r.monitorGroupId).filter(id => id && id > 0))) as number[];
       let groupMap: Map<number, { groupTitle: string | null; groupId: string }> = new Map();
       if (groupIds.length > 0) {
         const groupRows = await db
@@ -294,7 +294,7 @@ export const hitMessagesRouter = router({
       .from(blacklist)
       .orderBy(desc(blacklist.createdAt));
     if (!rows.length) return [];
-    const userIds = [...new Set(rows.map((r: any) => r.userId))];
+    const userIds = Array.from(new Set(rows.map((r: any) => r.userId)));
     const userRows = await db
       .select({ id: users.id, email: users.email })
       .from(users)

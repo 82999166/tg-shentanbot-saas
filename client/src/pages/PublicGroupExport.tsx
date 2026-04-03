@@ -115,7 +115,7 @@ export default function PublicGroupExport() {
           {[
             { label: "总群组数", value: data?.total ?? 0, icon: Globe, color: "text-blue-400" },
             { label: "当前筛选", value: groups.length, icon: Search, color: "text-cyan-400" },
-            { label: "群组类型", value: [...new Set(groups.map(g => g.groupType))].length, icon: FileText, color: "text-purple-400" },
+            { label: "群组类型", value: Array.from(new Set(groups.map(g => g.groupType))).length, icon: FileText, color: "text-purple-400" },
             { label: "总成员数", value: groups.reduce((s, g) => s + (g.memberCount ?? 0), 0).toLocaleString(), icon: Users, color: "text-green-400" },
           ].map((item) => (
             <Card key={item.label} className="bg-slate-800/60 border-slate-700">

@@ -659,9 +659,11 @@ export const publicGroupJoinStatus = mysqlTable("public_group_join_status", {
   id: int("id").autoincrement().primaryKey(),
   publicGroupId: int("publicGroupId").notNull(),                     // 关联 public_monitor_groups.id
   monitorAccountId: int("monitorAccountId").notNull(),               // 关联 tg_accounts.id
-  status: varchar("status", { length: 32 }).default("pending").notNull(), // pending / joined / failed
+  status: varchar("status", { length: 32 }).default("pending").notNull(), // pending / subscribed / not_found / joining / failed
   errorMsg: varchar("errorMsg", { length: 512 }),                   // 失败原因
   joinedAt: timestamp("joinedAt"),                                   // 成功加入时间
+  assignedAccountId: int("assignedAccountId"),                      // 分配负责该群组的账号 ID（去重分配用）
+  joinLog: text("joinLog"),                                          // 详细加群日志（JSON 数组）
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (t) => [
   index("idx_pgjs_groupId").on(t.publicGroupId),

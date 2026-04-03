@@ -4,7 +4,7 @@
  * 供 Python 监控引擎通过标准 HTTP 调用
  */
 import { Router, Request, Response } from "express";
-import { getDb } from "./db";
+import { getDb } from "../db";
 import {
   tgAccounts,
   monitorGroups,
@@ -22,7 +22,7 @@ import {
   publicGroupKeywords,
   publicGroupJoinStatus,
   systemConfig,
-} from "../drizzle/schema";
+} from "../../drizzle/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 
 const ENGINE_SECRET = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";

@@ -1077,37 +1077,64 @@ export default function AdminGroups() {
               ) : joinStatus.length === 0 ? (
                 <div className="text-center py-6 text-muted-foreground">暂无监控账号</div>
               ) : (
-                <Table>
+<Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>账号</TableHead>
-                      <TableHead>Session 状态</TableHead>
+                      <TableHead>Session</TableHead>
                       <TableHead>加群状态</TableHead>
                       <TableHead>加入时间</TableHead>
+                      <TableHead>最新日志</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {joinStatus.map((s: any) => (
                       <TableRow key={s.accountId}>
-                        <TableCell>
-                          {s.tgUsername ? `@${s.tgUsername}` : s.phone || `ID:${s.accountId}`}
+                        <TableCell className="font-medium">
+                          <div>{s.tgUsername ? `@${s.tgUsername}` : s.phone || `ID:${s.accountId}`}</div>
+                          {s.assignedAccountId === s.accountId && (
+                            <div className="text-xs text-orange-400 mt-0.5">已分配</div>
+                          )}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={s.sessionStatus === "active" ? "default" : "secondary"}>
+                          <Badge variant={s.sessionStatus === "active" ? "default" : "secondary"} className="text-xs">
                             {s.sessionStatus || "未知"}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {s.joinStatus === "joined" ? (
-                            <Badge className="bg-green-500/20 text-green-400 border-green-500/30">已加入</Badge>
+                          {s.joinStatus === "subscribed" || s.joinStatus === "joined" ? (
+                            <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">已加入</Badge>
                           ) : s.joinStatus === "failed" ? (
-                            <Badge variant="destructive">失败</Badge>
+                            <div>
+                              <Badge variant="destructive" className="text-xs">失败</Badge>
+                              {s.errorMsg && <div className="text-xs text-red-400 mt-0.5 max-w-[120px] truncate" title={s.errorMsg}>{s.errorMsg}</div>}
+                            </div>
+                          ) : s.joinStatus === "joining" ? (
+                            <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs">加入中</Badge>
+                          ) : s.joinStatus === "skipped" ? (
+                            <Badge variant="outline" className="text-xs">已跳过</Badge>
                           ) : (
-                            <Badge variant="secondary">待加入</Badge>
+                            <Badge variant="secondary" className="text-xs">待加入</Badge>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="text-xs text-muted-foreground">
                           {s.joinedAt ? new Date(s.joinedAt).toLocaleString("zh-CN") : "-"}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-[160px]">
+                          {s.joinLog && s.joinLog.length > 0 ? (
+                            <div className="space-y-0.5">
+                              {s.joinLog.slice(-2).map((log: any, i: number) => (
+                                <div key={i} className="truncate" title={`${log.time ? new Date(log.time).toLocaleString('zh-CN') : ''}: ${log.msg}`}>
+                                  <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${
+                                    log.status === 'subscribed' || log.status === 'joined' ? 'bg-green-400' :
+                                    log.status === 'failed' ? 'bg-red-400' :
+                                    log.status === 'joining' ? 'bg-blue-400' : 'bg-gray-400'
+                                  }`} />
+                                  {log.msg}
+                                </div>
+                              ))}
+                            </div>
+                          ) : "-"}
                         </TableCell>
                       </TableRow>
                     ))}

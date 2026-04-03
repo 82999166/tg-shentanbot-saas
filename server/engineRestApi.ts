@@ -770,6 +770,109 @@ export function registerEngineRestRoutes(app: Router) {
     }
   });
 
+  // GET /api/engine/admin-accounts - 获取所有管理员监控账号列表（用于分片分配加群）
+  app.get("/api/engine/admin-accounts", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.json({ accounts: [] });
+
+      const adminUsers = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
+      const adminUserIds = adminUsers.map((u: { id: number }) => u.id);
+      if (adminUserIds.length === 0) return res.json({ accounts: [] });
+
+      const accounts = await db
+        .select({ id: tgAccounts.id, userId: tgAccounts.userId, phone: tgAccounts.phone, tgUsername: tgAccounts.tgUsername })
+        .from(tgAccounts)
+        .where(
+          and(
+            eq(tgAccounts.isActive, true),
+            inArray(tgAccounts.userId, adminUserIds),
+            inArray(tgAccounts.accountRole, ["monitor", "both"])
+          )
+        )
+        .orderBy(tgAccounts.id);  // 按 ID 排序，保证分片顺序一致
+
+      res.json({ accounts });
+    } catch (e: any) {
+      console.error("[Engine API] admin-accounts error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST /api/engine/public-group/join-log - 上报加群详细日志（含进度）
+  app.post("/api/engine/public-group/join-log", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB unavailable" });
+
+      const { publicGroupId, monitorAccountId, status, errorMsg, realId, logEntry } = req.body;
+      if (!publicGroupId || !monitorAccountId) {
+        return res.status(400).json({ error: "publicGroupId and monitorAccountId are required" });
+      }
+
+      const now = new Date();
+      const isSubscribed = status === "subscribed" || status === "joined";
+      const normalizedStatus = isSubscribed ? "subscribed" : (status || "pending");
+
+      // 读取现有日志
+      const existing = await db.select({ id: publicGroupJoinStatus.id, joinLog: publicGroupJoinStatus.joinLog })
+        .from(publicGroupJoinStatus)
+        .where(and(
+          eq(publicGroupJoinStatus.publicGroupId, publicGroupId),
+          eq(publicGroupJoinStatus.monitorAccountId, monitorAccountId)
+        ))
+        .limit(1);
+
+      // 构建新日志条目
+      const newEntry = {
+        time: now.toISOString(),
+        status: normalizedStatus,
+        msg: logEntry || errorMsg || "",
+      };
+
+      let logArr: any[] = [];
+      if (existing.length > 0 && existing[0].joinLog) {
+        try { logArr = JSON.parse(existing[0].joinLog); } catch (_) {}
+      }
+      logArr.push(newEntry);
+      // 只保留最近 50 条日志
+      if (logArr.length > 50) logArr = logArr.slice(-50);
+      const joinLogStr = JSON.stringify(logArr);
+
+      if (existing.length > 0) {
+        await db.update(publicGroupJoinStatus).set({
+          status: normalizedStatus,
+          errorMsg: errorMsg || null,
+          ...(isSubscribed ? { joinedAt: now } : {}),
+          joinLog: joinLogStr,
+          updatedAt: now,
+        }).where(eq(publicGroupJoinStatus.id, existing[0].id));
+      } else {
+        await db.insert(publicGroupJoinStatus).values({
+          publicGroupId,
+          monitorAccountId,
+          status: normalizedStatus,
+          errorMsg: errorMsg || null,
+          joinedAt: isSubscribed ? now : null,
+          joinLog: joinLogStr,
+        });
+      }
+
+      // 回写 realId
+      if (isSubscribed && realId) {
+        await db.update(publicMonitorGroups).set({ realId: String(realId) })
+          .where(eq(publicMonitorGroups.id, publicGroupId)).catch(() => {});
+      }
+
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("[Engine API] public-group/join-log error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // POST /api/engine/update-user-tgid - 直接更新用户的 tgUserId（管理员操作）
   app.post("/api/engine/update-user-tgid", async (req: Request, res: Response) => {
     if (!checkSecret(req, res)) return;

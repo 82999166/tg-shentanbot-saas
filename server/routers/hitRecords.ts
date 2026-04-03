@@ -85,7 +85,7 @@ export const hitRecordsRouter = router({
 
       // 附加群组信息（所有用户都需要）
       let enrichedRecords: any[] = records;
-      const groupIds = [...new Set(records.map(r => r.monitorGroupId).filter(id => id > 0))];
+      const groupIds = Array.from(new Set(records.map(r => r.monitorGroupId).filter(id => id > 0)));
       let groupMap: Map<number, { groupTitle: string | null; groupId: string }> = new Map();
       if (groupIds.length > 0) {
         const groupRows = await db
