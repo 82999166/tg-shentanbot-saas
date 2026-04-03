@@ -230,6 +230,23 @@ export default function AdminGroups() {
   const activeGroups = groups.filter((g: { isActive: boolean }) => g.isActive);
   const inactiveGroups = groups.filter((g: { isActive: boolean }) => !g.isActive);
 
+  // 加入状态筛选 & 搜索
+  const [joinFilter, setJoinFilter] = useState<"all" | "joined" | "not_joined" | "failed">("all");
+  const [groupSearch, setGroupSearch] = useState("");
+  const filteredGroups = groups.filter((g: any) => {
+    if (groupSearch) {
+      const q = groupSearch.toLowerCase();
+      if (!((g.groupId || "").toLowerCase().includes(q) || (g.groupTitle || "").toLowerCase().includes(q) || (g.note || "").toLowerCase().includes(q))) {
+        return false;
+      }
+    }
+    const accounts: Array<{ accountId: number; accountName: string; status: string }> = g.joinedAccounts || [];
+    if (joinFilter === "joined") return accounts.some((a: any) => a.status === "joined");
+    if (joinFilter === "failed") return accounts.some((a: any) => a.status === "failed");
+    if (joinFilter === "not_joined") return accounts.length === 0 || accounts.every((a: any) => a.status !== "joined" && a.status !== "failed");
+    return true;
+  });
+
   // 解析批量输入文本
   function parseBatchText(text: string): string[] {
     return text
@@ -465,7 +482,36 @@ export default function AdminGroups() {
         {/* 群组列表 */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">公共群组池</CardTitle>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <CardTitle className="text-base">公共群组池</CardTitle>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="搜索群组..."
+                    value={groupSearch}
+                    onChange={e => setGroupSearch(e.target.value)}
+                    className="pl-8 h-8 w-44 text-sm"
+                  />
+                </div>
+                <Select value={joinFilter} onValueChange={(v: any) => setJoinFilter(v)}>
+                  <SelectTrigger className="h-8 w-36 text-sm">
+                    <SelectValue placeholder="加入状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部</SelectItem>
+                    <SelectItem value="joined">已有账号加入</SelectItem>
+                    <SelectItem value="not_joined">未加入</SelectItem>
+                    <SelectItem value="failed">加入失败</SelectItem>
+                  </SelectContent>
+                </Select>
+                {(groupSearch || joinFilter !== "all") && (
+                  <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => { setGroupSearch(""); setJoinFilter("all"); }}>
+                    清除筛选
+                  </Button>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -529,12 +575,13 @@ export default function AdminGroups() {
                     <TableHead>群组名称</TableHead>
                     <TableHead>备注</TableHead>
                     <TableHead>状态</TableHead>
+                    <TableHead>已加入账号</TableHead>
                     <TableHead>添加时间</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {groups.map((group: any) => (
+                  {filteredGroups.map((group: any) => (
                     <TableRow key={group.id} className={selectedIds.includes(group.id) ? "bg-blue-500/5" : ""}>
                       <TableCell className="w-10">
                         <Checkbox
@@ -563,6 +610,39 @@ export default function AdminGroups() {
                         ) : (
                           <Badge variant="secondary">已禁用</Badge>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const accounts: Array<{ accountId: number; accountName: string; status: string }> = group.joinedAccounts || [];
+                          if (accounts.length === 0) return <span className="text-muted-foreground text-xs">-</span>;
+                          const MAX_SHOW = 2;
+                          const shown = accounts.slice(0, MAX_SHOW);
+                          const rest = accounts.length - MAX_SHOW;
+                          return (
+                            <div className="flex flex-wrap gap-1">
+                              {shown.map((a: any) => (
+                                <Badge
+                                  key={a.accountId}
+                                  variant="outline"
+                                  className={`text-xs px-1.5 py-0 ${
+                                    a.status === "joined"
+                                      ? "border-green-500/40 text-green-400 bg-green-500/10"
+                                      : a.status === "failed"
+                                      ? "border-red-500/40 text-red-400 bg-red-500/10"
+                                      : "border-yellow-500/40 text-yellow-400 bg-yellow-500/10"
+                                  }`}
+                                >
+                                  {a.accountName}
+                                </Badge>
+                              ))}
+                              {rest > 0 && (
+                                <Badge variant="outline" className="text-xs px-1.5 py-0 text-muted-foreground">
+                                  +{rest}
+                                </Badge>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {group.createdAt ? new Date(group.createdAt).toLocaleDateString("zh-CN") : "-"}

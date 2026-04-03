@@ -163,7 +163,38 @@ export const systemConfigRouter = router({
   getPublicGroups: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(publicMonitorGroups).orderBy(publicMonitorGroups.createdAt);
+    // 查询群组列表
+    const groups = await db.select().from(publicMonitorGroups).orderBy(publicMonitorGroups.createdAt);
+    if (groups.length === 0) return [];
+    const groupIds = groups.map((g: typeof publicMonitorGroups.$inferSelect) => g.id);
+    // 查询每个群组的加入状态（JOIN tg_accounts 获取账号名）
+    const joinStatuses = await db
+      .select({
+        publicGroupId: publicGroupJoinStatus.publicGroupId,
+        monitorAccountId: publicGroupJoinStatus.monitorAccountId,
+        status: publicGroupJoinStatus.status,
+        tgUsername: tgAccounts.tgUsername,
+        tgFirstName: tgAccounts.tgFirstName,
+        phone: tgAccounts.phone,
+      })
+      .from(publicGroupJoinStatus)
+      .leftJoin(tgAccounts, eq(publicGroupJoinStatus.monitorAccountId, tgAccounts.id))
+      .where(inArray(publicGroupJoinStatus.publicGroupId, groupIds));
+    // 按 publicGroupId 分组
+    const statusMap = new Map<number, Array<{ accountId: number; accountName: string; status: string }>>();
+    for (const s of joinStatuses) {
+      if (!statusMap.has(s.publicGroupId)) statusMap.set(s.publicGroupId, []);
+      const accountName = s.tgUsername ? `@${s.tgUsername}` : (s.tgFirstName || s.phone || `ID:${s.monitorAccountId}`);
+      statusMap.get(s.publicGroupId)!.push({
+        accountId: s.monitorAccountId,
+        accountName,
+        status: s.status,
+      });
+    }
+    return groups.map((g: typeof publicMonitorGroups.$inferSelect) => ({
+      ...g,
+      joinedAccounts: statusMap.get(g.id) || [],
+    }));
   }),
 
   // 添加公共群组
