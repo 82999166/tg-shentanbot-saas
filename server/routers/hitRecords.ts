@@ -428,7 +428,7 @@ export const adminRouter = router({
         cnt: sql<number>`COUNT(*)`,
       })
       .from(publicGroupJoinStatus)
-      .where(sql`${publicGroupJoinStatus.status} = 'joined'`)
+      .where(sql`${publicGroupJoinStatus.status} IN ('joined', 'subscribed')`)
       .groupBy(publicGroupJoinStatus.monitorAccountId);
     const joinedMap = new Map(joinedRows.map((r) => [r.monitorAccountId, Number(r.cnt)]));
     return accounts.map((a) => ({

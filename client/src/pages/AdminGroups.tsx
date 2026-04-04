@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
@@ -247,7 +247,9 @@ export default function AdminGroups() {
   // 加入状态筛选 & 搜索
   const [joinFilter, setJoinFilter] = useState<"all" | "joined" | "not_joined" | "failed">("all");
   const [groupSearch, setGroupSearch] = useState("");
-  const filteredGroups = groups.filter((g: any) => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 50;
+  const filteredGroups = useMemo(() => groups.filter((g: any) => {
     if (groupSearch) {
       const q = groupSearch.toLowerCase();
       if (!((g.groupId || "").toLowerCase().includes(q) || (g.groupTitle || "").toLowerCase().includes(q) || (g.note || "").toLowerCase().includes(q))) {
@@ -261,7 +263,16 @@ export default function AdminGroups() {
     if (joinFilter === "failed") return accounts.some((a: any) => isFailed(a.status));
     if (joinFilter === "not_joined") return accounts.length === 0 || accounts.every((a: any) => !isJoined(a.status) && !isFailed(a.status));
     return true;
-  });
+  }), [groups, groupSearch, joinFilter]);
+
+  const totalPages = Math.ceil(filteredGroups.length / PAGE_SIZE);
+  const pagedGroups = useMemo(
+    () => filteredGroups.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [filteredGroups, currentPage]
+  );
+
+  // 搜索或筛选变化时重置到第1页
+  useEffect(() => { setCurrentPage(1); }, [groupSearch, joinFilter]);
 
   // 解析批量输入文本
   function parseBatchText(text: string): string[] {
@@ -607,7 +618,7 @@ export default function AdminGroups() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredGroups.map((group: any) => (
+                  {pagedGroups.map((group: any) => (
                     <TableRow key={group.id} className={selectedIds.includes(group.id) ? "bg-blue-500/5" : ""}>
                       <TableCell className="w-10">
                         <Checkbox
@@ -714,11 +725,25 @@ export default function AdminGroups() {
                   ))}
                 </TableBody>
               </Table>
+              {/* 分页控件 */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 px-1">
+                  <p className="text-sm text-muted-foreground">
+                    共 {filteredGroups.length} 条，第 {currentPage}/{totalPages} 页
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(1)} className="h-7 px-2 text-xs">首页</Button>
+                    <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="h-7 px-2 text-xs">上一页</Button>
+                    <span className="text-xs text-muted-foreground px-2">{currentPage} / {totalPages}</span>
+                    <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="h-7 px-2 text-xs">下一页</Button>
+                    <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(totalPages)} className="h-7 px-2 text-xs">末页</Button>
+                  </div>
+                </div>
+              )}
               </>
             )}
           </CardContent>
         </Card>
-
         {/* 添加群组对话框 */}
         <Dialog open={addDialog} onOpenChange={setAddDialog}>
           <DialogContent className="max-h-[90vh] flex flex-col">
