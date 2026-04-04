@@ -260,7 +260,7 @@ export default function AdminGroups() {
     const isJoined = (s: string) => s === "joined" || s === "subscribed";
     const isFailed = (s: string) => s === "failed" || s === "not_found";
     if (joinFilter === "joined") return accounts.some((a: any) => isJoined(a.status));
-    if (joinFilter === "failed") return accounts.some((a: any) => isFailed(a.status));
+    if (joinFilter === "failed") return accounts.some((a: any) => isFailed(a.status)) && !accounts.some((a: any) => isJoined(a.status));
     if (joinFilter === "not_joined") return accounts.length === 0 || accounts.every((a: any) => !isJoined(a.status) && !isFailed(a.status));
     return true;
   }), [groups, groupSearch, joinFilter]);
