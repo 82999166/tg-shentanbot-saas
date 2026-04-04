@@ -144,6 +144,20 @@ export default function AdminGroups() {
   });
 
   const batchJoinMut = trpc.engine.batchJoinGroups.useMutation();
+  const [scanRunning, setScanRunning] = useState(false);
+  const scanJoinedMut = trpc.engine.scanJoinedGroups.useMutation();
+  async function handleScanJoined() {
+    setScanRunning(true);
+    try {
+      const res = await scanJoinedMut.mutateAsync({});
+      toast.success(`扫描完成：共扫描 ${res.scannedAccounts} 个账号，补录 ${res.totalRecorded} 条状态`);
+      utils.sysConfig.getPublicGroups.invalidate();
+    } catch (e: any) {
+      toast.error("扫描失败: " + e.message);
+    } finally {
+      setScanRunning(false);
+    }
+  }
 
   async function handleBatchJoin() {
     if (joinSelectedAccountIds.size === 0) { toast.error("请至少选择一个账号"); return; }
@@ -430,6 +444,16 @@ export default function AdminGroups() {
             >
               <UserPlus className="w-4 h-4 mr-1" />
               一键加群
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleScanJoined}
+              disabled={scanRunning}
+              className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+            >
+              {scanRunning ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
+              {scanRunning ? "扫描中..." : "重新扫描"}
             </Button>
             <Button size="sm" onClick={() => setAddDialog(true)}>
               <Plus className="w-4 h-4 mr-1" />

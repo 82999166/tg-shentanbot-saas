@@ -1359,6 +1359,45 @@ export const engineRouter = router({
       };
     }),
 
+  // ── 扫描已加入群组（补录历史数据）────────────────────────────────────────────
+  scanJoinedGroups: publicProcedure
+    .input(
+      z.object({
+        accountIds: z.array(z.number()).optional(), // 不传则扫描所有活跃账号
+      })
+    )
+    .mutation(async ({ input }) => {
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8765";
+      const engineSecret = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
+      const resp = await fetch(`${engineUrl}/scan-joined-groups`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Engine-Secret": engineSecret,
+        },
+        body: JSON.stringify({
+          account_ids: input.accountIds || [],
+        }),
+        signal: AbortSignal.timeout(600_000),
+      });
+      const data = await resp.json() as {
+        success?: boolean;
+        scanned_accounts?: number;
+        total_recorded?: number;
+        details?: Array<{ account_id: number; recorded: number; error?: string }>;
+        error?: string;
+      };
+      if (!data.success) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "扫描失败" });
+      }
+      return {
+        success: true,
+        scannedAccounts: data.scanned_accounts ?? 0,
+        totalRecorded: data.total_recorded ?? 0,
+        details: data.details ?? [],
+      };
+    }),
+
 });
 
 // ── 配置查询（独立函数，避免循环引用） ──────────────────────────────────────────────────────────────
