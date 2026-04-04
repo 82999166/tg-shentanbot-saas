@@ -1387,7 +1387,6 @@ export default function AdminGroups() {
               </div>
             </div>
           ) : (
-            /* 结果展示 */
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div className="text-center p-3 bg-green-500/10 rounded-lg">

@@ -121,33 +121,13 @@ export const tgAccountsRouter = router({
       for (const r of publicGroupCounts) {
         if (r.monitorAccountId) publicCountMap[r.monitorAccountId] = r.cnt;
       }
-      // 查询每个账号在引擎中实际加入的群组总数
-      const engineUrl = process.env.WEB_API_URL
-        ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
-        : 'http://127.0.0.1:8765';
-      const engineSecret = process.env.ENGINE_SECRET || 'tg-monitor-engine-secret';
-      const joinedCountMap: Record<number, number> = {};
-      await Promise.all(rows.map(async (r) => {
-        try {
-          const resp = await fetch(`${engineUrl}/get-account-chats`, {
-            method: 'POST',
-            headers: { 'X-Engine-Secret': engineSecret, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ account_id: r.id }),
-            // @ts-ignore
-            signal: AbortSignal.timeout(10000),
-          });
-          if (resp.ok) {
-            const data = await resp.json() as any;
-            joinedCountMap[r.id] = data.total ?? (data.chats ?? []).length;
-          }
-        } catch { /* 引擎不可达时忽略 */ }
-      }));
+      // joinedGroupCount 直接使用数据库中的公共群组加入数量（避免实时调用引擎导致加载慢）
       return rows.map(r => ({
         ...r,
         privateGroupCount: privateCountMap[r.id] ?? 0,
         publicGroupCount: publicCountMap[r.id] ?? 0,
         totalGroupCount: (privateCountMap[r.id] ?? 0) + (publicCountMap[r.id] ?? 0),
-        joinedGroupCount: joinedCountMap[r.id] ?? null,
+        joinedGroupCount: publicCountMap[r.id] ?? 0,
       }));
     }
     return getTgAccountsByUserId(ctx.user.id);
