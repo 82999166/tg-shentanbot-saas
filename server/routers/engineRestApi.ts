@@ -25,7 +25,7 @@ import {
 } from "../../drizzle/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 
-const ENGINE_SECRET = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
+const ENGINE_SECRET = process.env.ENGINE_SECRET || "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac";
 
 function checkSecret(req: Request, res: Response): boolean {
   const secret = req.headers["x-engine-secret"];

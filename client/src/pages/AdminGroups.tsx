@@ -150,7 +150,7 @@ export default function AdminGroups() {
     setScanRunning(true);
     try {
       const res = await scanJoinedMut.mutateAsync({});
-      toast.success(`扫描完成：共扫描 ${res.scannedAccounts} 个账号，补录 ${res.totalRecorded} 条状态`);
+      toast.success(`扫描已在后台开始（${res.scannedAccounts} 个账号），请 1-2 分钟后刷新页面查看结果`);
       utils.sysConfig.getPublicGroups.invalidate();
     } catch (e: any) {
       toast.error("扫描失败: " + e.message);
