@@ -587,7 +587,7 @@ export function registerEngineRestRoutes(app: Router) {
           monitorAccountId,
           status: status || "joined",
           errorMsg: errorMsg || null,
-          joinedAt: status === "joined" ? now : null,
+          joinedAt: (status === "joined" || status === "subscribed") ? now : null,
         });
       } catch (insertErr: any) {
         // 主键/唯一键冲突时改为 UPDATE
@@ -597,7 +597,7 @@ export function registerEngineRestRoutes(app: Router) {
             .set({
               status: status || "joined",
               errorMsg: errorMsg || null,
-              ...(status === "joined" ? { joinedAt: now } : {}),
+              ...((status === "joined" || status === "subscribed") ? { joinedAt: now } : {}),
               updatedAt: now,
             })
             .where(
@@ -611,8 +611,8 @@ export function registerEngineRestRoutes(app: Router) {
         }
       }
 
-      // 如果引擎上报了 realId，回写到 publicMonitorGroups 表（仅当 status=joined 且 realId 不为空时）
-      if (status === "joined" && realId) {
+      // 如果引擎上报了 realId，回写到 publicMonitorGroups 表（status=joined 或 subscribed 且 realId 不为空时）
+      if ((status === "joined" || status === "subscribed") && realId) {
         try {
           await db
             .update(publicMonitorGroups)
