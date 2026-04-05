@@ -1565,6 +1565,7 @@ function engineRouter_config() {
         isActive: a.isActive,
         role: a.accountRole,
         status: a.sessionStatus,
+        maxGroupsLimit: a.maxGroupsLimit ?? null,  // 账号级别加群上限，null 表示使用全局设置
       })),
       userConfigs,
       // 公共监控群组池（所有会员共享）

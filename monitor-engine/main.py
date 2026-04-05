@@ -1323,14 +1323,22 @@ async def join_public_groups(worker: AccountWorker, account_id: int, force: bool
             break
 
     # 步骤 3：确定当前账号负责的群组（分片分配）
-    max_groups = int(join_config.get("maxGroupsPerAccount", 200))
+    # 优先使用账号级别上限，若未设置则使用全局配置
+    account_max_groups = None
+    for acc in admin_accounts:
+        if acc.get("id") == account_id:
+            v = acc.get("maxGroupsLimit")
+            if v is not None:
+                account_max_groups = int(v)
+            break
+    max_groups = account_max_groups if account_max_groups is not None else int(join_config.get("maxGroupsPerAccount", 200))
     if account_rank >= 0 and account_count > 0:
         assigned_groups = [pg for i, pg in enumerate(active_groups) if i % account_count == account_rank]
         # 应用每账号加群上限
         if len(assigned_groups) > max_groups:
-            logger.info(f"[Account {account_id}] 分片分配 {len(assigned_groups)} 个群组，超过上限 {max_groups}，截断至 {max_groups} 个")
+            logger.info(f"[Account {account_id}] 分片分配 {len(assigned_groups)} 个群组，超过上限 {max_groups}（{'账号专属' if account_max_groups is not None else '全局'}），截断至 {max_groups} 个")
             assigned_groups = assigned_groups[:max_groups]
-        logger.info(f"[Account {account_id}] 分片分配：账号序号 {account_rank}/{account_count}，负责 {len(assigned_groups)}/{len(active_groups)} 个群组（上限 {max_groups}）")
+        logger.info(f"[Account {account_id}] 分片分配：账号序号 {account_rank}/{account_count}，负责 {len(assigned_groups)}/{len(active_groups)} 个群组（上限 {max_groups}，{'账号专属' if account_max_groups is not None else '全局设置'}）")
     else:
         logger.info(f"[Account {account_id}] 账号不在管理员列表，仅建立群组映射不执行加群")
         assigned_groups = []

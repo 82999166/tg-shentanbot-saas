@@ -86,7 +86,7 @@ export default function TgAccounts() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   // 编辑账号状态
-  const [editAccount, setEditAccount] = useState<{ id: number; accountRole: string; notes: string } | null>(null);
+  const [editAccount, setEditAccount] = useState<{ id: number; accountRole: string; notes: string; maxGroupsLimit: number | null } | null>(null);
   const updateAccount = trpc.tgAccounts.update.useMutation();
 
   // 手机号登录状态
@@ -503,7 +503,7 @@ export default function TgAccounts() {
                               {account.isActive ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
                             </Button>
                             <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-400 hover:text-blue-400" title="编辑"
-                              onClick={() => setEditAccount({ id: account.id, accountRole: account.accountRole ?? "both", notes: account.notes ?? "" })}>
+                              onClick={() => setEditAccount({ id: account.id, accountRole: account.accountRole ?? "both", notes: account.notes ?? "", maxGroupsLimit: (account as any).maxGroupsLimit ?? null })}>  
                               <Edit2 className="w-3 h-3" />
                             </Button>
                             <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-400 hover:text-red-400" title="删除" onClick={() => setDeleteId(account.id)}>
@@ -821,6 +821,22 @@ export default function TgAccounts() {
                 </Select>
               </div>
               <div className="space-y-2">
+                <Label className="text-slate-300">加群上限（留空使用全局设置）</Label>
+                <Input
+                  type="number"
+                  placeholder={`全局默认（如 300）`}
+                  value={editAccount.maxGroupsLimit ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setEditAccount((a) => a ? { ...a, maxGroupsLimit: v === "" ? null : parseInt(v) || null } : a);
+                  }}
+                  min={1}
+                  max={10000}
+                  className="bg-slate-800 border-slate-600 text-white placeholder-slate-500"
+                />
+                <p className="text-xs text-slate-500">设置后此账号最多加入该数量的群组，覆盖全局上限</p>
+              </div>
+              <div className="space-y-2">
                 <Label className="text-slate-300">备注（可选）</Label>
                 <Input
                   placeholder="输入备注信息..."
@@ -841,6 +857,7 @@ export default function TgAccounts() {
                     id: editAccount.id,
                     accountRole: editAccount.accountRole as "monitor" | "sender" | "both",
                     notes: editAccount.notes || undefined,
+                    maxGroupsLimit: editAccount.maxGroupsLimit,
                   });
                   setEditAccount(null);
                   refresh();

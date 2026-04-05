@@ -97,6 +97,8 @@ export const tgAccounts = mysqlTable("tg_accounts", {
   proxyType: mysqlEnum("proxyType", ["socks5", "http", "mtproto"]),
   proxyUsername: varchar("proxyUsername", { length: 128 }),
   proxyPassword: varchar("proxyPassword", { length: 256 }),
+  // 加群上限（null = 使用全局设置）
+  maxGroupsLimit: int("maxGroupsLimit"),
   // 备注
   notes: text("notes"),
   isActive: boolean("isActive").default(true).notNull(),

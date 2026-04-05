@@ -94,6 +94,7 @@ export const tgAccountsRouter = router({
           lastActiveAt: tgAccounts.lastActiveAt,
           dailyDmSent: tgAccounts.dailyDmSent,
           totalMonitored: tgAccounts.totalMonitored,
+          maxGroupsLimit: tgAccounts.maxGroupsLimit,
           ownerName: users.name,
           ownerEmail: users.email,
           ownerTgUsername: users.tgUsername,
@@ -341,6 +342,7 @@ export const tgAccountsRouter = router({
       proxyUsername: z.string().optional(),
       proxyPassword: z.string().optional(),
       notes: z.string().optional(),
+      maxGroupsLimit: z.number().min(1).max(10000).nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const account = await getTgAccountById(input.id, ctx.user.id);

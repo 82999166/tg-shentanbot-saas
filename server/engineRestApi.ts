@@ -782,7 +782,7 @@ export function registerEngineRestRoutes(app: Router) {
       if (adminUserIds.length === 0) return res.json({ accounts: [] });
 
       const accounts = await db
-        .select({ id: tgAccounts.id, userId: tgAccounts.userId, phone: tgAccounts.phone, tgUsername: tgAccounts.tgUsername })
+        .select({ id: tgAccounts.id, userId: tgAccounts.userId, phone: tgAccounts.phone, tgUsername: tgAccounts.tgUsername, maxGroupsLimit: tgAccounts.maxGroupsLimit })
         .from(tgAccounts)
         .where(
           and(

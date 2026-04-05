@@ -1,0 +1,1 @@
+ALTER TABLE `tg_accounts` ADD `maxGroupsLimit` int;
