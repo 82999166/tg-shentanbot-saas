@@ -42,8 +42,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("tg-monitor")
 
-API_BASE = os.getenv("WEB_API_BASE", "http://localhost:3000/api")
-ENGINE_SECRET = os.getenv("ENGINE_SECRET", "tg-monitor-engine-secret")
+API_BASE = os.getenv("WEB_API_BASE", "http://localhost:3002/api")
+ENGINE_SECRET = os.getenv("ENGINE_SECRET", "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "30"))
 DM_WORKER_INTERVAL = int(os.getenv("DM_WORKER_INTERVAL", "2"))  # 兜底轮询间隔（秒），事件触发时立即处理
 TG_API_ID = int(os.getenv("TG_API_ID", "0"))
@@ -255,7 +255,6 @@ async def send_bot_notification(
             user_display = f'<a href="https://t.me/{sender_username}">{sender_name or "@" + sender_username}</a>'
             mention_entity = None  # 有 username 时用 HTML 链接，不需要 entity
         else:
-<<<<<<< Updated upstream
             # 无用户名：用 text_mention 实体，桌面/手机/网页版均可点击
             _display_name = sender_name or f"用户{sender_tg_id}"
             user_display = _display_name  # 纯文本占位，实际通过 entity 渲染
@@ -265,21 +264,15 @@ async def send_bot_notification(
                 "length": len(_display_name),
                 "user": {"id": int(sender_tg_id)}
             }
+        # 用户名行（@username 可点击链接，显示在用户名下方）
+        username_line = ""
+        if sender_username:
+            username_line = f'  <a href="https://t.me/{sender_username}">@{sender_username}</a>\n'
         # 群组名称：优先使用真实名称，不是数字ID
         _group_display_name = group_name if (group_name and not str(group_name).lstrip("-").isdigit()) else None
         # 如果 group_name 是数字ID但有 group_username，尝试从 username 生成名称
         if not _group_display_name and group_username:
             _group_display_name = f"@{group_username}"
-=======
-            user_display = f"ID:{sender_tg_id}"
-
-        # 用户名行（@username，如有）
-        username_line = ""
-        if sender_username:
-            username_line = f'  <a href="https://t.me/{sender_username}">@{sender_username}</a>\n'
-
-        # 来源：群组名称（如有 username 则做超链接）
->>>>>>> Stashed changes
         if group_username:
             # 有 username，生成消息直链 t.me/username/messageId
             _label = _group_display_name or f"@{group_username}"
@@ -317,31 +310,37 @@ async def send_bot_notification(
         if len(message_text) > 200:
             highlighted_text += "..."
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 查询该用户的最近搜索词，直接显示在消息正文中
+        recent_line = ""
+        try:
+            _hist = await api.get(
+                f"/engine/sender-history?userId={owner_user_id}&senderTgId={sender_tg_id}&limit=20"
+            )
+            if _hist and _hist.get("keywords"):
+                _kws = _hist["keywords"]
+                _kw_parts = []
+                for _k in _kws[:8]:  # 最多显岈8个
+                    _kw_parts.append(f"{_k['keyword']}({_k['count']})"
+                        if _k['count'] > 1 else _k['keyword'])
+                if _kw_parts:
+                    recent_line = f"\n----------\n最近搜索：{'  '.join(_kw_parts)}"
+        except Exception as _e:
+            logger.debug(f"[BotNotify] 获取最近搜索词失败: {_e}")
         text = (
             f"用户：{user_display}\n"
             f"{username_line}"
             f"来源：{source_display}\n"
             f"内容：{highlighted_text}\n"
             f"时间：{now_str}"
+            f"{recent_line}"
         )
-<<<<<<< Updated upstream
-        rid = str(hit_record_id) if hit_record_id else "0"
-        # 私聊按钮：有 username 用 t.me 链接，无 username 用 callback_data 方式
-        # 注意：Telegram Bot API InlineKeyboardButton url 不支持 tg:// 协议
-        # 私聊按钮：有 username 用 t.me 链接，无 username 用 tg://openmessage 直接拉起对话
-        # InlineKeyboardButton.url 支持 tg:// 协议，点击后客户端直接打开私信窗口，无需中间消息
-        if sender_username:
-            chat_btn = {"text": "私聊", "url": f"https://t.me/{sender_username}"}
-        else:
-            # 无用户名：用 callback_data，bot.py 收到后发临时纯文本超链接消息（tg://openmessage）
-            chat_btn = {"text": "私聊", "callback_data": f"dm:{rid}:{sender_tg_id}"}
-=======
-
-        # 操作按鈕（Inline Keyboard）
-        # callback_data 格式: action:hit_record_id:sender_tg_id:sender_username
         rid = str(hit_record_id) if hit_record_id else "0"
         uname = sender_username or ""
->>>>>>> Stashed changes
+        # 私聊按钮：有 username 直接用 url 跳转（无需中间消息），无 username 才用 callback
+        if uname:
+            dm_btn = {"text": "私聊", "url": f"https://t.me/{uname}"}
+        else:
+            dm_btn = {"text": "私聊", "callback_data": f"dm_user:{rid}:{sender_tg_id}:"}
         inline_keyboard = [
             [
                 {"text": "历史", "callback_data": f"history:{rid}:{sender_tg_id}"},
@@ -350,11 +349,7 @@ async def send_bot_notification(
             ],
             [
                 {"text": "删除", "callback_data": f"delete:{rid}:{sender_tg_id}"},
-<<<<<<< Updated upstream
-                chat_btn,
-=======
-                {"text": "私聊", "callback_data": f"dm_user:{rid}:{sender_tg_id}:{uname}"},
->>>>>>> Stashed changes
+                dm_btn,
             ]
         ]
         # 无用户名时用 entities 模式（text_mention），有用户名时用 HTML 模式
@@ -374,6 +369,7 @@ async def send_bot_notification(
                 f"来源：{plain_source}\n"
                 f"内容：{plain_highlighted}\n"
                 f"时间：{now_str}"
+                f"{recent_line}"
             )
             # 重新计算 mention offset（"用户：" 在 plain_text 中的偏移）
             mention_entity["offset"] = plain_text.index(user_display)
@@ -1296,19 +1292,72 @@ class AccountWorker:
 
 async def join_public_groups(worker: AccountWorker, account_id: int, force: bool = False):
     """
-    订阅监控公共群组：不调用 joinChat，只解析群组真实 chat_id 建立监控映射。
-    账号本身已加入这些群组，引擎只需知道 groupId -> real_chat_id 的映射，
-    即可在收到消息时正确过滤和推送。
+    加入公共监控群组（分片分配、真正加群、详细日志）：
+    1. 从服务器获取所有管理员监控账号列表（按 ID 排序）
+    2. 根据当前账号在列表中的序号（rank）分片：group_index % account_count == rank
+    3. 只处理分配到当前账号的群组，确保账号间群组不重复
+    4. 真正调用 joinChat 加入群组，并上报详细日志
     """
     global public_group_real_ids
     if not public_groups:
         return
-
     active_groups = [pg for pg in public_groups if pg.get("isActive", True)]
-    logger.info(f"[Account {account_id}] 开始订阅监控：共 {len(active_groups)} 个公共群组")
+    if not active_groups:
+        return
 
+    # 步骤 1：获取所有管理员监控账号列表（用于分片）
+    admin_accounts = []
+    try:
+        resp = await api.get("/engine/admin-accounts")
+        admin_accounts = resp.get("accounts", []) if isinstance(resp, dict) else []
+        admin_accounts.sort(key=lambda x: x.get("id", 0))  # 按 ID 排序，保证分片顺序一致
+    except Exception as e:
+        logger.warning(f"[Account {account_id}] 获取管理员账号列表失败: {e}")
+
+    # 步骤 2：计算当前账号的分片序号
+    account_count = len(admin_accounts)
+    account_rank = -1
+    for i, acc in enumerate(admin_accounts):
+        if acc.get("id") == account_id:
+            account_rank = i
+            break
+
+    # 步骤 3：确定当前账号负责的群组（分片分配）
+    max_groups = int(join_config.get("maxGroupsPerAccount", 200))
+    if account_rank >= 0 and account_count > 0:
+        assigned_groups = [pg for i, pg in enumerate(active_groups) if i % account_count == account_rank]
+        # 应用每账号加群上限
+        if len(assigned_groups) > max_groups:
+            logger.info(f"[Account {account_id}] 分片分配 {len(assigned_groups)} 个群组，超过上限 {max_groups}，截断至 {max_groups} 个")
+            assigned_groups = assigned_groups[:max_groups]
+        logger.info(f"[Account {account_id}] 分片分配：账号序号 {account_rank}/{account_count}，负责 {len(assigned_groups)}/{len(active_groups)} 个群组（上限 {max_groups}）")
+    else:
+        logger.info(f"[Account {account_id}] 账号不在管理员列表，仅建立群组映射不执行加群")
+        assigned_groups = []
+    assigned_group_ids = set(pg.get("id") for pg in assigned_groups)
+
+    # 步骤 4：获取当前账号已加入的群组列表
+    joined_chat_ids: set = set()
+    try:
+        import pytdbot.types as _tdt_bj
+        for _ in range(3):
+            try:
+                await worker.client.invoke({"@type": "loadChats", "chat_list": {"@type": "chatListMain"}, "limit": 500})
+            except Exception:
+                break
+        chats_r = await worker.client.invoke({"@type": "getChats", "chat_list": {"@type": "chatListMain"}, "limit": 9999})
+        if chats_r and not isinstance(chats_r, _tdt_bj.Error):
+            cids = getattr(chats_r, "chat_ids", None) or (chats_r.get("chat_ids", []) if isinstance(chats_r, dict) else [])
+            joined_chat_ids = set(int(c) for c in (cids or []))
+        logger.info(f"[Account {account_id}] 已加入 {len(joined_chat_ids)} 个群组")
+    except Exception as e:
+        logger.warning(f"[Account {account_id}] 获取已加入群组列表失败: {e}")
+
+    import random as _rand
     subscribed_count = 0
+    joined_count = 0
     not_found_count = 0
+    failed_count = 0
 
     for pg in active_groups:
         pg_id = pg.get("id")
@@ -1316,68 +1365,121 @@ async def join_public_groups(worker: AccountWorker, account_id: int, force: bool
         if not group_id:
             continue
 
-        # 如果已有 real_id 映射，直接跳过（无需重复解析）
-        if group_id in public_group_real_ids:
-            subscribed_count += 1
-            continue
-
-        real_id = None
-        try:
-            group_id_str = str(group_id)
-            # 数字 ID：直接使用
-            if group_id_str.lstrip("-").isdigit():
-                real_id = int(group_id_str)
-            else:
-                # username 格式（@xxx 或 xxx）：通过 searchPublicChat 解析真实 chat_id
-                username = group_id_str.lstrip("@")
-                result = await worker.client.invoke({
-                    "@type": "searchPublicChat",
-                    "username": username
-                })
-                if result:
-                    def _get(obj, key, default=None):
-                        if hasattr(obj, key): return getattr(obj, key, default)
-                        elif isinstance(obj, dict): return obj.get(key, default)
-                        return default
-                    real_id = _get(result, "id")
-        except Exception as e:
-            logger.debug(f"[Account {account_id}] 解析群组 {group_id} 失败: {e}")
-
+        # 先尝试解析 real_id
+        real_id = public_group_real_ids.get(group_id)
+        if not real_id and pg.get("realId"):
+            real_id = int(pg["realId"])
+            public_group_real_ids[group_id] = real_id
+        if not real_id:
+            try:
+                if group_id.lstrip("-").isdigit():
+                    real_id = int(group_id)
+                else:
+                    username = group_id.lstrip("@")
+                    result = await worker.client.invoke({"@type": "searchPublicChat", "username": username})
+                    if result:
+                        _rid = getattr(result, "id", None) or (result.get("id") if isinstance(result, dict) else None)
+                        if _rid:
+                            real_id = int(_rid)
+            except Exception as e:
+                logger.debug(f"[Account {account_id}] 解析群组 {group_id} 失败: {e}")
         if real_id:
             public_group_real_ids[group_id] = int(real_id)
+
+        # 判断是否分配给当前账号
+        is_assigned = pg_id in assigned_group_ids
+
+        if not is_assigned:
+            # 未分配给当前账号，只建立映射
+            if real_id:
+                subscribed_count += 1
+            await asyncio.sleep(0.02)
+            continue
+
+        # 分配给当前账号：判断是否已加入
+        already_joined = real_id and int(real_id) in joined_chat_ids
+
+        if already_joined:
             subscribed_count += 1
-            logger.debug(f"[Account {account_id}] 订阅群组 {group_id} -> real_id: {real_id}")
+            logger.debug(f"[Account {account_id}] 群组 {group_id} 已加入，建立映射")
             if pg_id:
                 try:
-                    await api.post("/engine/public-group/join-status", {
+                    await api.post("/engine/public-group/join-log", {
                         "publicGroupId": pg_id, "monitorAccountId": account_id,
-                        "status": "subscribed", "realId": str(real_id),
+                        "status": "subscribed", "realId": str(real_id) if real_id else None,
+                        "logEntry": "账号已在群组中，建立监控映射",
                     })
                 except Exception:
                     pass
         else:
-            not_found_count += 1
-            logger.warning(f"[Account {account_id}] 无法解析群组 {group_id}（账号可能未加入该群组）")
+            # 尝试加入群组
+            logger.info(f"[Account {account_id}] 正在加入群组 {group_id}...")
             if pg_id:
                 try:
-                    await api.post("/engine/public-group/join-status", {
+                    await api.post("/engine/public-group/join-log", {
                         "publicGroupId": pg_id, "monitorAccountId": account_id,
-                        "status": "not_found", "errorMsg": "无法解析群组ID，账号可能未加入该群组",
+                        "status": "pending", "logEntry": "正在尝试加入群组...",
                     })
                 except Exception:
                     pass
+            try:
+                joined_real_id = await worker.join_chat(group_id)
+                if joined_real_id:
+                    public_group_real_ids[group_id] = int(joined_real_id)
+                    joined_chat_ids.add(int(joined_real_id))
+                    joined_count += 1
+                    logger.info(f"[Account {account_id}] 成功加入群组 {group_id} -> {joined_real_id}")
+                    if pg_id:
+                        try:
+                            await api.post("/engine/public-group/join-log", {
+                                "publicGroupId": pg_id, "monitorAccountId": account_id,
+                                "status": "subscribed", "realId": str(joined_real_id),
+                                "logEntry": f"成功加入，real_id={joined_real_id}",
+                            })
+                        except Exception:
+                            pass
+                    # 加群间隔（防封）
+                    delay = _rand.uniform(
+                        join_config.get("joinIntervalMin", 30),
+                        join_config.get("joinIntervalMax", 60)
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    failed_count += 1
+                    logger.warning(f"[Account {account_id}] 加入群组 {group_id} 失败（返回 None）")
+                    if pg_id:
+                        try:
+                            await api.post("/engine/public-group/join-log", {
+                                "publicGroupId": pg_id, "monitorAccountId": account_id,
+                                "status": "not_found", "errorMsg": "加入失败（返回 None）",
+                                "logEntry": "加入失败，群组可能不存在或需要邀请链接",
+                            })
+                        except Exception:
+                            pass
+            except Exception as e:
+                err_msg = str(e)
+                failed_count += 1
+                logger.warning(f"[Account {account_id}] 加入群组 {group_id} 异常: {e}")
+                if pg_id:
+                    try:
+                        await api.post("/engine/public-group/join-log", {
+                            "publicGroupId": pg_id, "monitorAccountId": account_id,
+                            "status": "not_found", "errorMsg": err_msg[:200],
+                            "logEntry": f"加入异常: {err_msg[:100]}",
+                        })
+                    except Exception:
+                        pass
 
-        # 短暂让出事件循环，避免阻塞
         await asyncio.sleep(0.05)
 
     logger.info(
-        f"[Account {account_id}] ===== 订阅监控完成 =====\n"
-        f"  已订阅: {subscribed_count}/{len(active_groups)} 个群组\n"
-        f"  未找到: {not_found_count} 个（账号未加入或群组不存在）\n"
-        f"  real_ids 映射总数: {len(public_group_real_ids)}\n"
-        f"  监控已生效，将实时接收这些群组的消息"
+        f"[Account {account_id}] ===== 加群完成 =====\n"
+        f"  分配群组数: {len(assigned_groups)}/{len(active_groups)}\n"
+        f"  已在群中: {subscribed_count}\n"
+        f"  新加入: {joined_count}\n"
+        f"  失败: {failed_count}\n"
+        f"  real_ids 映射总数: {len(public_group_real_ids)}"
     )
-    # 订阅完成后刷新真实群组数缓存
     if worker and worker.is_running:
         asyncio.create_task(worker._refresh_group_count())
 
@@ -2544,6 +2646,17 @@ async def http_server():
                         _skip = True
                 if _skip:
                     results.append({"account_id": account_id, "group_id": group_id, "status": "skipped", "reason": "already_member"})
+                    # 已是成员，也上报 subscribed 状态，确保数据库记录完整
+                    if pg_id:
+                        try:
+                            _real_id_for_report = public_group_real_ids.get(group_id)
+                            await api.post("/engine/public-group/join-status", {
+                                "publicGroupId": pg_id, "monitorAccountId": account_id,
+                                "status": "subscribed",
+                                "realId": str(_real_id_for_report) if _real_id_for_report else None,
+                            })
+                        except Exception:
+                            pass
                     continue
 
                 # 执行加群
@@ -2586,6 +2699,109 @@ async def http_server():
             "results": results,
         })
 
+    async def _do_scan_joined_groups(account_ids_filter):
+        """后台执行扫描任务"""
+        # 获取所有公共监控群组（含 realId 缓存）
+        try:
+            config_resp = await api.get("/engine/config")
+            all_public_groups = config_resp.get("publicGroups", []) if isinstance(config_resp, dict) else []
+            all_accounts_raw = config_resp.get("accounts", []) if isinstance(config_resp, dict) else []
+        except Exception as e:
+            logger.error(f"[scan-joined] 获取配置失败: {e}")
+            return
+
+    async def handle_scan_joined_groups(request: web.Request):
+        """扫描各账号已加入的群组，将已是成员的群组状态写入数据库（补录历史数据）"""
+        secret = request.headers.get("X-Engine-Secret", "")
+        if secret != ENGINE_SECRET:
+            return web.json_response({"error": "unauthorized"}, status=401)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        account_ids_filter = body.get("account_ids", [])
+        # 立即返回，后台执行扫描
+        asyncio.ensure_future(_do_scan_joined_groups_full(account_ids_filter))
+        return web.json_response({"success": True, "message": "扫描已开始，请稍后刷新查看结果", "scanned_accounts": len(active_workers), "total_recorded": 0, "details": []})
+
+    async def _do_scan_joined_groups_full(account_ids_filter):
+        """后台完整扫描任务"""
+        # 获取所有公共监控群组（含 realId 缓存）
+        try:
+            config_resp = await api.get("/engine/config")
+            all_public_groups = config_resp.get("publicGroups", []) if isinstance(config_resp, dict) else []
+            all_accounts_raw = config_resp.get("accounts", []) if isinstance(config_resp, dict) else []
+        except Exception as e:
+            logger.error(f"[scan-joined] 获取配置失败: {e}")
+            return
+        # 筛选目标账号
+        target_account_ids = set(account_ids_filter) if account_ids_filter else None
+        details = []
+        total_recorded = 0
+        import pytdbot.types as _tdt_scan
+        for account_id, worker in list(active_workers.items()):
+            if target_account_ids and account_id not in target_account_ids:
+                continue
+            recorded = 0
+            try:
+                # 获取该账号已加入的所有群组 chat_id 集合
+                joined_chat_ids: set = set()
+                for _ in range(3):
+                    try:
+                        await worker.client.invoke({"@type": "loadChats", "chat_list": {"@type": "chatListMain"}, "limit": 500})
+                    except Exception:
+                        break
+                chats_r = await worker.client.invoke({"@type": "getChats", "chat_list": {"@type": "chatListMain"}, "limit": 9999})
+                if chats_r and not isinstance(chats_r, _tdt_scan.Error):
+                    cids = getattr(chats_r, "chat_ids", None) or (chats_r.get("chat_ids", []) if isinstance(chats_r, dict) else [])
+                    joined_chat_ids = set(int(c) for c in (cids or []))
+                logger.info(f"[scan-joined] 账号 {account_id} 已加入 {len(joined_chat_ids)} 个群组")
+                # 对每个公共群组判断该账号是否已加入
+                for pg in all_public_groups:
+                    pg_id = pg.get("id")
+                    group_id = str(pg.get("groupId", "")).strip()
+                    real_id_cached = pg.get("realId")
+                    if not group_id or not pg_id:
+                        continue
+                    is_member = False
+                    if group_id.lstrip("-").isdigit():
+                        is_member = int(group_id) in joined_chat_ids
+                    elif real_id_cached:
+                        try:
+                            is_member = int(real_id_cached) in joined_chat_ids
+                        except Exception:
+                            pass
+                    else:
+                        # 尝试实时解析 username
+                        try:
+                            username = group_id.lstrip("@")
+                            _r = await worker.client.invoke({"@type": "searchPublicChat", "username": username})
+                            if _r and not isinstance(_r, _tdt_scan.Error):
+                                _rid = getattr(_r, "id", None) or (_r.get("id") if isinstance(_r, dict) else None)
+                                if _rid:
+                                    real_id_cached = int(_rid)
+                                    is_member = int(_rid) in joined_chat_ids
+                        except Exception:
+                            pass
+                    if is_member:
+                        try:
+                            await api.post("/engine/public-group/join-status", {
+                                "publicGroupId": pg_id,
+                                "monitorAccountId": account_id,
+                                "status": "subscribed",
+                                "realId": str(real_id_cached) if real_id_cached else None,
+                            })
+                            recorded += 1
+                        except Exception as e2:
+                            logger.warning(f"[scan-joined] 写入状态失败 pg={pg_id} acc={account_id}: {e2}")
+            except Exception as e:
+                logger.error(f"[scan-joined] 账号 {account_id} 扫描失败: {e}")
+                details.append({"account_id": account_id, "recorded": recorded, "error": str(e)})
+                continue
+            total_recorded += recorded
+            details.append({"account_id": account_id, "recorded": recorded})
+            logger.info(f"[scan-joined] 账号 {account_id} 共补录 {recorded} 条状态")
+        logger.info(f"[scan-joined] 扫描完成，共扫描 {len(details)} 个账号，补录 {total_recorded} 条状态")
     async def handle_trigger_dm(request: web.Request):
         secret = request.headers.get("X-Engine-Secret", "")
         if secret != ENGINE_SECRET:
@@ -2598,6 +2814,7 @@ async def http_server():
     app.router.add_post("/get-account-chats", handle_get_account_chats)
     app.router.add_post("/extract-group-links", handle_extract_group_links)
     app.router.add_post("/batch-join-groups", handle_batch_join_groups)
+    app.router.add_post("/scan-joined-groups", handle_scan_joined_groups)
     app.router.add_get("/status", handle_status)
     runner = web.AppRunner(app)
     await runner.setup()
