@@ -16,7 +16,7 @@ import { sql, eq, desc, count, inArray } from "drizzle-orm";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 
 // ─── Pyrogram 登录服务地址（本地 Python HTTP 服务）─────────────────────────
-const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5051";
+const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:7002";
 
 // ─── 调用 Pyrogram 登录服务的辅助函数（使用内置 http 模块）──────────────────
 function callLoginService(path: string, body: Record<string, any>): Promise<any> {
@@ -25,7 +25,7 @@ function callLoginService(path: string, body: Record<string, any>): Promise<any>
     const postData = JSON.stringify(body);
     const options = {
       hostname: url.hostname,
-      port: parseInt(url.port || "5051"),
+      port: parseInt(url.port || "7002"),
       path: url.pathname,
       method: "POST",
       headers: {
@@ -481,9 +481,7 @@ export const tgAccountsRouter = router({
       if (rows.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
       if (!rows[0].isActive) throw new TRPCError({ code: "BAD_REQUEST", message: "账号未启用，请先启用账号" });
       // 调用引擎 /sync-account 接口
-      const engineUrl = process.env.WEB_API_URL
-        ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
-        : 'http://127.0.0.1:8765';
+      const engineUrl = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
       const engineSecret = process.env.ENGINE_SECRET || 'tg-monitor-engine-secret';
       try {
         const resp = await fetch(`${engineUrl}/sync-account`, {
@@ -510,9 +508,7 @@ export const tgAccountsRouter = router({
   getAccountChats: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      const engineUrl = process.env.WEB_API_URL
-        ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
-        : 'http://127.0.0.1:8765';
+      const engineUrl = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
       const engineSecret = process.env.ENGINE_SECRET || 'tg-monitor-engine-secret';
       try {
         const resp = await fetch(`${engineUrl}/get-account-chats`, {
@@ -618,9 +614,7 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
       })
       .where(eq(tgAccounts.phone, phone));
     // 触发引擎强制重新加载配置
-    const engineUrl = process.env.WEB_API_URL
-      ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
-      : 'http://127.0.0.1:8765';
+    const engineUrl = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
     const engineSecret = process.env.ENGINE_SECRET ?? 'tg-monitor-engine-secret';
     try {
       await fetch(`${engineUrl}/force-sync`, {
@@ -677,9 +671,7 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
     await db.update(tgAccounts).set({ inEngine: true }).where(eq(tgAccounts.id, id));
   }
   // 触发引擎强制重新加载配置
-  const engineUrl3 = process.env.WEB_API_URL
-    ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
-    : 'http://127.0.0.1:8765';
+  const engineUrl3 = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
   const engineSecret3 = process.env.ENGINE_SECRET ?? 'tg-monitor-engine-secret';
   try {
     await fetch(`${engineUrl3}/force-sync`, {

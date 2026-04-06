@@ -249,9 +249,7 @@ export const groupScrapeRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const engineUrl = process.env.WEB_API_URL
-        ? process.env.WEB_API_URL.replace(/:3002$/, ":8765").replace(/\/api$/, "")
-        : "http://127.0.0.1:8765";
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
       const engineSecret = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
       try {
         const resp = await fetch(`${engineUrl}/extract-group-links`, {

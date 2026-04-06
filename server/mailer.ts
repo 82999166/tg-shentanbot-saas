@@ -18,7 +18,7 @@ async function getSmtpConfig() {
     pass: get("smtp_pass") || process.env.SMTP_PASS || "",
     from: get("smtp_from") || process.env.SMTP_FROM || get("smtp_user") || process.env.SMTP_USER || "",
     siteName: get("site_name") || "TG Monitor Pro",
-    siteUrl: get("site_url") || process.env.SITE_URL || "http://localhost:3001",
+    siteUrl: get("site_url") || process.env.SITE_URL || "http://localhost:7000",
   };
 }
 

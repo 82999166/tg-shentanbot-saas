@@ -496,9 +496,7 @@ export const systemConfigRouter = router({
     // 触发引擎立即同步（重新解析所有公共群组 ID）
   triggerEngineSync: adminProcedure
     .mutation(async () => {
-      const engineUrl = process.env.WEB_API_URL
-        ? process.env.WEB_API_URL.replace(/:3002$/, ':8765').replace(/\/api$/, '')
-        : 'http://127.0.0.1:8765';
+      const engineUrl = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
       const engineSecret = process.env.ENGINE_SECRET || '';
       try {
         const resp = await fetch(`${engineUrl}/force-sync`, {

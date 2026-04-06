@@ -31,7 +31,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8678159362:AAFqfg8uoL7RBQ_tWvd7YgklsoeShuEF2QU")
-WEB_API_BASE = os.getenv("WEB_API_BASE", "http://127.0.0.1:3002/api")
+WEB_API_BASE = os.getenv("WEB_API_BASE", "http://127.0.0.1:7000/api")
 ENGINE_SECRET = os.getenv("ENGINE_SECRET", "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac")
 WEB_SITE_URL = os.getenv("WEB_SITE_URL", "")  # 网站地址，用于 Bot 中的跳转链接
 

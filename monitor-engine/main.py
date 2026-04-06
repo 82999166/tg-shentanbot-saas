@@ -42,7 +42,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("tg-monitor")
 
-API_BASE = os.getenv("WEB_API_BASE", "http://localhost:3002/api")
+API_BASE = os.getenv("WEB_API_BASE", "http://localhost:7000/api")
 ENGINE_SECRET = os.getenv("ENGINE_SECRET", "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "30"))
 DM_WORKER_INTERVAL = int(os.getenv("DM_WORKER_INTERVAL", "2"))  # 兜底轮询间隔（秒），事件触发时立即处理
@@ -2826,9 +2826,10 @@ async def http_server():
     app.router.add_get("/status", handle_status)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8765)
+    engine_port = int(os.getenv("ENGINE_HTTP_PORT", "7001"))
+    site = web.TCPSite(runner, "0.0.0.0", engine_port)
     await site.start()
-    logger.info("[HTTP] 引擎 HTTP 服务器已启动在端口 8765")
+    logger.info(f"[HTTP] 引擎 HTTP 服务器已启动在端口 {engine_port}")
     # 保持运行
     while True:
         await asyncio.sleep(3600)

@@ -499,7 +499,7 @@ def main():
     app.router.add_post("/test_session", handle_test_session)
     app.router.add_post("/get_dialogs", handle_get_dialogs)
     app.router.add_get("/health", handle_health)
-    port = int(os.environ.get("LOGIN_SERVICE_PORT", "5050"))
+    port = int(os.environ.get("LOGIN_SERVICE_PORT", "7002"))
     logger.info(f"TDLib 登录服务启动在 127.0.0.1:{port}")
     web.run_app(app, host="127.0.0.1", port=port)
 

@@ -230,7 +230,7 @@ export const engineRouter = router({
 
       // 写入队列后立即通知引擎触发发送（不等待轮询间隔）
       try {
-        const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8765";
+        const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
         const engineSecret = process.env.ENGINE_SECRET || "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac";
         await fetch(`${engineUrl}/trigger-dm`, {
           method: "POST",
@@ -958,7 +958,7 @@ export const engineRouter = router({
       const apiId = parseInt(settingsMap["tg_api_id"] || "0");
       const apiHash = settingsMap["tg_api_hash"] || "";
       if (!apiId || !apiHash) throw new TRPCError({ code: "BAD_REQUEST", message: "请先在系统设置中配置 TG API ID 和 API Hash" });
-      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5051";
+      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:7002";
       const resp = await fetch(`${LOGIN_SERVICE_URL}/send_code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -979,7 +979,7 @@ export const engineRouter = router({
     }))
     .mutation(async ({ input }) => {
       const phone = (input.phone.replace(/\s/g, "").startsWith("+") ? input.phone.replace(/\s/g, "") : `+${input.phone.replace(/\s/g, "")}`);
-      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5051";
+      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:7002";
       const resp = await fetch(`${LOGIN_SERVICE_URL}/verify_code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1026,7 +1026,7 @@ export const engineRouter = router({
     }))
     .mutation(async ({ input }) => {
       const phone = (input.phone.replace(/\s/g, "").startsWith("+") ? input.phone.replace(/\s/g, "") : `+${input.phone.replace(/\s/g, "")}`);
-      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:5051";
+      const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:7002";
       const resp = await fetch(`${LOGIN_SERVICE_URL}/verify_2fa`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1209,7 +1209,7 @@ export const engineRouter = router({
   // ── 立即同步群组配置（管理后台维护页面使用）────────────────────────────────
   forceSync: publicProcedure.mutation(async () => {
     try {
-      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8765";
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
       const engineSecret = process.env.ENGINE_SECRET || "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac";
       const resp = await fetch(`${engineUrl}/force-sync`, {
         method: "POST",
@@ -1305,7 +1305,7 @@ export const engineRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8765";
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
       const engineSecret = process.env.ENGINE_SECRET || "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac";
       // 从数据库读取 join_interval 配置，优先使用前端传入的值
       let intervalMin = input.intervalMin;
@@ -1367,7 +1367,7 @@ export const engineRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:8765";
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
       const engineSecret = process.env.ENGINE_SECRET || "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac";
       const resp = await fetch(`${engineUrl}/scan-joined-groups`, {
         method: "POST",
