@@ -21,6 +21,7 @@ import {
   systemConfig,
   systemSettings,
   publicMonitorGroups,
+  publicGroupJoinStatus,
   blacklist,
 } from "../../drizzle/schema";
 import { eq, and, inArray, sql, desc, gte } from "drizzle-orm";
@@ -1382,6 +1383,9 @@ export const engineRouter = router({
       });
       const data = await resp.json() as {
         success?: boolean;
+        // 引擎返回格式：results 是 accountId -> 群组列表 的映射
+        results?: Record<string, Array<{ chatId: string; title: string; username: string }>>;
+        // 兼容旧格式
         scanned_accounts?: number;
         total_recorded?: number;
         details?: Array<{ account_id: number; recorded: number; error?: string }>;
@@ -1390,11 +1394,69 @@ export const engineRouter = router({
       if (!data.success) {
         throw new TRPCError({ code: "BAD_REQUEST", message: data.error || "扫描失败" });
       }
+      // 处理引擎返回的 results 格式，将扫描结果同步到数据库
+      const results = data.results ?? {};
+      const db = await getDb();
+      let totalRecorded = 0;
+      const details: Array<{ account_id: number; recorded: number; error?: string }> = [];
+      if (db && Object.keys(results).length > 0) {
+        // 获取所有公共群组（构建 username -> id 和 realId -> id 映射）
+        const publicGroups = await db.select({
+          id: publicMonitorGroups.id,
+          groupId: publicMonitorGroups.groupId,
+          realId: publicMonitorGroups.realId,
+        }).from(publicMonitorGroups).where(eq(publicMonitorGroups.isActive, true));
+        const usernameToId = new Map<string, number>();
+        const realIdToId = new Map<string, number>();
+        for (const pg of publicGroups) {
+          if (pg.groupId) usernameToId.set(pg.groupId.toLowerCase().replace(/^@/, ''), pg.id);
+          if (pg.realId) realIdToId.set(pg.realId, pg.id);
+        }
+        for (const [accountIdStr, groups] of Object.entries(results)) {
+          const accountId = parseInt(accountIdStr);
+          if (isNaN(accountId)) continue;
+          let recorded = 0;
+          try {
+            for (const group of groups) {
+              // 通过 username 或 chatId 匹配 public_monitor_groups
+              const username = (group.username || '').toLowerCase().replace(/^@/, '');
+              const chatId = group.chatId;
+              let publicGroupId = username ? usernameToId.get(username) : undefined;
+              if (!publicGroupId && chatId) publicGroupId = realIdToId.get(chatId);
+              if (!publicGroupId) continue; // 不在公共群组池中，跳过
+              // upsert：已有记录则更新为 subscribed，没有则插入
+              await db.insert(publicGroupJoinStatus).values({
+                publicGroupId,
+                monitorAccountId: accountId,
+                status: 'subscribed',
+                joinedAt: new Date(),
+              }).onDuplicateKeyUpdate({
+                set: {
+                  status: 'subscribed',
+                  joinedAt: new Date(),
+                },
+              });
+              // 同步 realId 到 public_monitor_groups（如果还没有）
+              if (chatId && !realIdToId.has(chatId)) {
+                await db.update(publicMonitorGroups)
+                  .set({ realId: chatId })
+                  .where(eq(publicMonitorGroups.id, publicGroupId));
+                realIdToId.set(chatId, publicGroupId);
+              }
+              recorded++;
+            }
+            totalRecorded += recorded;
+            details.push({ account_id: accountId, recorded });
+          } catch (err: any) {
+            details.push({ account_id: accountId, recorded, error: err.message });
+          }
+        }
+      }
       return {
         success: true,
-        scannedAccounts: data.scanned_accounts ?? 0,
-        totalRecorded: data.total_recorded ?? 0,
-        details: data.details ?? [],
+        scannedAccounts: Object.keys(results).length || (data.scanned_accounts ?? 0),
+        totalRecorded: totalRecorded || (data.total_recorded ?? 0),
+        details: details.length > 0 ? details : (data.details ?? []),
       };
     }),
 
