@@ -250,7 +250,7 @@ export const groupScrapeRouter = router({
     )
     .mutation(async ({ input }) => {
       const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
-      const engineSecret = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
+      const engineSecret = process.env.ENGINE_SECRET || 'shentanbot-engine-secret-2026';
       try {
         const resp = await fetch(`${engineUrl}/extract-group-links`, {
           method: "POST",

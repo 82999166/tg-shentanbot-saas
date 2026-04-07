@@ -192,12 +192,13 @@ export const tgAccountsRouter = router({
         return { success: true, needs2FA: true, message: "该账号已开启二步验证，请输入密码" };
       }
 
-      // 登录成功，保存 TDLib 数据目录路径（files_directory）作为 sessionString
-      const sessionVal = data.files_directory ?? data.session_string ?? "";
+      // 登录成功，保存 Pyrofork session_string
+      const sessionVal = data.session_string ?? "";
+      if (!sessionVal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "登录服务未返回 session_string" });
       return await saveAccount(ctx.user, phone, sessionVal);
     }),
 
-  // ─── 手机号登录：第三步 - 二步验证密码（调用 Pyrogram 服务）─────────────
+  // ─── 手机号登录：第三步 - 二步验证密码──────────────────────────────────
   verify2FA: protectedProcedure
     .input(z.object({
       phone: z.string(),
@@ -210,8 +211,9 @@ export const tgAccountsRouter = router({
         password: input.password,
       });
 
-      // 二步验证成功，保存 TDLib 数据目录路径（files_directory）作为 sessionString
-      const sessionVal = data.files_directory ?? data.session_string ?? "";
+      // 二步验证成功，保存 Pyrofork session_string
+      const sessionVal = data.session_string ?? "";
+      if (!sessionVal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "登录服务未返回 session_string" });
       return await saveAccount(ctx.user, phone, sessionVal);
     }),
 
@@ -482,7 +484,7 @@ export const tgAccountsRouter = router({
       if (!rows[0].isActive) throw new TRPCError({ code: "BAD_REQUEST", message: "账号未启用，请先启用账号" });
       // 调用引擎 /sync-account 接口
       const engineUrl = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
-      const engineSecret = process.env.ENGINE_SECRET || 'tg-monitor-engine-secret';
+      const engineSecret = process.env.ENGINE_SECRET || 'shentanbot-engine-secret-2026';
       try {
         const resp = await fetch(`${engineUrl}/sync-account`, {
           method: 'POST',
@@ -509,7 +511,7 @@ export const tgAccountsRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const engineUrl = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
-      const engineSecret = process.env.ENGINE_SECRET || 'tg-monitor-engine-secret';
+      const engineSecret = process.env.ENGINE_SECRET || 'shentanbot-engine-secret-2026';
       try {
         const resp = await fetch(`${engineUrl}/get-account-chats`, {
           method: 'POST',
@@ -577,34 +579,16 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库不可用" });
 
+  const engineUrl = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
+  const engineSecret = process.env.ENGINE_SECRET ?? 'shentanbot-engine-secret-2026';
+
   // 检查手机号是否已存在（重新登录场景：直接更新，不受配额限制）
   const existing = await db.select().from(tgAccounts).where(eq(tgAccounts.phone, phone)).limit(1);
   if (existing.length > 0) {
     const accountId = existing[0].id;
-    // 如果 sessionString 是 login_temp 路径，更新为 account_{id} 规范路径
-    const finalSession = sessionString.startsWith("/") && sessionString.includes("login_")
-      ? `${process.env.TDLIB_DATA_DIR ?? "/home/hjroot/tg-monitor-tdlib/monitor-engine/tdlib_data"}/account_${accountId}`
-      : sessionString;
-    // 如果 login_temp 目录存在，把最新的 td.binlog 复制到 account_{id} 目录（覆盖旧的）
-    const tdlibDataDir = process.env.TDLIB_DATA_DIR ?? "/home/hjroot/tg-monitor-tdlib/monitor-engine/tdlib_data";
-    const loginTempDir = `${tdlibDataDir}/login_temp_${phone.replace(/^\+/, '')}`;
-    const accountDir = `${tdlibDataDir}/account_${accountId}`;
-    try {
-      const { execSync } = await import('child_process');
-      // 确保目标目录存在
-      execSync(`mkdir -p "${accountDir}/database"`);
-      // 从 login_temp 复制最新 td.binlog（覆盖旧的，使新 session 生效）
-      for (const sub of ['database', 'db']) {
-        const src = `${loginTempDir}/${sub}/td.binlog`;
-        try {
-          execSync(`test -f "${src}" && cp -f "${src}" "${accountDir}/database/td.binlog"`, { stdio: 'ignore' });
-          break;
-        } catch (_) { /* 子目录不存在，继续尝试 */ }
-      }
-    } catch (_) { /* 文件操作失败不影响登录流程 */ }
     await db.update(tgAccounts)
       .set({
-        sessionString: finalSession,
+        sessionString,
         sessionStatus: "active",
         isActive: true,
         inEngine: true,
@@ -614,8 +598,6 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
       })
       .where(eq(tgAccounts.phone, phone));
     // 触发引擎强制重新加载配置
-    const engineUrl = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
-    const engineSecret = process.env.ENGINE_SECRET ?? 'tg-monitor-engine-secret';
     try {
       await fetch(`${engineUrl}/force-sync`, {
         method: 'POST',
@@ -650,29 +632,11 @@ async function saveAccount(user: any, phone: string, sessionString: string) {
     healthStatus: "healthy",
   });
 
-  // 登录成功后，将 sessionString 更新为 account_{id} 规范路径，并设置 inEngine=true
-  const tdlibDataDir2 = process.env.TDLIB_DATA_DIR ?? "/home/hjroot/tg-monitor-tdlib/monitor-engine/tdlib_data";
-  if (sessionString.startsWith("/") && sessionString.includes("login_")) {
-    const finalSession2 = `${tdlibDataDir2}/account_${id}`;
-    // 复制 login_temp 的 td.binlog 到 account_{id} 目录
-    try {
-      const { execSync } = await import('child_process');
-      execSync(`mkdir -p "${finalSession2}/database"`);
-      for (const sub of ['database', 'db']) {
-        const src = `${sessionString}/${sub}/td.binlog`;
-        try {
-          execSync(`test -f "${src}" && cp -f "${src}" "${finalSession2}/database/td.binlog"`, { stdio: 'ignore' });
-          break;
-        } catch (_) { /* 继续尝试 */ }
-      }
-    } catch (_) { /* 文件操作失败不影响登录流程 */ }
-    await db.update(tgAccounts).set({ sessionString: finalSession2, inEngine: true }).where(eq(tgAccounts.id, id));
-  } else {
-    await db.update(tgAccounts).set({ inEngine: true }).where(eq(tgAccounts.id, id));
-  }
-  // 触发引擎强制重新加载配置
-  const engineUrl3 = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
-  const engineSecret3 = process.env.ENGINE_SECRET ?? 'tg-monitor-engine-secret';
+  // 设置 inEngine=true 并触发引擎重新加载
+  await db.update(tgAccounts).set({ inEngine: true }).where(eq(tgAccounts.id, id));
+
+  const engineUrl3 = engineUrl;
+  const engineSecret3 = engineSecret;
   try {
     await fetch(`${engineUrl3}/force-sync`, {
       method: 'POST',

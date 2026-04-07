@@ -26,7 +26,7 @@ import {
 import { eq, and, inArray, sql, desc, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
-const ENGINE_SECRET = process.env.ENGINE_SECRET || "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac";
+const ENGINE_SECRET = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
 
 // 引擎鉴权中间件
 const engineProcedure = publicProcedure.use(({ ctx, next }) => {
@@ -231,7 +231,7 @@ export const engineRouter = router({
       // 写入队列后立即通知引擎触发发送（不等待轮询间隔）
       try {
         const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
-        const engineSecret = process.env.ENGINE_SECRET || "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac";
+        const engineSecret = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
         await fetch(`${engineUrl}/trigger-dm`, {
           method: "POST",
           headers: { "X-Engine-Secret": engineSecret },
@@ -1210,7 +1210,7 @@ export const engineRouter = router({
   forceSync: publicProcedure.mutation(async () => {
     try {
       const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
-      const engineSecret = process.env.ENGINE_SECRET || "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac";
+      const engineSecret = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
       const resp = await fetch(`${engineUrl}/force-sync`, {
         method: "POST",
         headers: {
@@ -1306,7 +1306,7 @@ export const engineRouter = router({
     )
     .mutation(async ({ input }) => {
       const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
-      const engineSecret = process.env.ENGINE_SECRET || "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac";
+      const engineSecret = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
       // 从数据库读取 join_interval 配置，优先使用前端传入的值
       let intervalMin = input.intervalMin;
       let intervalMax = input.intervalMax;
@@ -1368,7 +1368,7 @@ export const engineRouter = router({
     )
     .mutation(async ({ input }) => {
       const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
-      const engineSecret = process.env.ENGINE_SECRET || "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac";
+      const engineSecret = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
       const resp = await fetch(`${engineUrl}/scan-joined-groups`, {
         method: "POST",
         headers: {
