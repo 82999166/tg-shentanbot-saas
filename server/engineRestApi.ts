@@ -25,7 +25,7 @@ import {
 } from "../drizzle/schema";
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
 
-const ENGINE_SECRET = process.env.ENGINE_SECRET || 'shentanbot-engine-secret-2026';
+const ENGINE_SECRET = process.env.ENGINE_SECRET || "tg-monitor-engine-secret";
 
 function checkSecret(req: Request, res: Response): boolean {
   const secret = req.headers["x-engine-secret"];
@@ -610,37 +610,22 @@ export function registerEngineRestRoutes(app: Router) {
       const status = statusMap[rawStatus] ?? rawStatus ?? "subscribed";
       const isSubscribed = status === "subscribed";
 
-      // upsert: 先尝试 INSERT，冲突时改为 UPDATE（避免并发竞态条件）
+      // upsert: INSERT ... ON DUPLICATE KEY UPDATE（原子操作，避免竞态条件）
       const now = new Date();
-      try {
-        await db.insert(publicGroupJoinStatus).values({
-          publicGroupId,
-          monitorAccountId,
+      await db.insert(publicGroupJoinStatus).values({
+        publicGroupId,
+        monitorAccountId,
+        status,
+        errorMsg: errorMsg || null,
+        joinedAt: isSubscribed ? now : null,
+      }).onDuplicateKeyUpdate({
+        set: {
           status,
           errorMsg: errorMsg || null,
-          joinedAt: isSubscribed ? now : null,
-        });
-      } catch (insertErr: any) {
-        // 主键/唯一键冲突时改为 UPDATE
-        if (insertErr?.code === 'ER_DUP_ENTRY' || insertErr?.errno === 1062) {
-          await db
-            .update(publicGroupJoinStatus)
-            .set({
-              status,
-              errorMsg: errorMsg || null,
-              ...(isSubscribed ? { joinedAt: now } : {}),
-              updatedAt: now,
-            })
-            .where(
-              and(
-                eq(publicGroupJoinStatus.publicGroupId, publicGroupId),
-                eq(publicGroupJoinStatus.monitorAccountId, monitorAccountId)
-              )
-            );
-        } else {
-          throw insertErr;
-        }
-      }
+          ...(isSubscribed ? { joinedAt: now } : {}),
+          updatedAt: now,
+        },
+      });
 
       // 如果引擎上报了 realId，回写到 publicMonitorGroups 表（订阅成功时）
       if (isSubscribed && realId) {
