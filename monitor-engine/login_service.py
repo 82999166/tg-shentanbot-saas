@@ -181,8 +181,12 @@ async def handle_verify_2fa(request: web.Request) -> web.Response:
 
         try:
             await client.check_password(password)
+            # check_password 后 client 可能已自动 terminate，先导出 session 再安全停止
             session_string = await client.export_session_string()
-            await client.stop()
+            try:
+                await client.stop()
+            except ConnectionError:
+                pass  # Client is already terminated，忽略
             login_sessions.pop(phone, None)
             logger.info(f"[Verify2FA] {phone} 二步验证成功，session_string 长度: {len(session_string)}")
             return web.json_response({
