@@ -802,74 +802,89 @@ export default function TgAccounts() {
 
         {/* ─── 编辑账号 Dialog ────────────────────────────────────────────────── */}
       <Dialog open={editAccount !== null} onOpenChange={(o) => { if (!o) setEditAccount(null); }}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-sm">
-          <DialogHeader>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2"><Edit2 className="w-5 h-5 text-blue-400" /> 编辑账号</DialogTitle>
-            <DialogDescription className="text-slate-400">修改账号角色和备注</DialogDescription>
+            <DialogDescription className="text-slate-400">修改账号信息，或查看该账号已加入的群组</DialogDescription>
           </DialogHeader>
           {editAccount && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label className="text-slate-300">账号角色</Label>
-                <Select value={editAccount.accountRole} onValueChange={(v) => setEditAccount((a) => a ? { ...a, accountRole: v } : a)}>
-                  <SelectTrigger className="bg-slate-800 border-slate-600 text-white"><SelectValue /></SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-slate-600">
-                    <SelectItem value="both">监控 + 发信（推荐）</SelectItem>
-                    <SelectItem value="monitor">仅监控</SelectItem>
-                    <SelectItem value="sender">仅发信</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-slate-300">加群上限（留空使用全局设置）</Label>
-                <Input
-                  type="number"
-                  placeholder={`全局默认（如 300）`}
-                  value={editAccount.maxGroupsLimit ?? ""}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setEditAccount((a) => a ? { ...a, maxGroupsLimit: v === "" ? null : parseInt(v) || null } : a);
-                  }}
-                  min={1}
-                  max={10000}
-                  className="bg-slate-800 border-slate-600 text-white placeholder-slate-500"
-                />
-                <p className="text-xs text-slate-500">设置后此账号最多加入该数量的群组，覆盖全局上限</p>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-slate-300">备注（可选）</Label>
-                <Input
-                  placeholder="输入备注信息..."
-                  value={editAccount.notes}
-                  onChange={(e) => setEditAccount((a) => a ? { ...a, notes: e.target.value } : a)}
-                  className="bg-slate-800 border-slate-600 text-white placeholder-slate-500"
-                />
-              </div>
-            </div>
+            <Tabs defaultValue="info" className="flex-1 flex flex-col min-h-0">
+              <TabsList className="bg-slate-800 border border-slate-700 shrink-0">
+                <TabsTrigger value="info" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">基本信息</TabsTrigger>
+                <TabsTrigger value="groups" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">已加入群组</TabsTrigger>
+              </TabsList>
+
+              {/* ── 基本信息 Tab ── */}
+              <TabsContent value="info" className="flex-1 overflow-y-auto">
+                <div className="space-y-4 py-2">
+                  <div className="space-y-2">
+                    <Label className="text-slate-300">账号角色</Label>
+                    <Select value={editAccount.accountRole} onValueChange={(v) => setEditAccount((a) => a ? { ...a, accountRole: v } : a)}>
+                      <SelectTrigger className="bg-slate-800 border-slate-600 text-white"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-600">
+                        <SelectItem value="both">监控 + 发信（推荐）</SelectItem>
+                        <SelectItem value="monitor">仅监控</SelectItem>
+                        <SelectItem value="sender">仅发信</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-slate-300">加群上限（留空使用全局设置）</Label>
+                    <Input
+                      type="number"
+                      placeholder={`全局默认（如 300）`}
+                      value={editAccount.maxGroupsLimit ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setEditAccount((a) => a ? { ...a, maxGroupsLimit: v === "" ? null : parseInt(v) || null } : a);
+                      }}
+                      min={1}
+                      max={10000}
+                      className="bg-slate-800 border-slate-600 text-white placeholder-slate-500"
+                    />
+                    <p className="text-xs text-slate-500">设置后此账号最多加入该数量的群组，覆盖全局上限</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-slate-300">备注（可选）</Label>
+                    <Input
+                      placeholder="输入备注信息..."
+                      value={editAccount.notes}
+                      onChange={(e) => setEditAccount((a) => a ? { ...a, notes: e.target.value } : a)}
+                      className="bg-slate-800 border-slate-600 text-white placeholder-slate-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="ghost" onClick={() => setEditAccount(null)} className="text-slate-400 hover:text-white">取消</Button>
+                  <Button
+                    onClick={async () => {
+                      if (!editAccount) return;
+                      try {
+                        await updateAccount.mutateAsync({
+                          id: editAccount.id,
+                          accountRole: editAccount.accountRole as "monitor" | "sender" | "both",
+                          notes: editAccount.notes || undefined,
+                          maxGroupsLimit: editAccount.maxGroupsLimit,
+                        });
+                        setEditAccount(null);
+                        refresh();
+                        toast.success("账号信息已更新");
+                      } catch (e: any) { toast.error(e.message ?? "更新失败"); }
+                    }}
+                    disabled={updateAccount.isPending}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {updateAccount.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />} 保存修改
+                  </Button>
+                </div>
+              </TabsContent>
+
+              {/* ── 已加入群组 Tab ── */}
+              <TabsContent value="groups" className="flex-1 flex flex-col min-h-0">
+                <AccountJoinedGroupsTab accountId={editAccount.id} />
+              </TabsContent>
+            </Tabs>
           )}
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setEditAccount(null)} className="text-slate-400 hover:text-white">取消</Button>
-            <Button
-              onClick={async () => {
-                if (!editAccount) return;
-                try {
-                  await updateAccount.mutateAsync({
-                    id: editAccount.id,
-                    accountRole: editAccount.accountRole as "monitor" | "sender" | "both",
-                    notes: editAccount.notes || undefined,
-                    maxGroupsLimit: editAccount.maxGroupsLimit,
-                  });
-                  setEditAccount(null);
-                  refresh();
-                  toast.success("账号信息已更新");
-                } catch (e: any) { toast.error(e.message ?? "更新失败"); }
-              }}
-              disabled={updateAccount.isPending}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {updateAccount.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />} 保存修改
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -991,5 +1006,121 @@ export default function TgAccounts() {
         </DialogContent>
       </Dialog>
     </Layout>
+  );
+}
+
+// ─── 已加入群组 Tab 子组件 ─────────────────────────────────────────────────────
+function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
+  const { data, isLoading } = trpc.tgAccounts.getAccountJoinedGroups.useQuery({ accountId });
+  const [search, setSearch] = useState("");
+
+  const filtered = (data?.groups ?? []).filter(g => {
+    const kw = search.toLowerCase();
+    return !kw || g.groupTitle.toLowerCase().includes(kw) || g.groupId.toLowerCase().includes(kw);
+  });
+
+  // 导出为 CSV
+  const handleExport = () => {
+    if (!data?.groups?.length) return;
+    const header = "群组ID,群组名称,类型,TG链接,加入时间";
+    const rows = data.groups.map(g =>
+      [g.groupId, g.groupTitle, g.groupType, g.link, g.joinedAt ? new Date(g.joinedAt).toLocaleString("zh-CN") : ""].join(",")
+    );
+    const csv = "\uFEFF" + [header, ...rows].join("\n"); // BOM for Excel
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `account_${accountId}_groups_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-400 mr-2" />
+        <span className="text-slate-400 text-sm">加载中...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 py-2 h-full">
+      {/* 顶部统计 + 操作栏 */}
+      <div className="flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-400">
+            共已加入 <span className="text-white font-bold">{data?.total ?? 0}</span> 个群组
+          </span>
+          <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
+            封号后可导出，用新账号补加
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700 gap-1"
+          onClick={handleExport}
+          disabled={!data?.groups?.length}
+        >
+          <Download className="w-3.5 h-3.5" /> 导出 CSV
+        </Button>
+      </div>
+
+      {/* 搜索框 */}
+      <Input
+        placeholder="搜索群组名称或 ID..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="bg-slate-800 border-slate-600 text-white placeholder-slate-500 h-8 text-sm shrink-0"
+      />
+
+      {/* 群组列表 */}
+      <div className="flex-1 overflow-y-auto min-h-0 rounded border border-slate-700">
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-slate-500 text-sm">
+            <Shield className="w-8 h-8 mb-2 opacity-40" />
+            {search ? "没有匹配的群组" : "该账号暂无已加入的群组记录"}
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-slate-800 text-slate-400 text-xs">
+              <tr>
+                <th className="text-left px-3 py-2">群组</th>
+                <th className="text-left px-3 py-2 w-24">类型</th>
+                <th className="text-left px-3 py-2 w-32">加入时间</th>
+                <th className="text-center px-3 py-2 w-16">链接</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((g, i) => (
+                <tr key={g.id} className={`border-t border-slate-700/50 hover:bg-slate-800/50 ${!g.isActive ? "opacity-50" : ""}`}>
+                  <td className="px-3 py-2">
+                    <div className="font-medium text-white truncate max-w-[200px]" title={g.groupTitle}>{g.groupTitle}</div>
+                    <div className="text-slate-500 text-xs">@{g.groupId}</div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${g.groupType === "channel" ? "bg-purple-900/50 text-purple-300" : "bg-blue-900/50 text-blue-300"}`}>
+                      {g.groupType === "channel" ? "频道" : "群组"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-slate-400 text-xs">
+                    {g.joinedAt ? new Date(g.joinedAt).toLocaleDateString("zh-CN") : "-"}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    {g.link ? (
+                      <a href={g.link} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                        <ChevronRight className="w-4 h-4 inline" />
+                      </a>
+                    ) : "-"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   );
 }

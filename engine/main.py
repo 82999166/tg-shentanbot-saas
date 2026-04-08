@@ -840,19 +840,44 @@ async def http_batch_join_groups(request: aiohttp_web.Request) -> aiohttp_web.Re
     if not target_groups:
         return aiohttp_web.json_response({"error": "没有需要加入的群组"}, status=400)
 
-    logger.info(f"[batch-join] 开始批量加群：{len(target_workers)} 个账号，{len(target_groups)} 个群组")
+    logger.info(f"[batch-join] 开始批量加群（多账号轮流模式）：{len(target_workers)} 个账号，{len(target_groups)} 个群组")
 
     results = []
     joined = 0
     failed = 0
     skipped = 0
 
-    for account_id, worker in target_workers:
-        for group_id in target_groups:
-            if not group_id:
+    # 多账号轮流加群：
+    # - 用一个双端队列维护「可用账号」
+    # - 每个群组取队首账号来加，加完后把账号放回队尾（轮换）
+    # - 遇到 FloodWait 时跳过该账号，记录冷却结束时间，换下一个账号重试同一个群组
+    # - 所有账号都在冷却中时，等待最近一个冷却结束后继续
+    import collections, time as _time
+    account_queue = collections.deque(target_workers)  # (account_id, worker)
+    flood_cooldown = {}  # account_id -> 冷却结束时间戳
+
+    for group_id in target_groups:
+        if not group_id:
+            continue
+
+        # 找一个当前可用（不在冷却中）的账号
+        tried = 0
+        success = False
+        while tried < len(account_queue):
+            account_id, worker = account_queue[0]
+            account_queue.rotate(-1)  # 先轮换，无论成功失败
+
+            # 检查该账号是否还在冷却中
+            cooldown_until = flood_cooldown.get(account_id, 0)
+            now = _time.time()
+            if cooldown_until > now:
+                wait_left = int(cooldown_until - now)
+                logger.info(f"[batch-join] 账号 {account_id} 冷却中（剩余 {wait_left}s），跳过")
+                tried += 1
                 continue
+
+            # 尝试加入群组
             try:
-                # 尝试加入群组
                 chat = await worker.client.join_chat(group_id)
                 real_id = chat.id if chat else None
                 results.append({"account_id": account_id, "group_id": group_id, "status": "subscribed", "real_id": real_id})
@@ -870,11 +895,14 @@ async def http_batch_join_groups(request: aiohttp_web.Request) -> aiohttp_web.Re
                         })
                     except Exception as cb_err:
                         logger.warning(f"[batch-join] 回调 join-status 失败: {cb_err}")
+                success = True
+                break
             except FloodWait as e:
-                logger.warning(f"[batch-join] 账号 {account_id} FloodWait {e.value}s")
-                await asyncio.sleep(e.value)
-                results.append({"account_id": account_id, "group_id": group_id, "status": "failed", "reason": f"FloodWait {e.value}s"})
-                failed += 1
+                logger.warning(f"[batch-join] 账号 {account_id} FloodWait {e.value}s，切换到下一个账号")
+                flood_cooldown[account_id] = _time.time() + e.value
+                tried += 1
+                # 不 sleep，直接换下一个账号重试同一个群组
+                continue
             except Exception as e:
                 err_msg = str(e)
                 if "already" in err_msg.lower() or "USER_ALREADY_PARTICIPANT" in err_msg:
@@ -891,13 +919,61 @@ async def http_batch_join_groups(request: aiohttp_web.Request) -> aiohttp_web.Re
                             })
                         except Exception as cb_err:
                             logger.warning(f"[batch-join] 回调 join-status(already) 失败: {cb_err}")
+                    success = True  # already_member 也算处理完毕
+                    break
                 else:
                     results.append({"account_id": account_id, "group_id": group_id, "status": "failed", "reason": err_msg})
                     failed += 1
                     logger.warning(f"[batch-join] 账号 {account_id} 加入 {group_id} 失败: {err_msg}")
-            # 加群间隔，防封号
-            delay = random.uniform(interval_min, interval_max)
-            await asyncio.sleep(delay)
+                    success = True  # 其他错误不重试，继续下一个群组
+                    break
+
+        if not success:
+            # 所有账号都在冷却中，等待最短冷却结束
+            if flood_cooldown:
+                min_cooldown = min(flood_cooldown.values())
+                wait_sec = max(0, int(min_cooldown - _time.time()) + 1)
+                logger.info(f"[batch-join] 所有账号冷却中，等待 {wait_sec}s 后继续")
+                await asyncio.sleep(wait_sec)
+                # 清除已过期的冷却
+                now = _time.time()
+                flood_cooldown = {k: v for k, v in flood_cooldown.items() if v > now}
+                # 重新尝试当前群组（放回队列头部再试一次）
+                # 找任意一个不在冷却中的账号
+                for account_id, worker in list(account_queue):
+                    if flood_cooldown.get(account_id, 0) <= _time.time():
+                        try:
+                            chat = await worker.client.join_chat(group_id)
+                            real_id = chat.id if chat else None
+                            results.append({"account_id": account_id, "group_id": group_id, "status": "subscribed", "real_id": real_id})
+                            joined += 1
+                            logger.info(f"[batch-join] 账号 {account_id} 成功加入 {group_id} -> {real_id}（冷却后重试）")
+                            db_group_id = group_id_to_db_id.get(group_id)
+                            if db_group_id:
+                                try:
+                                    await api.post("/engine/public-group/join-status", {
+                                        "publicGroupId": db_group_id,
+                                        "monitorAccountId": account_id,
+                                        "status": "subscribed",
+                                        "realId": str(real_id) if real_id else None,
+                                    })
+                                except Exception as cb_err:
+                                    logger.warning(f"[batch-join] 回调 join-status 失败: {cb_err}")
+                        except FloodWait as e:
+                            flood_cooldown[account_id] = _time.time() + e.value
+                            failed += 1
+                        except Exception as e:
+                            err_msg = str(e)
+                            results.append({"account_id": account_id, "group_id": group_id, "status": "failed", "reason": err_msg})
+                            failed += 1
+                        break
+            else:
+                results.append({"account_id": None, "group_id": group_id, "status": "failed", "reason": "no_available_account"})
+                failed += 1
+
+        # 加群间隔，防封号
+        delay = random.uniform(interval_min, interval_max)
+        await asyncio.sleep(delay)
 
     logger.info(f"[batch-join] 完成：加入 {joined}，失败 {failed}，跳过 {skipped}")
     return aiohttp_web.json_response({

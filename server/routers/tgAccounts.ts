@@ -572,6 +572,48 @@ export const tgAccountsRouter = router({
       }
       return { success: true, added, skipped, message: `成功导入 ${added} 个群组${skipped > 0 ? `，${skipped} 个已存在（已重新激活）` : ''}` };
     }),
+
+  // ─── 查询指定账号已加入的群组列表（用于编辑页展示和导出）────────────────────
+  getAccountJoinedGroups: adminProcedure
+    .input(z.object({
+      accountId: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '数据库不可用' });
+      const rows = await db
+        .select({
+          id: publicGroupJoinStatus.id,
+          publicGroupId: publicGroupJoinStatus.publicGroupId,
+          status: publicGroupJoinStatus.status,
+          realId: publicGroupJoinStatus.realId,
+          joinedAt: publicGroupJoinStatus.joinedAt,
+          groupId: publicMonitorGroups.groupId,
+          groupTitle: publicMonitorGroups.groupTitle,
+          groupType: publicMonitorGroups.groupType,
+          isActive: publicMonitorGroups.isActive,
+        })
+        .from(publicGroupJoinStatus)
+        .leftJoin(publicMonitorGroups, eq(publicGroupJoinStatus.publicGroupId, publicMonitorGroups.id))
+        .where(
+          sql`${publicGroupJoinStatus.monitorAccountId} = ${input.accountId} AND ${publicGroupJoinStatus.status} IN ('subscribed', 'joined')`
+        )
+        .orderBy(desc(publicGroupJoinStatus.joinedAt));
+      return {
+        total: rows.length,
+        groups: rows.map(r => ({
+          id: r.id,
+          publicGroupId: r.publicGroupId,
+          groupId: r.groupId ?? '',
+          groupTitle: r.groupTitle ?? r.groupId ?? '',
+          groupType: r.groupType ?? 'group',
+          realId: r.realId ?? '',
+          isActive: r.isActive ?? true,
+          joinedAt: r.joinedAt,
+          link: r.groupId ? `https://t.me/${r.groupId}` : '',
+        })),
+      };
+    }),
 });
 
 // ─── 保存账号到数据库（检查配额）─────────────────────────────────────────
