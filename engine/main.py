@@ -840,24 +840,43 @@ async def http_batch_join_groups(request: aiohttp_web.Request) -> aiohttp_web.Re
     if not target_groups:
         return aiohttp_web.json_response({"error": "没有需要加入的群组"}, status=400)
 
-    logger.info(f"[batch-join] 开始批量加群（多账号轮流模式）：{len(target_workers)} 个账号，{len(target_groups)} 个群组")
+    logger.info(f"[batch-join] 开始批量加群（每群一账号轮流模式）：{len(target_workers)} 个账号，{len(target_groups)} 个群组")
 
     results = []
     joined = 0
     failed = 0
     skipped = 0
 
-    # 多账号轮流加群：
+    # 每群一账号轮流加群：
     # - 用一个双端队列维护「可用账号」
-    # - 每个群组取队首账号来加，加完后把账号放回队尾（轮换）
+    # - 每个群组只分配一个账号加入（轮流分配），不重复加入
+    # - 先查询该群是否已有账号成功加入，有则跳过
     # - 遇到 FloodWait 时跳过该账号，记录冷却结束时间，换下一个账号重试同一个群组
     # - 所有账号都在冷却中时，等待最近一个冷却结束后继续
     import collections, time as _time
     account_queue = collections.deque(target_workers)  # (account_id, worker)
     flood_cooldown = {}  # account_id -> 冷却结束时间戳
 
+    # 查询已有账号成功加入的群组（避免重复加入）
+    already_joined_groups = set()  # groupId -> 已有账号加入，跳过
+    try:
+        joined_status_resp = await api.get("/engine/public-group/joined-accounts")
+        if joined_status_resp and isinstance(joined_status_resp, dict):
+            for gid, accounts in joined_status_resp.get("joinedGroups", {}).items():
+                if accounts:  # 该群已有至少一个账号成功加入
+                    already_joined_groups.add(gid)
+    except Exception as e:
+        logger.warning(f"[batch-join] 查询已加入群组失败（忽略）: {e}")
+
     for group_id in target_groups:
         if not group_id:
+            continue
+
+        # 如果该群已有账号成功加入，跳过（每群只需一个账号）
+        if group_id in already_joined_groups:
+            results.append({"account_id": None, "group_id": group_id, "status": "skipped", "reason": "already_has_account"})
+            skipped += 1
+            logger.info(f"[batch-join] 群组 {group_id} 已有账号加入，跳过")
             continue
 
         # 找一个当前可用（不在冷却中）的账号
@@ -896,6 +915,7 @@ async def http_batch_join_groups(request: aiohttp_web.Request) -> aiohttp_web.Re
                     except Exception as cb_err:
                         logger.warning(f"[batch-join] 回调 join-status 失败: {cb_err}")
                 success = True
+                already_joined_groups.add(group_id)  # 标记该群已有账号加入，后续不重复
                 break
             except FloodWait as e:
                 logger.warning(f"[batch-join] 账号 {account_id} FloodWait {e.value}s，切换到下一个账号")
@@ -920,6 +940,7 @@ async def http_batch_join_groups(request: aiohttp_web.Request) -> aiohttp_web.Re
                         except Exception as cb_err:
                             logger.warning(f"[batch-join] 回调 join-status(already) 失败: {cb_err}")
                     success = True  # already_member 也算处理完毕
+                    already_joined_groups.add(group_id)  # 标记该群已有账号
                     break
                 else:
                     results.append({"account_id": account_id, "group_id": group_id, "status": "failed", "reason": err_msg})

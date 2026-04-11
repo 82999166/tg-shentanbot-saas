@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, inArray, like, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 import {
   AntibanSettings,
   InsertAntibanSettings,
@@ -30,7 +31,23 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const dbUrl = process.env.DATABASE_URL;
+      const url = new URL(dbUrl);
+      const socketPath = process.env.DB_SOCKET_PATH || "";
+      const poolConfig: mysql.PoolOptions = {
+        user: url.username,
+        password: decodeURIComponent(url.password),
+        database: url.pathname.slice(1),
+      };
+      if (socketPath) {
+        // 优先使用 socket 连接（宝塔面板 MySQL 默认不监听 TCP）
+        (poolConfig as any).socketPath = socketPath;
+      } else {
+        poolConfig.host = url.hostname;
+        poolConfig.port = parseInt(url.port) || 3306;
+      }
+      const pool = mysql.createPool(poolConfig);
+      _db = drizzle(pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;

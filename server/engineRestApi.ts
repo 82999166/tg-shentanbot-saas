@@ -647,6 +647,39 @@ export function registerEngineRestRoutes(app: Router) {
     }
   });
 
+  // GET /api/engine/public-group/joined-accounts - 查询已有账号成功加入的群组（用于每群只加一个账号）
+  app.get("/api/engine/public-group/joined-accounts", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB unavailable" });
+
+      // 查询所有状态为 subscribed 的加群记录
+      const joinedRecords = await db
+        .select({
+          publicGroupId: publicGroupJoinStatus.publicGroupId,
+          monitorAccountId: publicGroupJoinStatus.monitorAccountId,
+          groupId: publicMonitorGroups.groupId,
+        })
+        .from(publicGroupJoinStatus)
+        .leftJoin(publicMonitorGroups, eq(publicGroupJoinStatus.publicGroupId, publicMonitorGroups.id))
+        .where(eq(publicGroupJoinStatus.status, "subscribed"));
+
+      // 按 groupId（群组链接）分组，返回已有账号加入的群组 map
+      const joinedGroups: Record<string, number[]> = {};
+      for (const r of joinedRecords) {
+        if (!r.groupId) continue;
+        if (!joinedGroups[r.groupId]) joinedGroups[r.groupId] = [];
+        joinedGroups[r.groupId].push(r.monitorAccountId);
+      }
+
+      res.json({ joinedGroups });
+    } catch (e: any) {
+      console.error("[Engine API] public-group/joined-accounts error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── 群组采集相关接口 ──────────────────────────────────────────────────────────
 
   // GET /api/engine/scrape-tasks - 获取待执行的采集任务（status=pending）
