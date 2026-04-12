@@ -1047,6 +1047,20 @@ async def http_scan_joined_groups(request: aiohttp_web.Request) -> aiohttp_web.R
     return aiohttp_web.json_response({"success": True, "results": results})
 
 
+
+async def http_force_sync(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    """立即同步配置和账号（前端立即同步引擎按钮使用）"""
+    secret = request.headers.get("X-Engine-Secret", "")
+    if secret != ENGINE_SECRET:
+        return aiohttp_web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        await sync_config()
+        await sync_accounts()
+        return aiohttp_web.json_response({"success": True, "message": "已触发立即同步"})
+    except Exception as e:
+        logger.error(f"[force-sync] 同步失败: {e}")
+        return aiohttp_web.json_response({"success": False, "message": str(e)}, status=500)
+
 async def start_http_server() -> None:
     """启动引擎 HTTP 服务"""
     app = aiohttp_web.Application()
@@ -1054,6 +1068,7 @@ async def start_http_server() -> None:
     app.router.add_post("/engine/reload", http_reload)
     app.router.add_post("/batch-join-groups", http_batch_join_groups)
     app.router.add_post("/scan-joined-groups", http_scan_joined_groups)
+    app.router.add_post("/force-sync", http_force_sync)
 
     runner = aiohttp_web.AppRunner(app)
     await runner.setup()
