@@ -310,27 +310,32 @@ async def process_message(
             break
 
     if matched_public_group:
-        pg_keywords = matched_public_group.get("keywords", [])
-        for kw in pg_keywords:
-            if match_keyword(text, kw):
-                await _handle_hit(
-                    account_id=account_id,
-                    hit_type="public",
-                    chat_id=chat_id,
-                    chat_title=chat_title,
-                    chat_username=chat_username,
-                    sender_id=sender_id,
-                    sender_username=sender_username,
-                    sender_first_name=sender_first_name,
-                    sender_last_name=sender_last_name,
-                    message_id=message_id,
-                    text=text,
-                    matched_keyword=kw.get("pattern", ""),
-                    keyword_id=kw.get("id"),
-                    user_id=None,
-                    is_anonymous=is_anonymous,
-                )
-                break  # 公共群组每条消息只推送一次（第一个命中的关键词）
+        # 公共群组：遍历所有用户的 globalKeywords 进行匹配，每个用户独立推送
+        _pub_user_configs = config.get("userConfigs", {})
+        for _pub_uid_str, _pub_user_cfg in _pub_user_configs.items():
+            _pub_user_id = int(_pub_uid_str)
+            _pub_match_mode = _pub_user_cfg.get("matchMode", "fuzzy")
+            pg_keywords = _pub_user_cfg.get("globalKeywords", [])
+            for kw in pg_keywords:
+                if match_keyword(text, kw, _pub_match_mode):
+                    await _handle_hit(
+                        account_id=account_id,
+                        hit_type="public",
+                        chat_id=chat_id,
+                        chat_title=chat_title,
+                        chat_username=chat_username,
+                        sender_id=sender_id,
+                        sender_username=sender_username,
+                        sender_first_name=sender_first_name,
+                        sender_last_name=sender_last_name,
+                        message_id=message_id,
+                        text=text,
+                        matched_keyword=kw.get("pattern", ""),
+                        keyword_id=kw.get("id"),
+                        user_id=_pub_user_id,
+                        is_anonymous=is_anonymous,
+                    )
+                    break  # 每个用户每条消息只推送一次（第一个命中的关键词）
 
     # ── 用户私有关键词匹配 ──────────────────────────────────
     user_configs = config.get("userConfigs", {})
@@ -360,7 +365,7 @@ async def process_message(
 
         # 用户关键词匹配
         user_match_mode = user_cfg.get("matchMode", "fuzzy")
-        keywords_list = user_cfg.get("keywords", [])
+        keywords_list = user_cfg.get("globalKeywords", [])
 
         for kw in keywords_list:
             if match_keyword(text, kw, user_match_mode):
@@ -1047,20 +1052,6 @@ async def http_scan_joined_groups(request: aiohttp_web.Request) -> aiohttp_web.R
     return aiohttp_web.json_response({"success": True, "results": results})
 
 
-
-async def http_force_sync(request: aiohttp_web.Request) -> aiohttp_web.Response:
-    """立即同步配置和账号（前端立即同步引擎按钮使用）"""
-    secret = request.headers.get("X-Engine-Secret", "")
-    if secret != ENGINE_SECRET:
-        return aiohttp_web.json_response({"error": "Unauthorized"}, status=401)
-    try:
-        await sync_config()
-        await sync_accounts()
-        return aiohttp_web.json_response({"success": True, "message": "已触发立即同步"})
-    except Exception as e:
-        logger.error(f"[force-sync] 同步失败: {e}")
-        return aiohttp_web.json_response({"success": False, "message": str(e)}, status=500)
-
 async def start_http_server() -> None:
     """启动引擎 HTTP 服务"""
     app = aiohttp_web.Application()
@@ -1068,7 +1059,6 @@ async def start_http_server() -> None:
     app.router.add_post("/engine/reload", http_reload)
     app.router.add_post("/batch-join-groups", http_batch_join_groups)
     app.router.add_post("/scan-joined-groups", http_scan_joined_groups)
-    app.router.add_post("/force-sync", http_force_sync)
 
     runner = aiohttp_web.AppRunner(app)
     await runner.setup()
