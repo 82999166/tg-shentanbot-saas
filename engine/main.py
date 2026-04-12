@@ -124,6 +124,31 @@ class ApiClient:
             logger.warning(f"API GET {path} failed: {e}")
         return None
 
+    async def trpc_query(self, procedure: str, timeout: int = 15) -> Optional[dict]:
+        """调用 tRPC query 接口（GET 请求）"""
+        import urllib.parse
+        input_str = urllib.parse.quote('{"0":{"json":null}}')
+        url = f"{self.base}/trpc/{procedure}?batch=1&input={input_str}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url,
+                    headers=self.headers,
+                    timeout=aiohttp.ClientTimeout(total=timeout)
+                ) as r:
+                    if r.status == 200:
+                        data = await r.json()
+                        # tRPC batch 格式：[{result: {data: {json: ...}}}]
+                        if isinstance(data, list) and len(data) > 0:
+                            return data[0].get("result", {}).get("data", {}).get("json")
+                    else:
+                        logger.warning(f"tRPC {procedure} → HTTP {r.status}")
+        except asyncio.TimeoutError:
+            logger.warning(f"tRPC {procedure} timeout")
+        except Exception as e:
+            logger.warning(f"tRPC {procedure} failed: {e}")
+        return None
+
     async def post(self, path: str, data: dict, timeout: int = 15) -> Optional[dict]:
         try:
             async with aiohttp.ClientSession() as session:
@@ -310,14 +335,15 @@ async def process_message(
             break
 
     if matched_public_group:
-        # 公共群组：遍历所有用户的 globalKeywords 进行匹配，每个用户独立推送
-        _pub_user_configs = config.get("userConfigs", {})
-        for _pub_uid_str, _pub_user_cfg in _pub_user_configs.items():
-            _pub_user_id = int(_pub_uid_str)
-            _pub_match_mode = _pub_user_cfg.get("matchMode", "fuzzy")
-            pg_keywords = _pub_user_cfg.get("globalKeywords", [])
+        # 公共群组：遍历所有用户的 globalKeywords 进行匹配
+        user_configs = config.get("userConfigs", {})
+        for uid_str, user_cfg in user_configs.items():
+            user_id = int(uid_str)
+            # 优先用 globalKeywords，兼容旧字段 keywords
+            pg_keywords = user_cfg.get("globalKeywords") or user_cfg.get("keywords", [])
+            user_match_mode = user_cfg.get("pushSettings", {}).get("keywordMatchMode", "fuzzy")
             for kw in pg_keywords:
-                if match_keyword(text, kw, _pub_match_mode):
+                if match_keyword(text, kw, user_match_mode):
                     await _handle_hit(
                         account_id=account_id,
                         hit_type="public",
@@ -332,10 +358,10 @@ async def process_message(
                         text=text,
                         matched_keyword=kw.get("pattern", ""),
                         keyword_id=kw.get("id"),
-                        user_id=_pub_user_id,
+                        user_id=user_id,
                         is_anonymous=is_anonymous,
                     )
-                    break  # 每个用户每条消息只推送一次（第一个命中的关键词）
+                    break  # 每个用户每条消息只推送一次
 
     # ── 用户私有关键词匹配 ──────────────────────────────────
     user_configs = config.get("userConfigs", {})
@@ -363,9 +389,9 @@ async def process_message(
             if not in_list:
                 continue
 
-        # 用户关键词匹配
-        user_match_mode = user_cfg.get("matchMode", "fuzzy")
-        keywords_list = user_cfg.get("globalKeywords", [])
+        # 用户关键词匹配（优先用 globalKeywords，兼容旧字段 keywords）
+        user_match_mode = user_cfg.get("pushSettings", {}).get("keywordMatchMode", "fuzzy")
+        keywords_list = user_cfg.get("globalKeywords") or user_cfg.get("keywords", [])
 
         for kw in keywords_list:
             if match_keyword(text, kw, user_match_mode):
@@ -418,11 +444,18 @@ async def _handle_hit(
     payload = {
         "accountId": account_id,
         "hitType": hit_type,
+        # Web 接口用 tgGroupId / groupId 查找 monitorGroupId
+        "tgGroupId": str(chat_id),
+        "groupId": str(chat_id),
         "chatId": str(chat_id),
         "chatTitle": chat_title,
         "chatUsername": chat_username or "",
+        # Web 接口用 senderTgId 存发送者 ID
+        "senderTgId": str(sender_id) if sender_id else "",
         "senderId": str(sender_id) if sender_id else "",
         "senderUsername": sender_username or "",
+        # Web 接口用 senderName 存发送者名字
+        "senderName": sender_first_name,
         "senderFirstName": sender_first_name,
         "senderLastName": sender_last_name,
         "messageId": message_id,
@@ -657,8 +690,7 @@ class AccountWorker:
 async def sync_config() -> None:
     """从 Web API 拉取最新监控配置"""
     global _monitor_config, _config_lock
-
-    config = await api.get("/engine/config", timeout=30)
+    config = await api.trpc_query("engine.config", timeout=30)
     if not config:
         logger.warning("[Config] 拉取配置失败，使用缓存配置")
         return
@@ -742,6 +774,25 @@ async def account_sync_loop() -> None:
         await asyncio.sleep(60)  # 每分钟检查一次账号变更
 
 
+# ─── 心跳上报 ─────────────────────────────────────────────
+async def heartbeat_loop() -> None:
+    """定时向 Web 上报引擎心跳（每30秒一次）"""
+    while True:
+        try:
+            active_count = len(_active_workers)
+            public_group_count = len(_monitor_config.get("publicGroups", []))
+            await api.post("/engine/heartbeat", {
+                "activeAccounts": active_count,
+                "totalGroups": public_group_count,
+                "engineType": "pyrogram",
+                "timestamp": int(time.time()),
+            })
+            logger.debug(f"[Heartbeat] 已上报: accounts={active_count} groups={public_group_count}")
+        except Exception as e:
+            logger.debug(f"[Heartbeat] 上报失败: {e}")
+        await asyncio.sleep(30)
+
+
 # ─── 健康度上报 ────────────────────────────────────────────
 async def health_report_loop() -> None:
     """定时上报各账号健康状态"""
@@ -754,7 +805,7 @@ async def health_report_loop() -> None:
                     worker.client is not None
                     and worker.client.is_connected
                 )
-                await api.post("/engine/account-health", {
+                await api.post("/engine/account/health", {
                     "accountId": acc_id,
                     "status": status,
                     "isConnected": is_connected,
@@ -1052,6 +1103,20 @@ async def http_scan_joined_groups(request: aiohttp_web.Request) -> aiohttp_web.R
     return aiohttp_web.json_response({"success": True, "results": results})
 
 
+
+async def http_force_sync(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    """立即同步配置和账号（前端立即同步引擎按钮使用）"""
+    secret = request.headers.get("X-Engine-Secret", "")
+    if secret != ENGINE_SECRET:
+        return aiohttp_web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        await sync_config()
+        await sync_accounts()
+        return aiohttp_web.json_response({"success": True, "message": "已触发立即同步"})
+    except Exception as e:
+        logger.error(f"[force-sync] 同步失败: {e}")
+        return aiohttp_web.json_response({"success": False, "message": str(e)}, status=500)
+
 async def start_http_server() -> None:
     """启动引擎 HTTP 服务"""
     app = aiohttp_web.Application()
@@ -1059,6 +1124,7 @@ async def start_http_server() -> None:
     app.router.add_post("/engine/reload", http_reload)
     app.router.add_post("/batch-join-groups", http_batch_join_groups)
     app.router.add_post("/scan-joined-groups", http_scan_joined_groups)
+    app.router.add_post("/force-sync", http_force_sync)
 
     runner = aiohttp_web.AppRunner(app)
     await runner.setup()
@@ -1100,6 +1166,7 @@ async def main():
         asyncio.create_task(config_sync_loop()),
         asyncio.create_task(account_sync_loop()),
         asyncio.create_task(health_report_loop()),
+        asyncio.create_task(heartbeat_loop()),
     ]
 
     logger.info("[Main] 所有服务已启动，开始监控...")
