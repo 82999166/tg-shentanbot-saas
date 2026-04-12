@@ -22,6 +22,7 @@ export default function KeywordStats() {
   const Layout = user?.role === "admin" ? AdminLayout : AppLayout;
   const isAdmin = user?.role === "admin";
   const [search, setSearch] = useState("");
+  const [selectedKeyword, setSelectedKeyword] = useState<string | undefined>();
   const [selectedKeywordId, setSelectedKeywordId] = useState<number | undefined>();
   const [sendersPage, setSendersPage] = useState(1);
   const [showSenders, setShowSenders] = useState(false);
@@ -38,25 +39,85 @@ export default function KeywordStats() {
   const dates = statsData?.dates ?? [];
   const stats = statsData?.stats ?? [];
 
-  // 按关键词聚合统计
+  // 按关键词ID聚合每日统计
   const kwStatsMap: Record<number, Record<string, number>> = {};
   stats.forEach((s) => {
     if (!kwStatsMap[s.keywordId]) kwStatsMap[s.keywordId] = {};
     kwStatsMap[s.keywordId][s.date] = s.hitCount;
   });
 
-  // 计算每个关键词的周总命中和今日命中
   const today = new Date().toISOString().split("T")[0];
-  const kwTableData = keywords
-    .map((kw) => {
-      const weekTotal = Object.values(kwStatsMap[kw.id] ?? {}).reduce((a, b) => a + b, 0);
-      const todayCount = kwStatsMap[kw.id]?.[today] ?? 0;
-      return { ...kw, weekTotal, todayCount };
-    })
-    .filter((kw) =>
-      search ? kw.keyword.toLowerCase().includes(search.toLowerCase()) : true
-    )
-    .sort((a, b) => b.weekTotal - a.weekTotal);
+
+  // admin 模式：按关键词文本汇总所有用户的命中次数，去除重复
+  const kwTableData = (() => {
+    if (!isAdmin) {
+      // 普通用户：直接展示自己的关键词
+      return keywords
+        .map((kw) => {
+          const weekTotal = Object.values(kwStatsMap[kw.id] ?? {}).reduce((a, b) => a + b, 0);
+          const todayCount = kwStatsMap[kw.id]?.[today] ?? 0;
+          return { ...kw, weekTotal, todayCount, userCount: 1, representativeId: kw.id };
+        })
+        .filter((kw) =>
+          search ? kw.keyword.toLowerCase().includes(search.toLowerCase()) : true
+        )
+        .sort((a, b) => b.weekTotal - a.weekTotal);
+    }
+
+    // admin 模式：按关键词文本分组，汇总所有用户的命中数据
+    const grouped: Record<string, {
+      keyword: string;
+      ids: number[];
+      totalHitCount: number;
+      totalWeekHit: number;
+      totalTodayHit: number;
+      userCount: number;
+      // 每天汇总
+      dailyMap: Record<string, number>;
+    }> = {};
+
+    keywords.forEach((kw) => {
+      const key = kw.keyword.trim().toLowerCase();
+      if (!grouped[key]) {
+        grouped[key] = {
+          keyword: kw.keyword,
+          ids: [],
+          totalHitCount: 0,
+          totalWeekHit: 0,
+          totalTodayHit: 0,
+          userCount: 0,
+          dailyMap: {},
+        };
+      }
+      grouped[key].ids.push(kw.id);
+      grouped[key].totalHitCount += (kw as any).hitCount ?? 0;
+      grouped[key].userCount += 1;
+
+      // 累加每日统计
+      const dailyStats = kwStatsMap[kw.id] ?? {};
+      Object.entries(dailyStats).forEach(([date, cnt]) => {
+        grouped[key].dailyMap[date] = (grouped[key].dailyMap[date] ?? 0) + cnt;
+      });
+      grouped[key].totalWeekHit = Object.values(grouped[key].dailyMap).reduce((a, b) => a + b, 0);
+      grouped[key].totalTodayHit = grouped[key].dailyMap[today] ?? 0;
+    });
+
+    return Object.values(grouped)
+      .map((g) => ({
+        id: g.ids[0], // 代表性 ID（用于命中用户查询）
+        keyword: g.keyword,
+        hitCount: g.totalHitCount,
+        weekTotal: g.totalWeekHit,
+        todayCount: g.totalTodayHit,
+        userCount: g.userCount,
+        dailyMap: g.dailyMap,
+        ids: g.ids,
+      }))
+      .filter((kw) =>
+        search ? kw.keyword.toLowerCase().includes(search.toLowerCase()) : true
+      )
+      .sort((a, b) => b.weekTotal - a.weekTotal);
+  })();
 
   // 导出 CSV
   const exportCSV = () => {
@@ -72,16 +133,20 @@ export default function KeywordStats() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `keyword_senders_${selectedKeywordId}_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `keyword_senders_${selectedKeyword}_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const handleViewSenders = (kwId: number) => {
+  const handleViewSenders = (kwId: number, kwText: string) => {
     setSelectedKeywordId(kwId);
+    setSelectedKeyword(kwText);
     setShowSenders(true);
     setSendersPage(1);
   };
+
+  // 汇总后的唯一关键词数
+  const uniqueKeywordCount = kwTableData.length;
 
   return (
     <Layout>
@@ -90,7 +155,7 @@ export default function KeywordStats() {
         <div>
           <h1 className="text-2xl font-bold">关键词统计</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {isAdmin ? "全平台所有用户的关键词命中统计" : "您的关键词命中统计（近7天）"}
+            {isAdmin ? "全平台所有用户的关键词命中统计（相同关键词已合并汇总）" : "您的关键词命中统计（近7天）"}
           </p>
         </div>
 
@@ -101,7 +166,7 @@ export default function KeywordStats() {
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-primary" />
                 关键词命中统计
-                <Badge variant="secondary">{keywords.length} 个关键词</Badge>
+                <Badge variant="secondary">{uniqueKeywordCount} 个关键词</Badge>
               </CardTitle>
               <div className="relative w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -128,7 +193,7 @@ export default function KeywordStats() {
                   <TableRow>
                     <TableHead className="w-12 text-center">#</TableHead>
                     <TableHead>关键词</TableHead>
-                    {isAdmin && <TableHead>所属用户</TableHead>}
+                    {isAdmin && <TableHead className="text-center">订阅用户数</TableHead>}
                     <TableHead className="text-center">今日命中</TableHead>
                     <TableHead className="text-center">近7天命中</TableHead>
                     <TableHead className="text-center">总命中</TableHead>
@@ -138,12 +203,15 @@ export default function KeywordStats() {
                 </TableHeader>
                 <TableBody>
                   {kwTableData.map((kw, idx) => {
-                    const dailyData = dates.map((d) => kwStatsMap[kw.id]?.[d] ?? 0);
+                    // admin 模式使用汇总的 dailyMap，普通用户使用 kwStatsMap
+                    const dailyData = isAdmin
+                      ? dates.map((d) => (kw as any).dailyMap?.[d] ?? 0)
+                      : dates.map((d) => kwStatsMap[kw.id]?.[d] ?? 0);
                     const maxVal = Math.max(...dailyData, 1);
                     return (
                       <TableRow
-                        key={kw.id}
-                        className={selectedKeywordId === kw.id ? "bg-primary/5" : ""}
+                        key={kw.keyword}
+                        className={selectedKeyword === kw.keyword ? "bg-primary/5" : ""}
                       >
                         <TableCell className="text-center text-muted-foreground text-sm">
                           {idx + 1}
@@ -152,10 +220,11 @@ export default function KeywordStats() {
                           <span className="font-medium">{kw.keyword}</span>
                         </TableCell>
                         {isAdmin && (
-                          <TableCell>
-                            <span className="text-sm text-muted-foreground">
-                              {(kw as any).userName || (kw as any).userEmail || `用户#${(kw as any).userId}`}
-                            </span>
+                          <TableCell className="text-center">
+                            <Badge variant="outline" className="text-xs">
+                              <Users className="h-3 w-3 mr-1" />
+                              {(kw as any).userCount ?? 1} 人
+                            </Badge>
                           </TableCell>
                         )}
                         <TableCell className="text-center">
@@ -197,7 +266,7 @@ export default function KeywordStats() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleViewSenders(kw.id)}
+                            onClick={() => handleViewSenders(kw.id, kw.keyword)}
                           >
                             <Users className="h-3.5 w-3.5 mr-1.5" />
                             命中用户
@@ -219,7 +288,7 @@ export default function KeywordStats() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Users className="h-5 w-5 text-blue-500" />
-                  命中用户列表 —— {kwTableData.find(k => k.id === selectedKeywordId)?.keyword}
+                  命中用户列表 —— {selectedKeyword}
                   {sendersData?.total != null && (
                     <Badge variant="secondary">{sendersData.total} 人</Badge>
                   )}
