@@ -320,16 +320,21 @@ async def process_message(
     matched_public_group = None
     for pg in public_groups:
         pg_id = str(pg.get("groupId", ""))
-        # 优先用 real_id（数字 chat_id）匹配
+        # 方式1：优先用 publicGroupRealIds 字典匹配（兼容旧逻辑）
         real_id = public_real_ids.get(pg_id)
         if real_id and str(real_id) == chat_id_str:
             matched_public_group = pg
             break
-        # 其次用 @username 匹配
+        # 方式2：直接用 pg.realId 字段匹配（新逻辑，realId 存在于每个 pg 对象中）
+        pg_real_id = str(pg.get("realId", "") or "")
+        if pg_real_id and pg_real_id == chat_id_str:
+            matched_public_group = pg
+            break
+        # 方式3：用 @username 匹配
         if chat_username and pg_id.lstrip("@").lower() == chat_username.lower():
             matched_public_group = pg
             break
-        # 最后用 groupId 直接匹配 chat_id
+        # 方式4：groupId 直接匹配 chat_id（数字形式）
         if pg_id == chat_id_str:
             matched_public_group = pg
             break
@@ -365,6 +370,8 @@ async def process_message(
 
     # ── 用户私有关键词匹配 ──────────────────────────────────
     user_configs = config.get("userConfigs", {})
+    if not user_configs:
+        logger.debug(f"[Match] 无用户配置，跳过私有关键词匹配")
     for uid_str, user_cfg in user_configs.items():
         user_id = int(uid_str)
 
@@ -468,7 +475,18 @@ async def _handle_hit(
 
     result = await api.post("/engine/hit", payload)
     if result:
-        logger.debug(f"[HIT] 写入成功: hitId={result.get('hitId')}")
+        logger.debug(f"[HIT] 写入成功: hitId={result.get('id') or result.get('hitId')}")
+        # 同步更新每日关键词统计（keyword_daily_stats 表）
+        if keyword_id and user_id:
+            stat_payload = {
+                "userId": user_id,
+                "keywordId": keyword_id,
+            }
+            stat_result = await api.post("/engine/keyword-stat", stat_payload)
+            if stat_result:
+                logger.debug(f"[HIT] 每日统计更新成功: userId={user_id} keywordId={keyword_id}")
+            else:
+                logger.warning(f"[HIT] 每日统计更新失败: {stat_payload}")
     else:
         logger.warning(f"[HIT] 写入失败: {payload}")
 
