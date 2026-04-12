@@ -232,8 +232,10 @@ def render_template(template: str, variables: dict) -> str:
     return result
 
 
+_dedup_lock = asyncio.Lock() if False else None  # 占位，实际在 main 中初始化
+
 def is_dedup(chat_id: int, message_id: int) -> bool:
-    """消息去重检查，返回 True 表示已处理过（需跳过）"""
+    """消息去重检查（同步版本），返回 True 表示已处理过（需跳过）"""
     key = f"{chat_id}:{message_id}"
     now = time.time()
     if key in _dedup_cache:
@@ -242,6 +244,15 @@ def is_dedup(chat_id: int, message_id: int) -> bool:
     expired = [k for k, ts in _dedup_cache.items() if now - ts > DEDUP_TTL]
     for k in expired:
         del _dedup_cache[k]
+    _dedup_cache[key] = now
+    return False
+
+def is_dedup_user(chat_id: int, message_id: int, user_id: int, keyword: str) -> bool:
+    """用户级消息去重检查，防止同一消息对同一用户重复命中"""
+    key = f"u{user_id}:{chat_id}:{message_id}:{keyword}"
+    now = time.time()
+    if key in _dedup_cache:
+        return True
     _dedup_cache[key] = now
     return False
 
@@ -349,6 +360,11 @@ async def process_message(
             user_match_mode = user_cfg.get("pushSettings", {}).get("keywordMatchMode", "fuzzy")
             for kw in pg_keywords:
                 if match_keyword(text, kw, user_match_mode):
+                    # 用户级去重：防止多账号并发导致同一消息对同一用户重复命中
+                    kw_pattern = kw.get("pattern", "")
+                    if is_dedup_user(chat_id, message_id, user_id, kw_pattern):
+                        logger.debug(f"[Dedup] 跳过重复命中: user={user_id} msg={message_id} kw={kw_pattern!r}")
+                        break
                     await _handle_hit(
                         account_id=account_id,
                         hit_type="public",
@@ -402,6 +418,11 @@ async def process_message(
 
         for kw in keywords_list:
             if match_keyword(text, kw, user_match_mode):
+                # 用户级去重：防止多账号并发导致同一消息对同一用户重复命中
+                kw_pattern = kw.get("pattern", "")
+                if is_dedup_user(chat_id, message_id, user_id, kw_pattern):
+                    logger.debug(f"[Dedup] 跳过重复命中: user={user_id} msg={message_id} kw={kw_pattern!r}")
+                    break
                 await _handle_hit(
                     account_id=account_id,
                     hit_type="user",
