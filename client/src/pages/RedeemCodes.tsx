@@ -114,7 +114,7 @@ export default function RedeemCodes() {
               <Button
                 size="sm"
                 className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
-                onClick={() => generateMutation.mutate({ plan: genPlan, months: genMonths, count: genCount, expireDays: genExpireDays })}
+                onClick={() => generateMutation.mutate({ planId: genPlan, durationMonths: genMonths, count: genCount, expiresInDays: genExpireDays })}
                 disabled={generateMutation.isPending}
               >
                 {generateMutation.isPending ? "生成中..." : `生成 ${genCount} 个卡密`}
