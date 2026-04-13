@@ -56,6 +56,9 @@ logger = logging.getLogger("shentanbot-engine")
 API_BASE        = os.getenv("WEB_API_BASE", "http://localhost:7000/api")
 ENGINE_SECRET   = os.getenv("ENGINE_SECRET", "shentanbot-engine-secret-2026")
 POLL_INTERVAL   = int(os.getenv("POLL_INTERVAL", "30"))
+GROUP_POLL_INTERVAL  = int(os.getenv("GROUP_POLL_INTERVAL", "60"))   # 公共群组轮询间隔（秒）
+GROUP_POLL_LIMIT     = int(os.getenv("GROUP_POLL_LIMIT", "10"))      # 每次轮询拉取的消息数量
+GROUP_POLL_CONCURRENCY = int(os.getenv("GROUP_POLL_CONCURRENCY", "20"))  # 并发轮询数量
 TG_API_ID       = int(os.getenv("TG_API_ID", "0"))
 TG_API_HASH     = os.getenv("TG_API_HASH", "")
 SESSIONS_DIR    = os.getenv("SESSIONS_DIR", os.path.join(_BASE_DIR, "sessions"))
@@ -92,6 +95,10 @@ _monitor_config: Dict[str, Any] = {
 
 # 活跃的 Pyrofork 客户端：{account_id: AccountWorker}
 _active_workers: Dict[int, "AccountWorker"] = {}
+
+# 公共群组轮询状态：{account_id: {chat_id: last_message_id}}
+# 记录每个账号对每个公共群组的最后一条已处理消息 ID
+_poll_state: Dict[int, Dict[int, int]] = {}
 
 # asyncio 锁
 _process_lock: Optional[asyncio.Lock] = None
@@ -352,6 +359,7 @@ async def process_message(
 
     if matched_public_group:
         # 公共群组：遍历所有用户的 globalKeywords 进行匹配
+        logger.info(f"[Match] 公共群组命中: chat={chat_title}({chat_id}) 开始关键词匹配")
         user_configs = config.get("userConfigs", {})
         for uid_str, user_cfg in user_configs.items():
             user_id = int(uid_str)
@@ -362,6 +370,7 @@ async def process_message(
                 if match_keyword(text, kw, user_match_mode):
                     # 用户级去重：防止多账号并发导致同一消息对同一用户重复命中
                     kw_pattern = kw.get("pattern", "")
+                    logger.info(f"[Match] 关键词命中! user={user_id} kw={kw_pattern!r} text={text[:30]!r}")
                     if is_dedup_user(chat_id, message_id, user_id, kw_pattern):
                         logger.debug(f"[Dedup] 跳过重复命中: user={user_id} msg={message_id} kw={kw_pattern!r}")
                         break
@@ -385,6 +394,8 @@ async def process_message(
                     break  # 每个用户每条消息只推送一次
 
     # ── 用户私有关键词匹配 ──────────────────────────────────
+    if not matched_public_group:
+        logger.debug(f"[Match] 非公共群组: chat={chat_id} 进入私有关键词匹配")
     user_configs = config.get("userConfigs", {})
     if not user_configs:
         logger.debug(f"[Match] 无用户配置，跳过私有关键词匹配")
@@ -549,6 +560,248 @@ class AccountWorker:
         """获取 session 文件路径（用于 string session 或文件 session）"""
         return os.path.join(SESSIONS_DIR, f"account_{self.account_id}")
 
+    async def _warm_up_groups(self) -> None:
+        """
+        激活公共群组的 updates 流（使用 MTProto raw API）。
+
+        【机制说明】
+        Pyrofork 使用 MemoryStorage（session_string 模式），本身不持久化 channel pts。
+        Telegram 服务器对于「未活跃」的 channel 不会主动推送 UpdateNewChannelMessage，
+        需要客户端主动调用 GetChannelDifference 来告知服务器「我在监听这个 channel」。
+
+        【关键发现】
+        Pyrofork 2.x 的 MemoryStorage/SQLiteStorage 均不提供 update_state 方法，
+        因此无法通过 storage 持久化 pts。但 GetChannelDifference 调用本身会：
+        1. 让 TG 服务器知道客户端关注该 channel（触发后续 updates 推送）
+        2. 将 channel 的 peer 信息写入 storage.peers（使 resolve_peer 生效）
+        3. 通过 handle_updates 回调将 diff 中的新消息注入 dispatcher
+
+        【正确做法】
+        调用 GetChannelDifference 后，将返回的 diff 交给 client.handle_updates() 处理，
+        这样 Pyrofork 内部的 pts 跟踪机制会被正确触发，后续实时消息才能被推送。
+        """
+        from pyrogram import raw as pyrogram_raw
+        if not self.client or not self.client.is_connected:
+            return
+        async with _config_lock:
+            config = _monitor_config
+        public_groups = config.get("publicGroups", [])
+        if not public_groups:
+            return
+        # 只激活该账号已加入的群组（与轮询逻辑保持一致）
+        # joinedAccountIds 为空列表时表示尚未记录加入状态，保守处理：跳过（等待加群任务完成后再激活）
+        my_groups = [
+            pg for pg in public_groups
+            if self.account_id in pg.get("joinedAccountIds", [])
+        ]
+        logger.info(
+            f"[Account {self.account_id}] 开始激活 {len(my_groups)}/{len(public_groups)} 个公共群组的 updates 流..."
+        )
+        activated = 0
+        failed = 0
+        for pg in my_groups:
+            if not self._running:
+                break
+            group_id = pg.get("groupId", "")
+            real_id = pg.get("realId", "")
+            # 优先用 realId（数字 chat_id），避免 username 解析
+            target = real_id if real_id else group_id
+            if not target:
+                continue
+            try:
+                # 尝试转为整数 chat_id
+                if isinstance(target, str) and target.lstrip("-").isdigit():
+                    target = int(target)
+                # 使用 raw API GetChannelDifference 激活 updates 流
+                peer = await self.client.resolve_peer(target)
+                if isinstance(peer, pyrogram_raw.types.InputPeerChannel):
+                    # 超级群组/频道：使用 GetChannelDifference
+                    input_channel = pyrogram_raw.types.InputChannel(
+                        channel_id=peer.channel_id,
+                        access_hash=peer.access_hash
+                    )
+                    try:
+                        diff = await self.client.invoke(
+                            pyrogram_raw.functions.updates.GetChannelDifference(
+                                channel=input_channel,
+                                filter=pyrogram_raw.types.ChannelMessagesFilterEmpty(),
+                                pts=1,
+                                limit=1,
+                                force=True
+                            )
+                        )
+                        # 【关键修复】将 diff 交给 handle_updates 处理
+                        # 这会触发 Pyrofork 内部 pts 跟踪，让 TG 服务器持续推送该 channel 的实时消息
+                        # 注意：handle_updates 接收 Updates 类型，需要将 ChannelDifference 包装
+                        # GetChannelDifference 返回的 diff 本身包含 new_messages 和 other_updates
+                        # 直接调用 handle_updates 处理 diff 中的 other_updates（含 UpdateChannelTooLong 等）
+                        if hasattr(diff, 'other_updates') and diff.other_updates:
+                            # 构造 Updates 对象让 Pyrofork 内部处理 pts 状态
+                            fake_updates = pyrogram_raw.types.Updates(
+                                updates=diff.other_updates,
+                                users=getattr(diff, 'users', []),
+                                chats=getattr(diff, 'chats', []),
+                                date=0,
+                                seq=0
+                            )
+                            await self.client.handle_updates(fake_updates)
+                        activated += 1
+                    except Exception as e:
+                        err_str = str(e)
+                        if 'CHANNEL_PRIVATE' in err_str or 'ChannelPrivate' in err_str:
+                            # 账号未加入该群组，正常跳过
+                            failed += 1
+                        else:
+                            failed += 1
+                            logger.debug(f"[Account {self.account_id}] GetChannelDiff {group_id} 失败: {e}")
+                else:
+                    # 普通群组：使用 get_chat_history 激活
+                    async for _ in self.client.get_chat_history(target, limit=1):
+                        break
+                    activated += 1
+                # 小延迟防止 FloodWait
+                await asyncio.sleep(0.3)
+            except FloodWait as e:
+                logger.debug(f"[Account {self.account_id}] 激活 {group_id} FloodWait {e.value}s")
+                await asyncio.sleep(min(e.value, 30))
+            except Exception as e:
+                failed += 1
+                logger.debug(f"[Account {self.account_id}] 激活 {group_id} 失败: {e}")
+        logger.info(
+            f"[Account {self.account_id}] 群组激活完成: "
+            f"成功={activated} 失败={failed} 共={len(my_groups)}（总群组={len(public_groups)}）"
+        )
+
+    async def _poll_public_groups(self) -> None:
+        """
+        轮询公共群组消息（补充 updates 流的漏洞）。
+
+        Telegram 服务器对加入了大量群组的账号有 updates 推送限制，
+        部分群组的消息不会通过 updates 流推送。
+        本方法通过定期主动拉取 get_chat_history 来补充这些漏洞。
+
+        策略：
+        - 每次拉取最新 GROUP_POLL_LIMIT 条消息
+        - 只处理比上次轮询更新的消息（通过 last_message_id 去重）
+        - 使用全局消息去重缓存防止与 updates 流重复处理
+        - 只轮询该账号已加入（subscribed）的公共群组
+        """
+        global _poll_state
+        if not self.client or not self.client.is_connected:
+            return
+        async with _config_lock:
+            config = _monitor_config
+        public_groups = config.get("publicGroups", [])
+        if not public_groups:
+            return
+
+        # 获取该账号的轮询状态
+        if self.account_id not in _poll_state:
+            _poll_state[self.account_id] = {}
+        my_poll_state = _poll_state[self.account_id]
+
+        # 筛选该账号需要轮询的群组列表
+        targets = []
+        for pg in public_groups:
+            group_id = pg.get("groupId", "")
+            real_id  = pg.get("realId", "")
+            target   = real_id if real_id else group_id
+            if not target:
+                continue
+            # 只轮询该账号已加入的群组
+            joined_ids = pg.get("joinedAccountIds", [])
+            if joined_ids and self.account_id not in joined_ids:
+                continue
+            # 转换为整数 chat_id
+            if isinstance(target, str) and target.lstrip("-").isdigit():
+                target_int = int(target)
+            elif isinstance(target, int):
+                target_int = target
+            else:
+                continue  # username 形式，暂不轮询
+            targets.append((target_int, group_id))
+
+        if not targets:
+            return
+
+        # 并发计数器（线程安全）
+        polled_count = 0
+        new_msgs_count = 0
+        count_lock = asyncio.Lock()
+
+        async def poll_one(target_int: int, group_id: str) -> None:
+            nonlocal polled_count, new_msgs_count
+            if not self._running:
+                return
+            try:
+                last_id = my_poll_state.get(target_int, 0)
+                messages = []
+                async for msg in self.client.get_chat_history(target_int, limit=GROUP_POLL_LIMIT):
+                    messages.append(msg)
+                if not messages:
+                    return
+                newest_id = messages[0].id
+                my_poll_state[target_int] = newest_id
+                local_new = 0
+                for msg in messages:
+                    if msg.id <= last_id:
+                        break
+                    await self._handle_message(msg)
+                    local_new += 1
+                async with count_lock:
+                    polled_count += 1
+                    new_msgs_count += local_new
+            except FloodWait as e:
+                logger.debug(f"[Account {self.account_id}] 轮询 {group_id} FloodWait {e.value}s")
+                await asyncio.sleep(min(e.value, 30))
+            except Exception as e:
+                err_str = str(e)
+                if 'CHANNEL_PRIVATE' not in err_str and 'ChannelPrivate' not in err_str:
+                    logger.debug(f"[Account {self.account_id}] 轮询 {group_id} 失败: {e}")
+
+        # 使用 Semaphore 控制并发数，分批并发执行
+        sem = asyncio.Semaphore(GROUP_POLL_CONCURRENCY)
+
+        async def poll_with_sem(target_int: int, group_id: str) -> None:
+            async with sem:
+                await poll_one(target_int, group_id)
+
+        # 全部并发执行
+        await asyncio.gather(*[poll_with_sem(t, g) for t, g in targets])
+
+        if new_msgs_count > 0:
+            logger.info(
+                f"[Account {self.account_id}] 轮询完成: "
+                f"轮询群组={polled_count} 新消息={new_msgs_count}"
+            )
+
+    async def _warm_up_loop(self) -> None:
+        """主循环：先激活 updates 流，然后定期轮询公共群组消息"""
+        # 首次启动延迟5秒，等待引擎完全就绪
+        await asyncio.sleep(5)
+        # 第一次激活 updates 流
+        try:
+            await self._warm_up_groups()
+        except Exception as e:
+            logger.warning(f"[Account {self.account_id}] 群组激活异常: {e}")
+
+        # 进入轮询循环
+        warmup_counter = 0
+        while self._running:
+            try:
+                await self._poll_public_groups()
+            except Exception as e:
+                logger.warning(f"[Account {self.account_id}] 轮询循环异常: {e}")
+            # 每小时重新激活一次 updates 流
+            warmup_counter += 1
+            if warmup_counter >= 3600 // GROUP_POLL_INTERVAL:
+                warmup_counter = 0
+                try:
+                    await self._warm_up_groups()
+                except Exception as e:
+                    logger.warning(f"[Account {self.account_id}] 群组重激活异常: {e}")
+            await asyncio.sleep(GROUP_POLL_INTERVAL)
+
     async def start(self) -> bool:
         """启动账号客户端"""
         if not self.session_string:
@@ -599,6 +852,9 @@ class AccountWorker:
                 "tgFirstName": me.first_name or "",
             })
 
+            # 启动群组激活后台任务（激活公共群组的 updates 流）
+            self._task = asyncio.create_task(self._warm_up_loop())
+
             return True
 
         except (AuthKeyUnregistered, SessionExpired, SessionRevoked) as e:
@@ -627,6 +883,12 @@ class AccountWorker:
     async def stop(self) -> None:
         """停止账号客户端"""
         self._running = False
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
         if self.client:
             try:
                 await self.client.stop()
@@ -1156,6 +1418,66 @@ async def http_force_sync(request: aiohttp_web.Request) -> aiohttp_web.Response:
         logger.error(f"[force-sync] 同步失败: {e}")
         return aiohttp_web.json_response({"success": False, "message": str(e)}, status=500)
 
+async def http_resolve_group(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    """
+    解析群组信息：通过 groupId（用户名）或 realId（数字ID）获取真实群组名称和 chat_id
+    POST /resolve-group
+    Body: { "group_id": "enjoysearch" }  或  { "group_id": "-1001234567890" }
+    Response: { "success": true, "title": "老司机最强搜片神器", "real_id": "-1001234567890" }
+    """
+    secret = request.headers.get("X-Engine-Secret", "")
+    if secret != ENGINE_SECRET:
+        return aiohttp_web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        return aiohttp_web.json_response({"error": "invalid json"}, status=400)
+
+    group_id = body.get("group_id", "").strip()
+    if not group_id:
+        return aiohttp_web.json_response({"error": "group_id is required"}, status=400)
+
+    # 找一个活跃的账号来查询
+    worker = None
+    for w in _active_workers.values():
+        if w.client and w.client.is_connected:
+            worker = w
+            break
+
+    if not worker:
+        return aiohttp_web.json_response({"error": "no active accounts"}, status=503)
+
+    try:
+        # 如果是数字ID，转换为整数
+        target = group_id
+        if group_id.lstrip("-").isdigit():
+            target = int(group_id)
+        # 去掉 @ 前缀
+        elif group_id.startswith("@"):
+            target = group_id[1:]
+        # 去掉 https://t.me/ 前缀
+        elif group_id.startswith("https://t.me/") and "+" not in group_id:
+            target = group_id.replace("https://t.me/", "")
+
+        chat = await worker.client.get_chat(target)
+        title = chat.title or chat.first_name or group_id
+        real_id = str(chat.id)
+        return aiohttp_web.json_response({
+            "success": True,
+            "title": title,
+            "real_id": real_id,
+            "username": chat.username or "",
+            "members_count": getattr(chat, 'members_count', 0) or 0
+        })
+    except Exception as e:
+        logger.warning(f"[resolve-group] 查询失败: {group_id}: {type(e).__name__}: {e}")
+        return aiohttp_web.json_response({
+            "success": False,
+            "error": type(e).__name__,
+            "message": str(e)
+        }, status=200)  # 返回 200 让调用方处理错误
+
+
 async def start_http_server() -> None:
     """启动引擎 HTTP 服务"""
     app = aiohttp_web.Application()
@@ -1164,6 +1486,7 @@ async def start_http_server() -> None:
     app.router.add_post("/batch-join-groups", http_batch_join_groups)
     app.router.add_post("/scan-joined-groups", http_scan_joined_groups)
     app.router.add_post("/force-sync", http_force_sync)
+    app.router.add_post("/resolve-group", http_resolve_group)
 
     runner = aiohttp_web.AppRunner(app)
     await runner.setup()
