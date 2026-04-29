@@ -240,6 +240,98 @@ export const systemConfigRouter = router({
     }),
 
   // 删除公共群组（真正删除记录）
+  batchAddPublicGroups: adminProcedure
+    .input(z.object({
+      groupIds: z.array(z.string().min(1)).min(1).max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+
+      // 标准化 groupId
+      const normalize = (raw: string): string => {
+        let g = raw.trim();
+        if (g.startsWith('@')) g = g.slice(1);
+        // 清理消息链接尾部数字（如 TGDH5/11326266 -> TGDH5）
+        g = g.replace(/\/[0-9]{3,}$/, '');
+        return g;
+      };
+
+      const normalized = [...new Set(input.groupIds.map(normalize).filter(g => g.length > 0))];
+
+      // 查出已存在的 groupId
+      const existing = await db.select({ groupId: publicMonitorGroups.groupId })
+        .from(publicMonitorGroups)
+        .where(inArray(publicMonitorGroups.groupId, normalized));
+      const existingSet = new Set(existing.map(e => e.groupId));
+      const toAdd = normalized.filter(g => !existingSet.has(g));
+
+      // 过滤出真正需要新增的
+      const skipped = normalized.length - toAdd.length;
+
+      if (toAdd.length > 0) {
+        // 分批插入，每批 500 条
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < toAdd.length; i += BATCH_SIZE) {
+          const batch = toAdd.slice(i, i + BATCH_SIZE);
+          await db.insert(publicMonitorGroups).values(
+            batch.map(g => ({
+              groupId: g,
+              groupTitle: g,
+              groupType: 'group' as const,
+              isActive: true,
+              addedBy: ctx.user.id,
+              note: null,
+              realId: null,
+            }))
+          );
+        }
+      }
+
+      return { success: true, added: toAdd.length, skipped, total: normalized.length };
+    }),
+  // 按账号配额分配公共群组
+  distributeGroups: adminProcedure
+    .mutation(async () => {
+      const db = await getDb();
+      // 获取所有活跃账号
+      const accounts = await db.select().from(tgAccounts).where(eq(tgAccounts.isActive, true));
+      // 获取所有活跃公共群组
+      const allGroups = await db.select({ id: publicMonitorGroups.id })
+        .from(publicMonitorGroups)
+        .where(eq(publicMonitorGroups.isActive, true));
+      let totalAssigned = 0;
+      for (const account of accounts) {
+        const maxGroups = (account as any).maxGroupsLimit ?? 50;
+        // 当前已分配数量
+        const currentRows = await db.select({ count: sql })
+          .from(publicGroupJoinStatus)
+          .where(eq(publicGroupJoinStatus.monitorAccountId, account.id));
+        const currentCount = Number((currentRows[0] as any)?.count ?? 0);
+        const remaining = maxGroups - currentCount;
+        if (remaining <= 0) continue;
+        // 找出该账号未分配的群组
+        const assignedRows = await db.select({ publicGroupId: publicGroupJoinStatus.publicGroupId })
+          .from(publicGroupJoinStatus)
+          .where(eq(publicGroupJoinStatus.monitorAccountId, account.id));
+        const assignedSet = new Set(assignedRows.map(r => r.publicGroupId));
+        const unassigned = allGroups.filter(g => !assignedSet.has(g.id)).slice(0, remaining);
+        if (unassigned.length === 0) continue;
+        await db.insert(publicGroupJoinStatus).values(
+          unassigned.map(g => ({
+            publicGroupId: g.id,
+            monitorAccountId: account.id,
+            status: 'pending' as const,
+            retryCount: 0,
+            lastAttemptAt: null,
+            joinedAt: null,
+            note: null,
+          }))
+        );
+        totalAssigned += unassigned.length;
+      }
+      return { success: true, assigned: totalAssigned };
+    }),
+  // 删除公共群组（真正删除记录）
   removePublicGroup: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {

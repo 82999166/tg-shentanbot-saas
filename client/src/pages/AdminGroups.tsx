@@ -315,6 +315,26 @@ export default function AdminGroups() {
     setBatchStep("preview");
   }
 
+    const batchAddGroupMut = trpc.sysConfig.batchAddPublicGroups.useMutation({
+    onError: (err: any) => toast.error('批量导入失败: ' + err.message),
+  });
+
+  const batchRemoveGroups = trpc.sysConfig.batchRemovePublicGroups.useMutation({
+    onSuccess: (data) => {
+      toast.success(`已删除 ${data.deleted} 个群组`);
+      setSelectedIds([]);
+      refetch();
+    },
+    onError: (err) => toast.error("批量删除失败: " + err.message),
+  });
+  const distributeGroupsMut = trpc.sysConfig.distributeGroups.useMutation({
+    onSuccess: (data) => {
+      toast.success(`按配额分配完成：共分配 ${data.assigned} 条`);
+      refetch();
+    },
+    onError: (err: any) => toast.error("按配额分配失败: " + err.message),
+  });
+
   async function handleBatchImport() {
     if (batchParsed.length === 0) return;
     setIsBatchRunning(true);
@@ -407,6 +427,19 @@ export default function AdminGroups() {
             <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching}>
               <RefreshCw className={`w-4 h-4 mr-1 ${isRefetching ? 'animate-spin' : ''}`} />
               刷新
+            </Button>
+              <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (confirm("按各 TG 账号剩余配额，将未分配的公共群组分配给账号？")) {
+                  distributeGroupsMut.mutate();
+                }
+              }}
+              disabled={distributeGroupsMut.isPending}
+              className="border-green-500/50 text-green-400 hover:bg-green-500/10"
+            >
+              {distributeGroupsMut.isPending ? "分配中..." : "按配额分配"}
             </Button>
             <Button
               variant="outline"

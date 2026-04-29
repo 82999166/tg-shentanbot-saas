@@ -614,6 +614,47 @@ export const tgAccountsRouter = router({
         })),
       };
     }),
+
+  getAccountPendingGroups: adminProcedure
+    .input(z.object({ accountId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '数据库不可用' });
+      const rows = await db.select({
+        id: publicGroupJoinStatus.id,
+        publicGroupId: publicGroupJoinStatus.publicGroupId,
+        status: publicGroupJoinStatus.status,
+        errorMsg: publicGroupJoinStatus.errorMsg,
+        updatedAt: publicGroupJoinStatus.updatedAt,
+        groupId: publicMonitorGroups.groupId,
+        groupTitle: publicMonitorGroups.groupTitle,
+        groupType: publicMonitorGroups.groupType,
+        isActive: publicMonitorGroups.isActive,
+      })
+        .from(publicGroupJoinStatus)
+        .leftJoin(publicMonitorGroups, eq(publicGroupJoinStatus.publicGroupId, publicMonitorGroups.id))
+        .where(
+          sql`${publicGroupJoinStatus.monitorAccountId} = ${input.accountId}
+              AND ${publicGroupJoinStatus.status} IN ('pending', 'joining', 'failed', 'not_found')`
+        )
+        .orderBy(desc(publicGroupJoinStatus.updatedAt));
+      return {
+        total: rows.length,
+        groups: rows.map(r => ({
+          id: r.id,
+          publicGroupId: r.publicGroupId,
+          groupId: r.groupId ?? '',
+          groupTitle: r.groupTitle ?? r.groupId ?? '',
+          groupType: r.groupType ?? 'group',
+          isActive: r.isActive ?? true,
+          status: r.status,
+          errorMsg: r.errorMsg ?? '',
+          updatedAt: r.updatedAt,
+          link: r.groupId ? `https://t.me/${r.groupId}` : '',
+        })),
+      };
+    }),
+
 });
 
 // ─── 保存账号到数据库（检查配额）─────────────────────────────────────────
