@@ -115,6 +115,18 @@ export default function AdminGroups() {
     onError: (err) => toast.error("批量删除失败: " + err.message),
   });
 
+  const batchAddGroupMut = trpc.sysConfig.batchAddPublicGroups.useMutation({
+    onError: (err: any) => toast.error('批量导入失败: ' + err.message),
+  });
+
+  const distributeGroupsMut = trpc.sysConfig.distributeGroups.useMutation({
+    onSuccess: (data) => {
+      toast.success(`按配额分配完成：共分配 ${data.assigned} 条`);
+      refetch();
+    },
+    onError: (err: any) => toast.error("按配额分配失败: " + err.message),
+  });
+
   const removeGroup = trpc.sysConfig.removePublicGroup.useMutation({
     onSuccess: () => {
       utils.sysConfig.getPublicGroups.invalidate();
@@ -314,26 +326,6 @@ export default function AdminGroups() {
     setBatchParsed(parsed);
     setBatchStep("preview");
   }
-
-    const batchAddGroupMut = trpc.sysConfig.batchAddPublicGroups.useMutation({
-    onError: (err: any) => toast.error('批量导入失败: ' + err.message),
-  });
-
-  const batchRemoveGroups = trpc.sysConfig.batchRemovePublicGroups.useMutation({
-    onSuccess: (data) => {
-      toast.success(`已删除 ${data.deleted} 个群组`);
-      setSelectedIds([]);
-      refetch();
-    },
-    onError: (err) => toast.error("批量删除失败: " + err.message),
-  });
-  const distributeGroupsMut = trpc.sysConfig.distributeGroups.useMutation({
-    onSuccess: (data) => {
-      toast.success(`按配额分配完成：共分配 ${data.assigned} 条`);
-      refetch();
-    },
-    onError: (err: any) => toast.error("按配额分配失败: " + err.message),
-  });
 
   async function handleBatchImport() {
     if (batchParsed.length === 0) return;

@@ -300,21 +300,21 @@ export const systemConfigRouter = router({
         .from(publicMonitorGroups)
         .where(eq(publicMonitorGroups.isActive, true));
       let totalAssigned = 0;
+      // 全局已分配群组集合（跨所有账号），确保每个群组只分配给一个账号
+      const globalAssignedRows = await db.select({ publicGroupId: publicGroupJoinStatus.publicGroupId })
+        .from(publicGroupJoinStatus);
+      const globalAssignedSet = new Set(globalAssignedRows.map(r => r.publicGroupId));
       for (const account of accounts) {
         const maxGroups = (account as any).maxGroupsLimit ?? 50;
-        // 当前已分配数量
-        const currentRows = await db.select({ count: sql })
+        // 当前该账号已分配数量
+        const currentRows = await db.select({ count: sql`COUNT(*)` })
           .from(publicGroupJoinStatus)
           .where(eq(publicGroupJoinStatus.monitorAccountId, account.id));
         const currentCount = Number((currentRows[0] as any)?.count ?? 0);
         const remaining = maxGroups - currentCount;
         if (remaining <= 0) continue;
-        // 找出该账号未分配的群组
-        const assignedRows = await db.select({ publicGroupId: publicGroupJoinStatus.publicGroupId })
-          .from(publicGroupJoinStatus)
-          .where(eq(publicGroupJoinStatus.monitorAccountId, account.id));
-        const assignedSet = new Set(assignedRows.map(r => r.publicGroupId));
-        const unassigned = allGroups.filter(g => !assignedSet.has(g.id)).slice(0, remaining);
+        // 从全局未分配的群组中取出该账号还能分配的数量
+        const unassigned = allGroups.filter(g => !globalAssignedSet.has(g.id)).slice(0, remaining);
         if (unassigned.length === 0) continue;
         await db.insert(publicGroupJoinStatus).values(
           unassigned.map(g => ({
@@ -327,6 +327,8 @@ export const systemConfigRouter = router({
             note: null,
           }))
         );
+        // 将本次分配的群组加入全局已分配集合，避免后续账号重复分配
+        unassigned.forEach(g => globalAssignedSet.add(g.id));
         totalAssigned += unassigned.length;
       }
       return { success: true, assigned: totalAssigned };
