@@ -203,7 +203,7 @@ export default function Templates() {
 
       {/* 新建模板对话框 */}
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setForm(defaultForm); }}>
-        <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] flex flex-col">
+        <DialogContent className="bg-card border-border max-w-lg h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle>新建消息模板</DialogTitle>
           </DialogHeader>
@@ -221,7 +221,7 @@ export default function Templates() {
 
       {/* 编辑模板对话框 */}
       <Dialog open={editOpen} onOpenChange={(v) => { setEditOpen(v); if (!v) { setEditId(null); setForm(defaultForm); } }}>
-        <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] flex flex-col">
+        <DialogContent className="bg-card border-border max-w-lg h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle>编辑消息模板</DialogTitle>
           </DialogHeader>

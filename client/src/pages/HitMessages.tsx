@@ -414,7 +414,7 @@ export default function HitMessages() {
 
       {/* 屏蔽对话框 */}
       <Dialog open={!!blockDialog} onOpenChange={() => setBlockDialog(null)}>
-        <DialogContent className="max-h-[90vh] flex flex-col">
+        <DialogContent className="h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <UserX className="h-5 w-5 text-red-500" />

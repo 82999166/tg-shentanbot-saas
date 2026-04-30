@@ -285,7 +285,7 @@ export default function MonitorGroups() {
 
       {/* ─── 添加群组对话框 ──────────────────────────────────────────────────── */}
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetAddDialog(); }}>
-        <DialogContent className="bg-card border-border max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogContent className="bg-card border-border max-w-2xl h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>添加监控群组</DialogTitle>
           </DialogHeader>

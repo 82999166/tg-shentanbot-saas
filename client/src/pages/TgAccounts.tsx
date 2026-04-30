@@ -665,7 +665,7 @@ export default function TgAccounts() {
 
       {/* ─── 批量导入 Session Dialog ────────────────────────────────────────── */}
       <Dialog open={addMode === "session_bulk"} onOpenChange={(o) => { if (!o) closeDialog(); }}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-5 h-5 text-cyan-400" /> 批量导入 Session
@@ -812,7 +812,7 @@ export default function TgAccounts() {
 
         {/* ─── 编辑账号 Dialog ────────────────────────────────────────────────── */}
       <Dialog open={editAccount !== null} onOpenChange={(o) => { if (!o) setEditAccount(null); }}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[85vh] flex flex-col">
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2"><Edit2 className="w-5 h-5 text-blue-400" /> 编辑账号</DialogTitle>
             <DialogDescription className="text-slate-400">修改账号信息，或查看该账号已加入的群组</DialogDescription>
@@ -990,7 +990,7 @@ export default function TgAccounts() {
 
        {/* ─── 导入群组到公共群组池 Dialog ─────────────────────────────────── */}
       <Dialog open={importChatsAccountId !== null} onOpenChange={(o) => { if (!o) { setImportChatsAccountId(null); setImportChatsList([]); setImportChatsSelected(new Set()); setImportChatsStep('loading'); setImportChatsError(''); } }}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FolderInput className="w-5 h-5 text-purple-400" /> 从TG账号导入群组到公共群组池

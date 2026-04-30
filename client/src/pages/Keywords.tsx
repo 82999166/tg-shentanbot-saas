@@ -332,7 +332,7 @@ export default function Keywords() {
 
       {/* 添加关键词对话框 */}
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setForm(defaultForm); setTestResult(null); } }}>
-        <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-card border-border max-w-lg h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>添加关键词</DialogTitle>
           </DialogHeader>
@@ -357,7 +357,7 @@ export default function Keywords() {
 
       {/* 编辑关键词对话框 */}
       <Dialog open={editOpen} onOpenChange={(v) => { setEditOpen(v); if (!v) { setEditId(null); setForm(defaultForm); setTestResult(null); } }}>
-        <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-card border-border max-w-lg h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>编辑关键词</DialogTitle>
           </DialogHeader>

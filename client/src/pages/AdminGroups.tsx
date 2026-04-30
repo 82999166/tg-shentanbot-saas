@@ -771,7 +771,7 @@ export default function AdminGroups() {
         </Card>
         {/* 添加群组对话框 */}
         <Dialog open={addDialog} onOpenChange={setAddDialog}>
-          <DialogContent className="max-h-[90vh] flex flex-col">
+          <DialogContent className="h-[85vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>添加公共监控群组</DialogTitle>
             </DialogHeader>
@@ -828,7 +828,7 @@ export default function AdminGroups() {
 
         {/* 从TG账号导入对话框 */}
         <Dialog open={accountImportDialog} onOpenChange={(o) => { if (!o) closeAccountImportDialog(); }}>
-          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogContent className="max-w-2xl h-[85vh] flex flex-col">
             <DialogHeader className="shrink-0">
               <DialogTitle className="flex items-center gap-2">
                 <Smartphone className="w-5 h-5 text-green-400" />
@@ -966,7 +966,7 @@ export default function AdminGroups() {
 
         {/* 批量导入对话框 */}
         <Dialog open={batchDialog} onOpenChange={(o) => { if (!o) closeBatchDialog(); }}>
-          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogContent className="max-w-2xl h-[85vh] flex flex-col">
             <DialogHeader className="shrink-0">
               <DialogTitle className="flex items-center gap-2">
                 <Upload className="w-5 h-5 text-blue-400" />
@@ -1138,7 +1138,7 @@ export default function AdminGroups() {
 
         {/* 导出群组链接对话框 */}
         <Dialog open={exportDialog} onOpenChange={setExportDialog}>
-          <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+          <DialogContent className="max-w-3xl h-[85vh] flex flex-col">
             <DialogHeader className="shrink-0">
               <DialogTitle className="flex items-center gap-2">
                 <Download className="w-5 h-5 text-cyan-400" />
@@ -1223,7 +1223,7 @@ export default function AdminGroups() {
 
         {/* 账号加群状态对话框 */}
         <Dialog open={viewStatusGroupId !== null} onOpenChange={() => setViewStatusGroupId(null)}>
-          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogContent className="max-w-2xl h-[85vh] flex flex-col">
             <DialogHeader className="shrink-0">
               <DialogTitle>账号加群状态</DialogTitle>
             </DialogHeader>

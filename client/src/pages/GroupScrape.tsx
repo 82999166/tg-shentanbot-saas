@@ -1126,7 +1126,7 @@ export default function GroupScrape() {
 
       {/* ── 新建任务弹窗 ── */}
       <Dialog open={createDialog} onOpenChange={setCreateDialog}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-lg max-h-[90vh] flex flex-col">
+        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-lg h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle>新建采集任务</DialogTitle>
             <DialogDescription className="text-gray-400">
@@ -1169,7 +1169,7 @@ export default function GroupScrape() {
 
       {/* ── 编辑任务弹窗 ── */}
       <Dialog open={editDialog} onOpenChange={v => { setEditDialog(v); if (!v) setEditingTask(null); }}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-lg max-h-[90vh] flex flex-col">
+        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-lg h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle>编辑采集任务</DialogTitle>
             <DialogDescription className="text-gray-400">

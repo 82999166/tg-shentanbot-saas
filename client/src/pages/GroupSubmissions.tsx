@@ -287,7 +287,7 @@ export default function GroupSubmissions() {
 
       {/* 拒绝对话框 */}
       <Dialog open={!!rejectDialog} onOpenChange={() => setRejectDialog(null)}>
-        <DialogContent className="max-h-[90vh] flex flex-col">
+        <DialogContent className="h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle>填写拒绝原因</DialogTitle>
           </DialogHeader>
