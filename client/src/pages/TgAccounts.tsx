@@ -89,6 +89,18 @@ export default function TgAccounts() {
   const [editAccount, setEditAccount] = useState<{ id: number; accountRole: string; notes: string; maxGroupsLimit: number | null } | null>(null);
   const updateAccount = trpc.tgAccounts.update.useMutation();
 
+  // 加群配置（全局）
+  const { data: joinConfig } = trpc.sysConfig.getJoinConfig.useQuery();
+  const [joinCfgMin, setJoinCfgMin] = useState(30);
+  const [joinCfgMax, setJoinCfgMax] = useState(60);
+  const [joinCfgMax2, setJoinCfgMax2] = useState(300);
+  const [joinCfgEnabled, setJoinCfgEnabled] = useState(true);
+  const [joinCfgLoaded, setJoinCfgLoaded] = useState(false);
+  const updateJoinConfig = trpc.sysConfig.updateJoinConfig.useMutation({
+    onSuccess: () => toast.success('加群配置已保存'),
+    onError: (e: any) => toast.error('保存失败: ' + e.message),
+  });
+
   // 手机号登录状态
   const [phoneStep, setPhoneStep] = useState<PhoneStep>("phone");
   const [phoneForm, setPhoneForm] = useState({ phone: "", code: "", password: "", role: "both" as "monitor" | "sender" | "both" });
@@ -811,6 +823,15 @@ export default function TgAccounts() {
                 <TabsTrigger value="info" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">基本信息</TabsTrigger>
                 <TabsTrigger value="groups" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">已加入群组</TabsTrigger>
                 <TabsTrigger value="pending" className="data-[state=active]:bg-yellow-600 data-[state=active]:text-white">待加入群组</TabsTrigger>
+                <TabsTrigger value="joinconfig" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white" onClick={() => {
+                  if (!joinCfgLoaded && joinConfig) {
+                    setJoinCfgMin(joinConfig.joinIntervalMin);
+                    setJoinCfgMax(joinConfig.joinIntervalMax);
+                    setJoinCfgMax2(joinConfig.maxGroupsPerAccount);
+                    setJoinCfgEnabled(joinConfig.joinEnabled);
+                    setJoinCfgLoaded(true);
+                  }
+                }}>加群配置</TabsTrigger>
               </TabsList>
 
               {/* ── 基本信息 Tab ── */}
@@ -886,6 +907,81 @@ export default function TgAccounts() {
               {/* ── 待加入群组 Tab ── */}
               <TabsContent value="pending" className="flex-1 flex flex-col min-h-0">
                 <AccountPendingGroupsTab accountId={editAccount.id} />
+              </TabsContent>
+
+              {/* ── 加群配置 Tab ── */}
+              <TabsContent value="joinconfig" className="flex-1 overflow-y-auto">
+                <div className="space-y-4 py-2">
+                  <div className="p-3 bg-purple-900/20 border border-purple-700/40 rounded-lg text-xs text-purple-300">
+                    以下为全局加群参数，影响所有系统账号。账号级别的加群上限可在「基本信息」tab 中单独设置。
+                  </div>
+                  {/* 启用自动加群 */}
+                  <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                    <div>
+                      <p className="text-sm font-medium text-white">启用自动加群</p>
+                      <p className="text-xs text-slate-400">引擎启动时自动让监控账号加入所有公共群组</p>
+                    </div>
+                    <button
+                      onClick={() => setJoinCfgEnabled(v => !v)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        joinCfgEnabled ? 'bg-yellow-500' : 'bg-slate-600'
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        joinCfgEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </button>
+                  </div>
+                  {/* 加群间隔 */}
+                  <div className="space-y-2">
+                    <Label className="text-slate-300 text-sm">加群间隔（秒）</Label>
+                    <p className="text-xs text-slate-500">每次加群之间的随机等待时间，建议 30-120 秒防封号</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-slate-400">最小间隔（秒）</Label>
+                        <Input
+                          type="number" min={5} max={3600}
+                          value={joinCfgLoaded ? joinCfgMin : (joinConfig?.joinIntervalMin ?? 30)}
+                          onChange={(e) => { setJoinCfgLoaded(true); setJoinCfgMin(Number(e.target.value)); }}
+                          className="bg-slate-800 border-slate-600 text-white"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-slate-400">最大间隔（秒）</Label>
+                        <Input
+                          type="number" min={5} max={3600}
+                          value={joinCfgLoaded ? joinCfgMax : (joinConfig?.joinIntervalMax ?? 60)}
+                          onChange={(e) => { setJoinCfgLoaded(true); setJoinCfgMax(Number(e.target.value)); }}
+                          className="bg-slate-800 border-slate-600 text-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  {/* 每账号最多加入群组数 */}
+                  <div className="space-y-2">
+                    <Label className="text-slate-300 text-sm">全局每账号最多加入群组数</Label>
+                    <p className="text-xs text-slate-500">单个监控账号最多加入的群组数量，超出部分由其他账号负责</p>
+                    <Input
+                      type="number" min={1} max={2000}
+                      value={joinCfgLoaded ? joinCfgMax2 : (joinConfig?.maxGroupsPerAccount ?? 300)}
+                      onChange={(e) => { setJoinCfgLoaded(true); setJoinCfgMax2(Number(e.target.value)); }}
+                      className="bg-slate-800 border-slate-600 text-white"
+                    />
+                  </div>
+                  <Button
+                    onClick={() => updateJoinConfig.mutate({
+                      joinIntervalMin: joinCfgLoaded ? joinCfgMin : (joinConfig?.joinIntervalMin ?? 30),
+                      joinIntervalMax: joinCfgLoaded ? joinCfgMax : (joinConfig?.joinIntervalMax ?? 60),
+                      maxGroupsPerAccount: joinCfgLoaded ? joinCfgMax2 : (joinConfig?.maxGroupsPerAccount ?? 300),
+                      joinEnabled: joinCfgLoaded ? joinCfgEnabled : (joinConfig?.joinEnabled ?? true),
+                    })}
+                    disabled={updateJoinConfig.isPending}
+                    className="w-full bg-purple-600 hover:bg-purple-700"
+                  >
+                    {updateJoinConfig.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                    保存加群配置
+                  </Button>
+                </div>
               </TabsContent>
             </Tabs>
           )}

@@ -149,12 +149,12 @@ export default function JoinConfig() {
               <Input
                 type="number"
                 min={1}
-                max={500}
+                max={2000}
                 value={maxGroupsPerAccount}
                 onChange={(e) => setMaxGroupsPerAccount(parseInt(e.target.value) || 100)}
               />
               <p className="text-xs text-muted-foreground">
-                当前共 {totalCount} 个群组，建议每账号不超过 200 个
+                当前共 {totalCount} 个群组，建议每账号不超过 500 个
               </p>
             </div>
 

@@ -626,7 +626,7 @@ export const systemConfigRouter = router({
     .input(z.object({
       joinIntervalMin: z.number().min(5).max(3600),
       joinIntervalMax: z.number().min(5).max(3600),
-      maxGroupsPerAccount: z.number().min(1).max(500),
+      maxGroupsPerAccount: z.number().min(1).max(2000),
       joinEnabled: z.boolean(),
     }))
     .mutation(async ({ input }) => {
