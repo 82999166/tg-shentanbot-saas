@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { systemConfig, publicMonitorGroups, publicGroupKeywords, publicGroupJoinStatus, tgAccounts, monitorGroups } from "../../drizzle/schema";
 import { inArray } from "drizzle-orm";
@@ -293,6 +293,11 @@ export const systemConfigRouter = router({
   distributeGroups: adminProcedure
     .mutation(async () => {
       const db = await getDb();
+      // 读取全局配置
+      const configRows = await db.select().from(systemConfig);
+      const getCfg = (k: string, def: string) => configRows.find((r: any) => r.configKey === k)?.configValue ?? def;
+      const globalMaxGroups = parseInt(getCfg('max_groups_per_account', '100'));
+      const distributeCount = parseInt(getCfg('distribute_count', '0')); // 0=不限制，按配额分配
       // 获取所有活跃账号
       const accounts = await db.select().from(tgAccounts).where(eq(tgAccounts.isActive, true));
       // 获取所有活跃公共群组
@@ -305,7 +310,8 @@ export const systemConfigRouter = router({
         .from(publicGroupJoinStatus);
       const globalAssignedSet = new Set(globalAssignedRows.map(r => r.publicGroupId));
       for (const account of accounts) {
-        const maxGroups = (account as any).maxGroupsLimit ?? 50;
+        // 优先使用账号级别上限，否则使用全局配置
+        const maxGroups = (account as any).maxGroupsLimit ?? globalMaxGroups;
         // 当前该账号已分配数量
         const currentRows = await db.select({ count: sql`COUNT(*)` })
           .from(publicGroupJoinStatus)
@@ -313,8 +319,9 @@ export const systemConfigRouter = router({
         const currentCount = Number((currentRows[0] as any)?.count ?? 0);
         const remaining = maxGroups - currentCount;
         if (remaining <= 0) continue;
-        // 从全局未分配的群组中取出该账号还能分配的数量
-        const unassigned = allGroups.filter(g => !globalAssignedSet.has(g.id)).slice(0, remaining);
+        // 从全局未分配的群组中取出该账号还能分配的数量(distributeCount=0表示不限制)
+        const limit = distributeCount > 0 ? Math.min(remaining, distributeCount) : remaining;
+        const unassigned = allGroups.filter(g => !globalAssignedSet.has(g.id)).slice(0, limit);
         if (unassigned.length === 0) continue;
         await db.insert(publicGroupJoinStatus).values(
           unassigned.map(g => ({
@@ -620,6 +627,7 @@ export const systemConfigRouter = router({
       joinIntervalMax: parseInt(get("join_interval_max", "60")),
       maxGroupsPerAccount: parseInt(get("max_groups_per_account", "100")),
       joinEnabled: get("join_enabled", "true") === "true",
+      distributeCount: parseInt(get("distribute_count", "0")),
     };
   }),
   updateJoinConfig: adminProcedure
@@ -628,6 +636,7 @@ export const systemConfigRouter = router({
       joinIntervalMax: z.number().min(5).max(3600),
       maxGroupsPerAccount: z.number().min(1).max(2000),
       joinEnabled: z.boolean(),
+      distributeCount: z.number().min(0).max(10000).optional().default(0),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -644,6 +653,7 @@ export const systemConfigRouter = router({
       await upsert("join_interval_max", String(input.joinIntervalMax));
       await upsert("max_groups_per_account", String(input.maxGroupsPerAccount));
       await upsert("join_enabled", String(input.joinEnabled));
+      await upsert("distribute_count", String(input.distributeCount ?? 0));
       return { success: true };
     }),
 

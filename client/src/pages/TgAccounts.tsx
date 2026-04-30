@@ -95,6 +95,7 @@ export default function TgAccounts() {
   const [joinCfgMax, setJoinCfgMax] = useState(60);
   const [joinCfgMax2, setJoinCfgMax2] = useState(300);
   const [joinCfgEnabled, setJoinCfgEnabled] = useState(true);
+  const [joinCfgDistributeCount, setJoinCfgDistributeCount] = useState(0);
   const [joinCfgLoaded, setJoinCfgLoaded] = useState(false);
   const updateJoinConfig = trpc.sysConfig.updateJoinConfig.useMutation({
     onSuccess: () => toast.success('加群配置已保存'),
@@ -829,6 +830,7 @@ export default function TgAccounts() {
                     setJoinCfgMax(joinConfig.joinIntervalMax);
                     setJoinCfgMax2(joinConfig.maxGroupsPerAccount);
                     setJoinCfgEnabled(joinConfig.joinEnabled);
+                    setJoinCfgDistributeCount(joinConfig.distributeCount ?? 0);
                     setJoinCfgLoaded(true);
                   }
                 }}>加群配置</TabsTrigger>
@@ -968,12 +970,24 @@ export default function TgAccounts() {
                       className="bg-slate-800 border-slate-600 text-white"
                     />
                   </div>
+                  {/* 每次分配数量 */}
+                  <div className="space-y-2">
+                    <Label className="text-slate-300 text-sm">每次分配数量（0 = 按配额全量分配）</Label>
+                    <p className="text-xs text-slate-500">点击「按配额分配」时，每个账号本次最多分配的群组数量。设为 0 则按剩余配额全量分配</p>
+                    <Input
+                      type="number" min={0} max={10000}
+                      value={joinCfgLoaded ? joinCfgDistributeCount : (joinConfig?.distributeCount ?? 0)}
+                      onChange={(e) => { setJoinCfgLoaded(true); setJoinCfgDistributeCount(Number(e.target.value)); }}
+                      className="bg-slate-800 border-slate-600 text-white"
+                    />
+                  </div>
                   <Button
                     onClick={() => updateJoinConfig.mutate({
                       joinIntervalMin: joinCfgLoaded ? joinCfgMin : (joinConfig?.joinIntervalMin ?? 30),
                       joinIntervalMax: joinCfgLoaded ? joinCfgMax : (joinConfig?.joinIntervalMax ?? 60),
                       maxGroupsPerAccount: joinCfgLoaded ? joinCfgMax2 : (joinConfig?.maxGroupsPerAccount ?? 300),
                       joinEnabled: joinCfgLoaded ? joinCfgEnabled : (joinConfig?.joinEnabled ?? true),
+                      distributeCount: joinCfgLoaded ? joinCfgDistributeCount : (joinConfig?.distributeCount ?? 0),
                     })}
                     disabled={updateJoinConfig.isPending}
                     className="w-full bg-purple-600 hover:bg-purple-700"
