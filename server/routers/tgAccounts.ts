@@ -122,6 +122,25 @@ export const tgAccountsRouter = router({
       for (const r of publicGroupCounts) {
         if (r.monitorAccountId) publicCountMap[r.monitorAccountId] = r.cnt;
       }
+      // 查询每个账号的已分配总数（所有状态）
+      const assignedCounts = await db
+        .select({ monitorAccountId: publicGroupJoinStatus.monitorAccountId, cnt: count() })
+        .from(publicGroupJoinStatus)
+        .groupBy(publicGroupJoinStatus.monitorAccountId);
+      const assignedCountMap: Record<number, number> = {};
+      for (const r of assignedCounts) {
+        if (r.monitorAccountId) assignedCountMap[r.monitorAccountId] = r.cnt;
+      }
+      // 查询每个账号的待加入数量（pending/joining/failed/not_found）
+      const pendingCounts = await db
+        .select({ monitorAccountId: publicGroupJoinStatus.monitorAccountId, cnt: count() })
+        .from(publicGroupJoinStatus)
+        .where(inArray(publicGroupJoinStatus.status, ["pending", "joining", "failed", "not_found"]))
+        .groupBy(publicGroupJoinStatus.monitorAccountId);
+      const pendingCountMap: Record<number, number> = {};
+      for (const r of pendingCounts) {
+        if (r.monitorAccountId) pendingCountMap[r.monitorAccountId] = r.cnt;
+      }
       // joinedGroupCount 直接使用数据库中的公共群组加入数量（避免实时调用引擎导致加载慢）
       return rows.map(r => ({
         ...r,
@@ -129,6 +148,8 @@ export const tgAccountsRouter = router({
         publicGroupCount: publicCountMap[r.id] ?? 0,
         totalGroupCount: (privateCountMap[r.id] ?? 0) + (publicCountMap[r.id] ?? 0),
         joinedGroupCount: publicCountMap[r.id] ?? 0,
+        assignedGroupCount: assignedCountMap[r.id] ?? 0,
+        pendingGroupCount: pendingCountMap[r.id] ?? 0,
       }));
     }
     return getTgAccountsByUserId(ctx.user.id);
@@ -586,7 +607,7 @@ export const tgAccountsRouter = router({
           id: publicGroupJoinStatus.id,
           publicGroupId: publicGroupJoinStatus.publicGroupId,
           status: publicGroupJoinStatus.status,
-          realId: publicGroupJoinStatus.realId,
+          realId: publicMonitorGroups.realId,
           joinedAt: publicGroupJoinStatus.joinedAt,
           groupId: publicMonitorGroups.groupId,
           groupTitle: publicMonitorGroups.groupTitle,

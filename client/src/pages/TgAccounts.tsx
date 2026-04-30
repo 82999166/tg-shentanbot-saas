@@ -377,9 +377,9 @@ export default function TgAccounts() {
                     <th className="text-left px-4 py-3 text-slate-400 font-medium">状态</th>
                     <th className="text-left px-4 py-3 text-slate-400 font-medium">角色</th>
                     <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="该账号监控的私有群组数">私有群组</span></th>
-                    <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="该账号正在订阅监控的公共群组数（账号已加入且在公共群组池中）">监控群组</span></th>
-                    <th className="text-center px-4 py-3 text-slate-400 font-medium">总群组数</th>
-                    <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="该账号在 Telegram 中实际加入的群组总数（从引擎实时获取）">已加入群组</span></th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="已加入的公共群组数（subscribed 状态）">已加入</span></th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="已分配给该账号的公共群组总数（包含已加入和待加入）">已分配</span></th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="已分配但尚未加入的群组数（pending/joining/failed）">待加入</span></th>
                     <th className="text-center px-4 py-3 text-slate-400 font-medium">健康度</th>
                     <th className="text-center px-4 py-3 text-slate-400 font-medium">今日发信</th>
                     <th className="text-center px-4 py-3 text-slate-400 font-medium" title="是否加入监控引擎">引擎</th>
@@ -401,6 +401,8 @@ export default function TgAccounts() {
                     const publicCount = (account as any).publicGroupCount ?? 0;
                     const totalCount = (account as any).totalGroupCount ?? 0;
                     const joinedCount = (account as any).joinedGroupCount;
+                    const assignedCount = (account as any).assignedGroupCount ?? 0;
+                    const pendingCount = (account as any).pendingGroupCount ?? 0;
                     return (
                       <tr key={account.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${idx % 2 === 0 ? "" : "bg-slate-800/20"}`}>
                         {/* 复选框 */}
@@ -446,21 +448,17 @@ export default function TgAccounts() {
                         <td className="px-4 py-3 text-center">
                           <span className={`text-sm font-bold ${privateCount > 0 ? "text-blue-400" : "text-slate-600"}`}>{privateCount}</span>
                         </td>
-                        {/* 公共群组数 */}
+                        {/* 已加入公共群组数 */}
                         <td className="px-4 py-3 text-center">
-                          <span className={`text-sm font-bold ${publicCount > 0 ? "text-cyan-400" : "text-slate-600"}`}>{publicCount}</span>
+                          <span className={`text-sm font-bold ${publicCount > 0 ? "text-green-400" : "text-slate-600"}`}>{publicCount}</span>
                         </td>
-                        {/* 总群组数 */}
+                        {/* 已分配公共群组数 */}
                         <td className="px-4 py-3 text-center">
-                          <span className={`text-sm font-bold ${totalCount > 0 ? "text-green-400" : "text-slate-600"}`}>{totalCount}</span>
+                          <span className={`text-sm font-bold ${assignedCount > 0 ? "text-cyan-400" : "text-slate-600"}`}>{assignedCount}</span>
                         </td>
-                        {/* 已加入群组（引擎实时） */}
+                        {/* 待加入群组数 */}
                         <td className="px-4 py-3 text-center">
-                          {joinedCount == null ? (
-                            <span className="text-slate-600 text-xs">-</span>
-                          ) : (
-                            <span className={`text-sm font-bold ${joinedCount > 0 ? "text-orange-400" : "text-slate-600"}`}>{joinedCount}</span>
-                          )}
+                          <span className={`text-sm font-bold ${pendingCount > 0 ? "text-yellow-400" : "text-slate-600"}`}>{pendingCount}</span>
                         </td>
                         {/* 健康度 */}
                         <td className="px-4 py-3 text-center">
