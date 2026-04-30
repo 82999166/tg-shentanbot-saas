@@ -1478,6 +1478,155 @@ async def http_resolve_group(request: aiohttp_web.Request) -> aiohttp_web.Respon
         }, status=200)  # 返回 200 让调用方处理错误
 
 
+# ─── 自动加群循环 ──────────────────────────────────────────
+# 自动加群循环间隔（秒）：每隔多久检查一次是否有 pending 群组需要加入
+AUTO_JOIN_CHECK_INTERVAL = int(os.getenv("AUTO_JOIN_CHECK_INTERVAL", "300"))  # 默认 5 分钟
+
+async def auto_join_loop() -> None:
+    """
+    自动加群循环：定时从后端拉取各账号的 pending 群组，逐一加入。
+    - 每 AUTO_JOIN_CHECK_INTERVAL 秒检查一次
+    - 仅在 joinEnabled=true 时执行
+    - 按 joinIntervalMin/Max 随机间隔加群，防封号
+    - 加群结果通过 /api/engine/public-group/join-status 回调更新状态
+    """
+    import time as _time
+    logger.info(f"[AutoJoin] 自动加群循环已启动，检查间隔: {AUTO_JOIN_CHECK_INTERVAL}s")
+
+    # 首次启动延迟 60 秒，等待账号全部就绪
+    await asyncio.sleep(60)
+
+    while True:
+        try:
+            await _do_auto_join()
+        except Exception as e:
+            logger.error(f"[AutoJoin] 自动加群循环异常: {e}")
+        await asyncio.sleep(AUTO_JOIN_CHECK_INTERVAL)
+
+
+async def _do_auto_join() -> None:
+    """执行一次自动加群：拉取 pending 群组并逐一加入"""
+    import time as _time
+
+    # 拉取各账号的 pending 群组
+    data = await api.get("/engine/public-group/pending", timeout=30)
+    if not data:
+        logger.debug("[AutoJoin] 拉取 pending 群组失败或无数据")
+        return
+
+    if not data.get("joinEnabled", False):
+        logger.debug("[AutoJoin] joinEnabled=false，跳过自动加群")
+        return
+
+    accounts_data = data.get("accounts", [])
+    if not accounts_data:
+        logger.debug("[AutoJoin] 无待加入群组")
+        return
+
+    interval_min = data.get("joinIntervalMin", 30)
+    interval_max = data.get("joinIntervalMax", 60)
+
+    total_pending = sum(len(a.get("pendingGroups", [])) for a in accounts_data)
+    logger.info(f"[AutoJoin] 开始自动加群：{len(accounts_data)} 个账号，共 {total_pending} 个待加入群组")
+
+    joined_total = 0
+    failed_total = 0
+    skipped_total = 0
+
+    for account_info in accounts_data:
+        account_id = account_info["accountId"]
+        pending_groups = account_info.get("pendingGroups", [])
+
+        if not pending_groups:
+            continue
+
+        # 获取对应的 AccountWorker
+        worker = _active_workers.get(account_id)
+        if not worker or not worker.client or not worker.client.is_connected:
+            logger.warning(f"[AutoJoin] 账号 {account_id} 不在线，跳过")
+            skipped_total += len(pending_groups)
+            continue
+
+        logger.info(f"[AutoJoin] 账号 {account_id} 开始加入 {len(pending_groups)} 个群组")
+
+        for group_info in pending_groups:
+            db_id = group_info["dbId"]
+            group_id = group_info["groupId"]
+
+            try:
+                # 标准化群组 ID
+                target = group_id
+                if group_id.lstrip("-").isdigit():
+                    target = int(group_id)
+                elif group_id.startswith("@"):
+                    target = group_id[1:]
+                elif group_id.startswith("https://t.me/") and "+" not in group_id:
+                    target = group_id.replace("https://t.me/", "")
+
+                # 先将状态更新为 joining
+                await api.post("/engine/public-group/join-status", {
+                    "publicGroupId": db_id,
+                    "monitorAccountId": account_id,
+                    "status": "joining",
+                })
+
+                # 执行加群
+                chat = await worker.client.join_chat(target)
+                real_id = chat.id if chat else None
+
+                # 回调成功状态
+                await api.post("/engine/public-group/join-status", {
+                    "publicGroupId": db_id,
+                    "monitorAccountId": account_id,
+                    "status": "subscribed",
+                    "realId": str(real_id) if real_id else None,
+                })
+                joined_total += 1
+                logger.info(f"[AutoJoin] 账号 {account_id} 成功加入 {group_id} -> realId={real_id}")
+
+            except FloodWait as e:
+                wait_sec = e.value
+                logger.warning(f"[AutoJoin] 账号 {account_id} 触发 FloodWait {wait_sec}s，暂停该账号")
+                await api.post("/engine/public-group/join-status", {
+                    "publicGroupId": db_id,
+                    "monitorAccountId": account_id,
+                    "status": "pending",  # 保持 pending，下次继续
+                    "errorMsg": f"FloodWait {wait_sec}s",
+                })
+                failed_total += 1
+                # 等待 FloodWait 冷却后继续下一个账号
+                await asyncio.sleep(min(wait_sec, 300))
+                break  # 跳出当前账号的群组循环，继续下一个账号
+
+            except (ChannelPrivate, ChatWriteForbidden) as e:
+                err_msg = f"{type(e).__name__}: {e}"
+                logger.warning(f"[AutoJoin] 账号 {account_id} 加入 {group_id} 失败（私有/禁止）: {err_msg}")
+                await api.post("/engine/public-group/join-status", {
+                    "publicGroupId": db_id,
+                    "monitorAccountId": account_id,
+                    "status": "not_found",
+                    "errorMsg": err_msg,
+                })
+                failed_total += 1
+
+            except Exception as e:
+                err_msg = f"{type(e).__name__}: {e}"
+                logger.warning(f"[AutoJoin] 账号 {account_id} 加入 {group_id} 异常: {err_msg}")
+                await api.post("/engine/public-group/join-status", {
+                    "publicGroupId": db_id,
+                    "monitorAccountId": account_id,
+                    "status": "failed",
+                    "errorMsg": err_msg,
+                })
+                failed_total += 1
+
+            # 加群间隔，防封号
+            delay = random.uniform(interval_min, interval_max)
+            await asyncio.sleep(delay)
+
+    logger.info(f"[AutoJoin] 本轮完成：加入 {joined_total}，失败 {failed_total}，跳过 {skipped_total}")
+
+
 async def start_http_server() -> None:
     """启动引擎 HTTP 服务"""
     app = aiohttp_web.Application()
@@ -1529,6 +1678,7 @@ async def main():
         asyncio.create_task(account_sync_loop()),
         asyncio.create_task(health_report_loop()),
         asyncio.create_task(heartbeat_loop()),
+        asyncio.create_task(auto_join_loop()),
     ]
 
     logger.info("[Main] 所有服务已启动，开始监控...")

@@ -891,6 +891,83 @@ export function registerEngineRestRoutes(app: Router) {
     }
   });
 
+
+  // GET /api/engine/public-group/pending - 获取各账号待加入的公共群组（供引擎自动加群循环使用）
+  app.get("/api/engine/public-group/pending", async (req: Request, res: Response) => {
+    if (!checkSecret(req, res)) return;
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB unavailable" });
+
+      // 获取加群配置
+      const cfgRows = await db.select().from(systemConfig)
+        .where(inArray(systemConfig.configKey, [
+          "join_enabled", "join_interval_min", "join_interval_max",
+          "max_groups_per_account", "distribute_count"
+        ]));
+      const cfgMap: Record<string, string> = {};
+      for (const row of cfgRows) cfgMap[row.configKey] = row.configValue ?? "";
+
+      const joinEnabled = cfgMap["join_enabled"] !== "false";
+      if (!joinEnabled) {
+        return res.json({ joinEnabled: false, accounts: [] });
+      }
+
+      // 查询所有活跃的监控账号
+      const accounts = await db.select({
+        id: tgAccounts.id,
+        maxGroupsLimit: tgAccounts.maxGroupsLimit,
+      }).from(tgAccounts).where(eq(tgAccounts.isActive, 1));
+
+      const maxGroupsGlobal = parseInt(cfgMap["max_groups_per_account"] || "100", 10);
+
+      // 为每个账号查询 pending 状态的群组
+      const result: Array<{
+        accountId: number;
+        maxGroups: number;
+        pendingGroups: Array<{ dbId: number; groupId: string }>;
+      }> = [];
+
+      for (const account of accounts) {
+        const maxGroups = (account.maxGroupsLimit as number | null) ?? maxGroupsGlobal;
+        // 查询该账号的 pending 群组（包含 pending/joining/failed 状态，排除 not_found）
+        const pendingRows = await db
+          .select({
+            dbId: publicGroupJoinStatus.publicGroupId,
+            groupId: publicMonitorGroups.groupId,
+          })
+          .from(publicGroupJoinStatus)
+          .leftJoin(publicMonitorGroups, eq(publicGroupJoinStatus.publicGroupId, publicMonitorGroups.id))
+          .where(
+            and(
+              eq(publicGroupJoinStatus.monitorAccountId, account.id),
+              inArray(publicGroupJoinStatus.status, ["pending", "failed"]),
+              eq(publicMonitorGroups.isActive, 1)
+            )
+          )
+          .limit(200);
+
+        const pendingGroups = pendingRows
+          .filter(r => r.groupId)
+          .map(r => ({ dbId: r.dbId, groupId: r.groupId! }));
+
+        if (pendingGroups.length > 0) {
+          result.push({ accountId: account.id, maxGroups, pendingGroups });
+        }
+      }
+
+      res.json({
+        joinEnabled: true,
+        joinIntervalMin: parseInt(cfgMap["join_interval_min"] || "30", 10),
+        joinIntervalMax: parseInt(cfgMap["join_interval_max"] || "60", 10),
+        accounts: result,
+      });
+    } catch (e: any) {
+      console.error("[Engine API] public-group/pending error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // POST /api/engine/update-user-tgid - 直接更新用户的 tgUserId（管理员操作）
   app.post("/api/engine/update-user-tgid", async (req: Request, res: Response) => {
     if (!checkSecret(req, res)) return;
