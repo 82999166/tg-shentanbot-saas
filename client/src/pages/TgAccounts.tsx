@@ -812,6 +812,7 @@ export default function TgAccounts() {
               <TabsList className="bg-slate-800 border border-slate-700 shrink-0">
                 <TabsTrigger value="info" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">基本信息</TabsTrigger>
                 <TabsTrigger value="groups" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">已加入群组</TabsTrigger>
+                <TabsTrigger value="pending" className="data-[state=active]:bg-yellow-600 data-[state=active]:text-white">待加入群组</TabsTrigger>
               </TabsList>
 
               {/* ── 基本信息 Tab ── */}
@@ -882,6 +883,11 @@ export default function TgAccounts() {
               {/* ── 已加入群组 Tab ── */}
               <TabsContent value="groups" className="flex-1 flex flex-col min-h-0">
                 <AccountJoinedGroupsTab accountId={editAccount.id} />
+              </TabsContent>
+
+              {/* ── 待加入群组 Tab ── */}
+              <TabsContent value="pending" className="flex-1 flex flex-col min-h-0">
+                <AccountPendingGroupsTab accountId={editAccount.id} />
               </TabsContent>
             </Tabs>
           )}
@@ -1117,6 +1123,119 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── 待加入群组 Tab 组件 ──────────────────────────────────────────────────────
+function AccountPendingGroupsTab({ accountId }: { accountId: number }) {
+  const { data, isLoading, refetch } = trpc.tgAccounts.getAccountPendingGroups.useQuery({ accountId });
+  const [search, setSearch] = useState("");
+
+  const filtered = (data?.groups ?? []).filter(g => {
+    const kw = search.toLowerCase();
+    return !kw || g.groupTitle.toLowerCase().includes(kw) || g.groupId.toLowerCase().includes(kw);
+  });
+
+  const statusLabel = (status: string) => {
+    switch (status) {
+      case "pending": return { text: "待加入", cls: "bg-yellow-900/50 text-yellow-300" };
+      case "joining": return { text: "加入中", cls: "bg-blue-900/50 text-blue-300" };
+      case "failed":  return { text: "失败", cls: "bg-red-900/50 text-red-300" };
+      case "not_found": return { text: "未找到", cls: "bg-slate-700 text-slate-400" };
+      default: return { text: status, cls: "bg-slate-700 text-slate-400" };
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-yellow-400 mr-2" />
+        <span className="text-slate-400 text-sm">加载中...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 py-2 h-full">
+      {/* 顶部统计 */}
+      <div className="flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-400">
+            待加入 <span className="text-yellow-400 font-bold">{data?.total ?? 0}</span> 个群组
+          </span>
+          <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
+            已分配但尚未加入，引擎将自动执行加群
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700 gap-1"
+          onClick={() => refetch()}
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> 刷新
+        </Button>
+      </div>
+
+      {/* 搜索框 */}
+      <Input
+        placeholder="搜索群组名称或 ID..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="bg-slate-800 border-slate-600 text-white placeholder-slate-500 h-8 text-sm shrink-0"
+      />
+
+      {/* 群组列表 */}
+      <div className="flex-1 overflow-y-auto min-h-0 rounded border border-slate-700">
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-slate-500 text-sm">
+            <Shield className="w-8 h-8 mb-2 opacity-40" />
+            {search ? "没有匹配的群组" : "该账号暂无待加入的群组（所有分配群组均已加入）"}
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-slate-800 text-slate-400 text-xs">
+              <tr>
+                <th className="text-left px-3 py-2">群组</th>
+                <th className="text-left px-3 py-2 w-20">状态</th>
+                <th className="text-left px-3 py-2 w-32">更新时间</th>
+                <th className="text-left px-3 py-2">失败原因</th>
+                <th className="text-center px-3 py-2 w-16">链接</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((g) => {
+                const sl = statusLabel(g.status);
+                return (
+                  <tr key={g.id} className={`border-t border-slate-700/50 hover:bg-slate-800/50 ${!g.isActive ? "opacity-50" : ""}`}>
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-white truncate max-w-[180px]" title={g.groupTitle}>{g.groupTitle || g.groupId}</div>
+                      <div className="text-slate-500 text-xs">@{g.groupId}</div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${sl.cls}`}>{sl.text}</span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-400 text-xs">
+                      {g.updatedAt ? new Date(g.updatedAt).toLocaleDateString("zh-CN") : "-"}
+                    </td>
+                    <td className="px-3 py-2 text-slate-400 text-xs truncate max-w-[160px]" title={g.errorMsg}>
+                      {g.errorMsg || "-"}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {g.link ? (
+                        <a href={g.link} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                          <ChevronRight className="w-4 h-4 inline" />
+                        </a>
+                      ) : "-"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
