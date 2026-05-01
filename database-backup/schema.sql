@@ -1,6 +1,7 @@
+mysqldump: [Warning] Using a password on the command line interface can be insecure.
 -- MySQL dump 10.13  Distrib 8.0.45, for Linux (x86_64)
 --
--- Host: localhost    Database: tgmonitor
+-- Host: localhost    Database: shentanbot
 -- ------------------------------------------------------
 -- Server version	8.0.45
 
@@ -28,7 +29,7 @@ CREATE TABLE `__drizzle_migrations` (
   `created_at` bigint DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `id` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -79,7 +80,7 @@ CREATE TABLE `blacklist` (
   PRIMARY KEY (`id`),
   KEY `idx_blacklist_userId` (`userId`),
   KEY `idx_blacklist_targetTgId` (`targetTgId`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -92,18 +93,12 @@ DROP TABLE IF EXISTS `bot_configs`;
 CREATE TABLE `bot_configs` (
   `id` int NOT NULL AUTO_INCREMENT,
   `userId` int NOT NULL,
-  `botToken` varchar(256) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `botToken` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL,
   `botUsername` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `notifyEnabled` tinyint(1) NOT NULL DEFAULT '1',
-  `notifyTargetChatId` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `notifyFormat` enum('simple','standard','detailed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'standard',
-  `isActive` tinyint(1) NOT NULL DEFAULT '0',
-  `lastActiveAt` timestamp NULL DEFAULT NULL,
+  `isActive` tinyint(1) NOT NULL DEFAULT '1',
   `createdAt` timestamp NOT NULL DEFAULT (now()),
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `bot_configs_userId_unique` (`userId`),
-  KEY `idx_bot_configs_userId` (`userId`)
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -117,24 +112,84 @@ DROP TABLE IF EXISTS `dm_queue`;
 CREATE TABLE `dm_queue` (
   `id` int NOT NULL AUTO_INCREMENT,
   `userId` int NOT NULL,
-  `hitRecordId` bigint DEFAULT NULL,
-  `senderAccountId` int NOT NULL,
-  `targetTgId` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `tgAccountId` int NOT NULL,
+  `targetUserId` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
   `targetUsername` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `templateId` int DEFAULT NULL,
-  `content` text COLLATE utf8mb4_unicode_ci NOT NULL,
-  `scheduledAt` timestamp NOT NULL,
-  `status` enum('pending','processing','sent','failed','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `messageContent` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `status` enum('pending','sent','failed','skipped') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
   `retryCount` int NOT NULL DEFAULT '0',
-  `maxRetries` int NOT NULL DEFAULT '3',
   `sentAt` timestamp NULL DEFAULT NULL,
   `errorMessage` text COLLATE utf8mb4_unicode_ci,
   `createdAt` timestamp NOT NULL DEFAULT (now()),
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `group_extract_users`
+--
+
+DROP TABLE IF EXISTS `group_extract_users`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `group_extract_users` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `sourceGroup` varchar(256) NOT NULL COMMENT '来源群组链接或ID',
+  `sourceGroupTitle` varchar(256) DEFAULT NULL COMMENT '来源群组名称',
+  `tgId` bigint NOT NULL COMMENT '用户TG ID',
+  `username` varchar(128) DEFAULT NULL COMMENT '用户名（无@）',
+  `firstName` varchar(128) DEFAULT NULL COMMENT '名',
+  `lastName` varchar(128) DEFAULT NULL COMMENT '姓',
+  `isBot` tinyint(1) DEFAULT '0' COMMENT '是否Bot',
+  `extractedAt` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '提取时间',
   PRIMARY KEY (`id`),
-  KEY `idx_dm_queue_userId` (`userId`),
-  KEY `idx_dm_queue_status` (`status`),
-  KEY `idx_dm_queue_scheduledAt` (`scheduledAt`)
+  UNIQUE KEY `idx_geu_group_user` (`sourceGroup`(128),`tgId`),
+  KEY `idx_geu_sourceGroup` (`sourceGroup`(128)),
+  KEY `idx_geu_tgId` (`tgId`),
+  KEY `idx_geu_username` (`username`)
+) ENGINE=InnoDB AUTO_INCREMENT=115 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='群组发言用户提取记录';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `group_scrape_results`
+--
+
+DROP TABLE IF EXISTS `group_scrape_results`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `group_scrape_results` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `taskId` int NOT NULL,
+  `groupId` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `groupTitle` varchar(256) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `groupUsername` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `memberCount` int DEFAULT NULL,
+  `isAdded` tinyint(1) NOT NULL DEFAULT '0',
+  `createdAt` timestamp NOT NULL DEFAULT (now()),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `group_scrape_tasks`
+--
+
+DROP TABLE IF EXISTS `group_scrape_tasks`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `group_scrape_tasks` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `userId` int NOT NULL,
+  `keyword` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `status` enum('pending','running','done','failed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `totalFound` int NOT NULL DEFAULT '0',
+  `startedAt` timestamp NULL DEFAULT NULL,
+  `finishedAt` timestamp NULL DEFAULT NULL,
+  `errorMessage` text COLLATE utf8mb4_unicode_ci,
+  `createdAt` timestamp NOT NULL DEFAULT (now()),
+  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -150,15 +205,11 @@ CREATE TABLE `group_submissions` (
   `userId` int NOT NULL,
   `groupLink` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL,
   `groupTitle` varchar(256) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `description` text COLLATE utf8mb4_unicode_ci,
   `status` enum('pending','approved','rejected') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
-  `reviewNote` text COLLATE utf8mb4_unicode_ci,
-  `reviewedAt` timestamp NULL DEFAULT NULL,
+  `note` text COLLATE utf8mb4_unicode_ci,
   `createdAt` timestamp NOT NULL DEFAULT (now()),
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_group_submissions_userId` (`userId`),
-  KEY `idx_group_submissions_status` (`status`)
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -192,12 +243,13 @@ CREATE TABLE `hit_records` (
   `processedAt` timestamp NULL DEFAULT NULL,
   `createdAt` timestamp NOT NULL DEFAULT (now()),
   PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_unique_hit` (`userId`,`messageId`,`matchedKeyword`(128)),
   KEY `idx_hit_records_userId` (`userId`),
   KEY `idx_hit_records_monitorGroupId` (`monitorGroupId`),
   KEY `idx_hit_records_keywordId` (`keywordId`),
   KEY `idx_hit_records_senderTgId` (`senderTgId`),
   KEY `idx_hit_records_createdAt` (`createdAt`)
-) ENGINE=InnoDB AUTO_INCREMENT=608 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=17424 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -209,19 +261,17 @@ DROP TABLE IF EXISTS `invite_codes`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `invite_codes` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `userId` int NOT NULL,
-  `code` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `totalInvited` int NOT NULL DEFAULT '0',
-  `totalPaidInvited` int NOT NULL DEFAULT '0',
-  `totalRewardDays` int NOT NULL DEFAULT '0',
+  `code` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `createdByUserId` int DEFAULT NULL,
+  `usedByUserId` int DEFAULT NULL,
+  `maxUses` int NOT NULL DEFAULT '1',
+  `usedCount` int NOT NULL DEFAULT '0',
+  `expiresAt` timestamp NULL DEFAULT NULL,
+  `isActive` tinyint(1) NOT NULL DEFAULT '1',
   `createdAt` timestamp NOT NULL DEFAULT (now()),
-  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `invite_codes_userId_unique` (`userId`),
-  UNIQUE KEY `invite_codes_code_unique` (`code`),
-  KEY `idx_invite_codes_userId` (`userId`),
-  KEY `idx_invite_codes_code` (`code`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  UNIQUE KEY `invite_codes_code_unique` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -233,19 +283,10 @@ DROP TABLE IF EXISTS `invite_records`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `invite_records` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `inviterId` int NOT NULL,
-  `inviteeId` int NOT NULL,
-  `inviteCode` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `registrationRewarded` tinyint(1) NOT NULL DEFAULT '0',
-  `paymentRewarded` tinyint(1) NOT NULL DEFAULT '0',
-  `rewardDaysGranted` int NOT NULL DEFAULT '0',
-  `registeredAt` timestamp NOT NULL DEFAULT (now()),
-  `paidAt` timestamp NULL DEFAULT NULL,
+  `inviteCodeId` int NOT NULL,
+  `invitedUserId` int NOT NULL,
   `createdAt` timestamp NOT NULL DEFAULT (now()),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `invite_records_inviteeId_unique` (`inviteeId`),
-  KEY `idx_invite_records_inviterId` (`inviterId`),
-  KEY `idx_invite_records_inviteeId` (`inviteeId`)
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -269,7 +310,7 @@ CREATE TABLE `keyword_daily_stats` (
   KEY `idx_kds_userId` (`userId`),
   KEY `idx_kds_keywordId` (`keywordId`),
   KEY `idx_kds_date` (`date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=403 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -283,13 +324,10 @@ CREATE TABLE `keyword_groups` (
   `id` int NOT NULL AUTO_INCREMENT,
   `userId` int NOT NULL,
   `name` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `description` text COLLATE utf8mb4_unicode_ci,
-  `color` varchar(16) COLLATE utf8mb4_unicode_ci DEFAULT '#3B82F6',
   `isActive` tinyint(1) NOT NULL DEFAULT '1',
   `createdAt` timestamp NOT NULL DEFAULT (now()),
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_keyword_groups_userId` (`userId`)
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -316,7 +354,7 @@ CREATE TABLE `keywords` (
   PRIMARY KEY (`id`),
   KEY `idx_keywords_userId` (`userId`),
   KEY `idx_keywords_groupId` (`groupId`)
-) ENGINE=InnoDB AUTO_INCREMENT=49 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=57 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -335,7 +373,7 @@ CREATE TABLE `login_attempts` (
   PRIMARY KEY (`id`),
   KEY `idx_la_email` (`email`),
   KEY `idx_la_ip` (`ip`)
-) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=30 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -386,10 +424,9 @@ CREATE TABLE `monitor_groups` (
   `createdAt` timestamp NOT NULL DEFAULT (now()),
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_monitor_groups_user_group` (`userId`,`groupId`),
   KEY `idx_monitor_groups_userId` (`userId`),
   KEY `idx_monitor_groups_tgAccountId` (`tgAccountId`)
-) ENGINE=InnoDB AUTO_INCREMENT=195 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -402,14 +439,12 @@ DROP TABLE IF EXISTS `password_reset_tokens`;
 CREATE TABLE `password_reset_tokens` (
   `id` int NOT NULL AUTO_INCREMENT,
   `userId` int NOT NULL,
-  `token` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `token` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL,
   `expiresAt` timestamp NOT NULL,
   `usedAt` timestamp NULL DEFAULT NULL,
   `createdAt` timestamp NOT NULL DEFAULT (now()),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `password_reset_tokens_token_unique` (`token`),
-  KEY `idx_prt_userId` (`userId`),
-  KEY `idx_prt_token` (`token`)
+  UNIQUE KEY `password_reset_tokens_token_unique` (`token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -423,22 +458,17 @@ DROP TABLE IF EXISTS `payment_orders`;
 CREATE TABLE `payment_orders` (
   `id` int NOT NULL AUTO_INCREMENT,
   `userId` int NOT NULL,
-  `planId` enum('basic','pro','enterprise') COLLATE utf8mb4_unicode_ci NOT NULL,
-  `durationMonths` int NOT NULL DEFAULT '1',
-  `usdtAmount` decimal(18,6) NOT NULL,
-  `usdtAddress` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `network` enum('trc20','erc20','bep20') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'trc20',
-  `txHash` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `confirmedAt` timestamp NULL DEFAULT NULL,
-  `status` enum('pending','confirming','completed','expired','failed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
-  `expiredAt` timestamp NOT NULL,
-  `redeemCode` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `planId` int NOT NULL,
+  `amount` decimal(10,2) NOT NULL,
+  `currency` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'USD',
+  `status` enum('pending','paid','failed','refunded') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `paymentMethod` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `transactionId` varchar(256) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `paidAt` timestamp NULL DEFAULT NULL,
+  `note` text COLLATE utf8mb4_unicode_ci,
   `createdAt` timestamp NOT NULL DEFAULT (now()),
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_payment_orders_userId` (`userId`),
-  KEY `idx_payment_orders_status` (`status`),
-  KEY `idx_payment_orders_usdtAmount` (`usdtAmount`)
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -480,11 +510,13 @@ CREATE TABLE `public_group_join_status` (
   `errorMsg` varchar(512) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `joinedAt` timestamp NULL DEFAULT NULL,
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+  `assignedAccountId` int DEFAULT NULL,
+  `joinLog` text COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_pgjs_unique` (`publicGroupId`,`monitorAccountId`),
   KEY `idx_pgjs_groupId` (`publicGroupId`),
   KEY `idx_pgjs_accountId` (`monitorAccountId`)
-) ENGINE=InnoDB AUTO_INCREMENT=205 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6539 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -497,13 +529,9 @@ DROP TABLE IF EXISTS `public_group_keywords`;
 CREATE TABLE `public_group_keywords` (
   `id` int NOT NULL AUTO_INCREMENT,
   `publicGroupId` int NOT NULL,
-  `pattern` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `matchType` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT 'contains',
-  `isActive` tinyint(1) NOT NULL DEFAULT '1',
+  `keyword` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL,
   `createdAt` timestamp NOT NULL DEFAULT (now()),
-  PRIMARY KEY (`id`),
-  KEY `idx_pgk_groupId` (`publicGroupId`),
-  KEY `idx_pgk_isActive` (`isActive`)
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -525,11 +553,12 @@ CREATE TABLE `public_monitor_groups` (
   `note` varchar(512) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `createdAt` timestamp NOT NULL DEFAULT (now()),
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+  `realId` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `public_monitor_groups_groupId_unique` (`groupId`),
   KEY `idx_pmg_groupId` (`groupId`),
   KEY `idx_pmg_isActive` (`isActive`)
-) ENGINE=InnoDB AUTO_INCREMENT=416 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4238 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -544,16 +573,22 @@ CREATE TABLE `push_settings` (
   `userId` int NOT NULL,
   `pushEnabled` tinyint(1) NOT NULL DEFAULT '1',
   `filterAds` tinyint(1) NOT NULL DEFAULT '0',
-  `maxMsgLength` int NOT NULL DEFAULT '0',
   `collaborationGroupId` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `collaborationGroupTitle` varchar(256) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `pushFormat` enum('simple','standard','detailed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'standard',
   `createdAt` timestamp NOT NULL DEFAULT (now()),
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+  `keywordMatchMode` enum('fuzzy','exact','leftmost','rightmost') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'fuzzy',
+  `blacklistMatchMode` enum('fuzzy','exact') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'fuzzy',
+  `includeSearchHistory` tinyint(1) NOT NULL DEFAULT '0',
+  `dedupeMinutes` int NOT NULL DEFAULT '0',
+  `blacklistKeywords` text COLLATE utf8mb4_unicode_ci,
+  `filterBots` tinyint(1) NOT NULL DEFAULT '0',
+  `mediaOnly` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `push_settings_userId_unique` (`userId`),
   KEY `idx_push_settings_userId` (`userId`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -591,20 +626,15 @@ DROP TABLE IF EXISTS `sender_history`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `sender_history` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
+  `id` int NOT NULL AUTO_INCREMENT,
   `userId` int NOT NULL,
-  `senderTgId` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `senderUsername` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `senderFirstName` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `messageContent` text COLLATE utf8mb4_unicode_ci,
-  `groupId` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `groupTitle` varchar(256) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `messageDate` timestamp NOT NULL,
-  `createdAt` timestamp NOT NULL DEFAULT (now()),
-  PRIMARY KEY (`id`),
-  KEY `idx_sender_history_userId` (`userId`),
-  KEY `idx_sender_history_senderTgId` (`senderTgId`),
-  KEY `idx_sender_history_messageDate` (`messageDate`)
+  `tgAccountId` int NOT NULL,
+  `targetGroupId` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `messageContent` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sentAt` timestamp NOT NULL DEFAULT (now()),
+  `status` enum('success','failed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'success',
+  `errorMessage` text COLLATE utf8mb4_unicode_ci,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -623,7 +653,7 @@ CREATE TABLE `system_config` (
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `system_config_configKey_unique` (`configKey`)
-) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=54368 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -641,7 +671,7 @@ CREATE TABLE `system_settings` (
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `system_settings_key_unique` (`key`)
-) ENGINE=InnoDB AUTO_INCREMENT=37 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -678,14 +708,14 @@ CREATE TABLE `tg_accounts` (
   `isActive` tinyint(1) NOT NULL DEFAULT '1',
   `createdAt` timestamp NOT NULL DEFAULT (now()),
   `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
-  `last_alert_at` bigint DEFAULT NULL,
   `lastAlertAt` timestamp NULL DEFAULT NULL,
-  `isPublicAccount` tinyint(1) NOT NULL DEFAULT '0' COMMENT '公共监控账号',
-  `maxGroupsPerAccount` int DEFAULT '20' COMMENT '单账号最大群组数',
+  `inEngine` tinyint(1) NOT NULL DEFAULT '0',
+  `maxGroupsLimit` int DEFAULT NULL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `tg_accounts_phone_unique` (`phone`),
   UNIQUE KEY `uq_tg_accounts_phone` (`phone`),
   KEY `idx_tg_accounts_userId` (`userId`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -720,8 +750,12 @@ CREATE TABLE `users` (
   UNIQUE KEY `users_openId_unique` (`openId`),
   UNIQUE KEY `users_email_unique` (`email`),
   UNIQUE KEY `users_tgUserId_unique` (`tgUserId`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping routines for database 'shentanbot'
+--
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -732,4 +766,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-04-01 18:09:07
+-- Dump completed on 2026-05-01 16:21:55
