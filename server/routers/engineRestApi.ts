@@ -294,6 +294,7 @@ export function registerEngineRestRoutes(app: Router) {
           return res.json({ success: true, id: existing[0].id, duplicate: true });
         }
       }
+      // onDuplicateKeyUpdate: 幂等插入，避免唯一索引冲突
       const result = await db.insert(hitRecords).values({
         userId: input.userId,
         tgAccountId: input.monitorAccountId || input.accountId || 0,
@@ -307,9 +308,22 @@ export function registerEngineRestRoutes(app: Router) {
         messageId: input.messageId ? String(input.messageId) : null,
         dmStatus: "pending",
         messageDate: new Date(),
-      });
+      }).onDuplicateKeyUpdate({ set: { dmStatus: "pending" } });
 
-      res.json({ success: true, id: Number(result[0].insertId) });
+      const insertId = Number(result[0].insertId);
+      if (insertId === 0) {
+        // 重复记录，返回已有记录 id
+        const existing = await db.select({ id: hitRecords.id })
+          .from(hitRecords)
+          .where(and(
+            eq(hitRecords.userId, input.userId),
+            eq(hitRecords.messageId, String(input.messageId || "")),
+            eq(hitRecords.matchedKeyword, matchedKeywordStr)
+          ))
+          .limit(1);
+        return res.json({ success: true, id: existing[0]?.id || 0, duplicate: true });
+      }
+      res.json({ success: true, id: insertId });
     } catch (e: any) {
       console.error("[Engine API] hit error:", e);
       res.status(500).json({ error: e.message });
