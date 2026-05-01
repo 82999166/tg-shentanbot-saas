@@ -1460,6 +1460,121 @@ export const engineRouter = router({
       };
     }),
 
+
+  // ── Bot 推送：获取待推送的命中记录 ──────────────────────────────────────────
+  botGetPendingHits: engineProcedure
+    .input(z.object({ limit: z.number().optional().default(10) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { pushSettings, monitorGroups } = await import("../../drizzle/schema");
+      const limit = Math.min(input.limit ?? 10, 50);
+      // 查询 pending 状态的命中记录
+      const hits = await db
+        .select({
+          id: hitRecords.id,
+          userId: hitRecords.userId,
+          messageId: hitRecords.messageId,
+          messageContent: hitRecords.messageContent,
+          messageDate: hitRecords.messageDate,
+          senderTgId: hitRecords.senderTgId,
+          senderUsername: hitRecords.senderUsername,
+          senderFirstName: hitRecords.senderFirstName,
+          senderLastName: hitRecords.senderLastName,
+          matchedKeyword: hitRecords.matchedKeyword,
+          monitorGroupId: hitRecords.monitorGroupId,
+          createdAt: hitRecords.createdAt,
+        })
+        .from(hitRecords)
+        .where(eq(hitRecords.dmStatus, "pending"))
+        .orderBy(hitRecords.createdAt)
+        .limit(limit);
+      if (hits.length === 0) return [];
+      // 批量获取每条记录对应用户的推送设置
+      const userIds = [...new Set(hits.map((h) => h.userId))];
+      const pushSettingsList = await db
+        .select()
+        .from(pushSettings)
+        .where(sql`${pushSettings.userId} IN (${sql.join(userIds.map((id) => sql`${id}`), sql`, `)})`);
+      const pushMap = new Map(pushSettingsList.map((p) => [p.userId, p]));
+      // 批量获取群组信息
+      const groupIds = [...new Set(hits.map((h) => h.monitorGroupId))];
+      const groupList = await db
+        .select({ id: monitorGroups.id, groupId: monitorGroups.groupId, groupTitle: monitorGroups.groupTitle })
+        .from(monitorGroups)
+        .where(sql`${monitorGroups.id} IN (${sql.join(groupIds.map((id) => sql`${id}`), sql`, `)})`);
+      const groupMap = new Map(groupList.map((g) => [g.id, g]));
+      // 获取用户 tgUserId
+      const userList = await db
+        .select({ id: users.id, tgUserId: users.tgUserId })
+        .from(users)
+        .where(sql`${users.id} IN (${sql.join(userIds.map((id) => sql`${id}`), sql`, `)})`);
+      const userMap = new Map(userList.map((u) => [u.id, u]));
+      return hits.map((hit) => {
+        const ps = pushMap.get(hit.userId);
+        const group = groupMap.get(hit.monitorGroupId);
+        const user = userMap.get(hit.userId);
+        const pushEnabled = ps?.pushEnabled ?? true;
+        const collabGroupId = ps?.collaborationGroupId || null;
+        const tgUserId = user?.tgUserId || null;
+        // 计算推送目标：优先协作群，降级个人 TG
+        let targetChatId: string | null = null;
+        let pushToPersonal = false;
+        if (collabGroupId) {
+          targetChatId = collabGroupId;
+        } else if (tgUserId) {
+          targetChatId = tgUserId;
+          pushToPersonal = true;
+        }
+        return {
+          id: hit.id,
+          userId: hit.userId,
+          messageId: hit.messageId,
+          messageContent: hit.messageContent,
+          messageDate: hit.messageDate ? hit.messageDate.toISOString() : null,
+          senderTgId: hit.senderTgId,
+          senderUsername: hit.senderUsername,
+          senderFirstName: hit.senderFirstName,
+          senderLastName: hit.senderLastName,
+          matchedKeyword: hit.matchedKeyword,
+          groupId: group?.groupId || null,
+          groupTitle: group?.groupTitle || null,
+          createdAt: hit.createdAt ? hit.createdAt.toISOString() : null,
+          pushEnabled,
+          pushFormat: ps?.pushFormat ?? "standard",
+          collaborationGroupId: collabGroupId,
+          targetChatId,
+          pushToPersonal,
+        };
+      }).filter((h) => h.pushEnabled && h.targetChatId);
+    }),
+
+  // ── Bot 推送：标记命中记录已发送 ──────────────────────────────────────────
+  botMarkHitSent: engineProcedure
+    .input(z.object({ hitRecordId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { success: false };
+      await db
+        .update(hitRecords)
+        .set({ dmStatus: "sent", dmSentAt: new Date() })
+        .where(eq(hitRecords.id, input.hitRecordId));
+      return { success: true };
+    }),
+
+  // ── Bot 推送：标记命中记录发送失败 ──────────────────────────────────────────
+  botMarkHitFailed: engineProcedure
+    .input(z.object({ hitRecordId: z.number(), error: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { success: false };
+      await db
+        .update(hitRecords)
+        .set({ dmStatus: "failed", dmError: input.error || "unknown error" })
+        .where(eq(hitRecords.id, input.hitRecordId));
+      return { success: true };
+    }),
+
 });
 
 // ── 配置查询（独立函数，避免循环引用） ──────────────────────────────────────────────────────────────
