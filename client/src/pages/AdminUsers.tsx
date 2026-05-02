@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import {
   Users, Crown, Loader2, Search, Eye, Key, Hash,
   Calendar, Tag, BarChart2, Activity, ChevronDown, ChevronUp,
-  Smartphone, Plus, Trash2, Settings, RefreshCw
+  Smartphone, Plus, Trash2, Settings, RefreshCw, Ban, UserCheck, AlertTriangle
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import UserConfigPanel from "@/pages/UserConfigPanel";
@@ -331,7 +331,27 @@ export default function AdminUsers() {
   const [userPage, setUserPage] = useState(1);
   const USER_PAGE_SIZE = 20;
   const [viewUserId, setViewUserId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
+  const [toggleTarget, setToggleTarget] = useState<{ id: number; name: string; currentStatus: string } | null>(null);
   const utils = trpc.useUtils();
+
+  const deleteUserMut = trpc.admin.deleteUser.useMutation({
+    onSuccess: () => {
+      toast.success("用户已删除（含所有关联数据）");
+      setDeleteTarget(null);
+      utils.admin.users.invalidate();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const toggleStatusMut = trpc.admin.toggleUserStatus.useMutation({
+    onSuccess: (_, vars) => {
+      toast.success(vars.status === "disabled" ? "用户已禁用" : "用户已启用");
+      setToggleTarget(null);
+      utils.admin.users.invalidate();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
 
   const { data: usersData, isLoading: usersLoading, isRefetching: usersRefetching, refetch: refetchUsers } = trpc.admin.users.useQuery({
     page: userPage,
@@ -506,10 +526,26 @@ export default function AdminUsers() {
                           <span className="text-xs text-slate-400">{new Date(u.lastSignedIn).toLocaleDateString()}</span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-400 hover:text-blue-400" title="查看详情"
-                            onClick={() => setViewUserId(u.id)}>
-                            <Eye className="w-4 h-4" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-400 hover:text-blue-400" title="查看详情"
+                              onClick={() => setViewUserId(u.id)}>
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            {u.role !== "admin" && (
+                              <>
+                                <Button size="icon" variant="ghost"
+                                  className={`w-7 h-7 ${(u.status ?? 'active') === 'disabled' ? 'text-green-400 hover:text-green-300' : 'text-amber-400 hover:text-amber-300'}`}
+                                  title={(u.status ?? 'active') === 'disabled' ? '启用用户' : '禁用用户'}
+                                  onClick={() => setToggleTarget({ id: u.id, name: u.name ?? u.email ?? `#${u.id}`, currentStatus: u.status ?? 'active' })}>
+                                  {(u.status ?? 'active') === 'disabled' ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                                </Button>
+                                <Button size="icon" variant="ghost" className="w-7 h-7 text-red-400 hover:text-red-300" title="删除用户"
+                                  onClick={() => setDeleteTarget({ id: u.id, name: u.name ?? u.email ?? `#${u.id}` })}>
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -571,6 +607,70 @@ export default function AdminUsers() {
           planColors={planColors}
         />
       )}
+
+      {/* 删除确认弹窗 */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <AlertTriangle className="w-5 h-5" /> 确认删除用户
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              此操作不可撤销，将永久删除该用户及其所有关联数据。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-3">
+            <p className="text-sm text-slate-300">即将删除用户：<span className="font-bold text-white">{deleteTarget?.name}</span></p>
+            <div className="mt-3 bg-red-900/20 border border-red-800 rounded-lg p-3 text-xs text-red-300 space-y-1">
+              <p className="font-semibold">以下数据将被永久删除：</p>
+              <p>关键词、监控群组、命中记录、私信队列、TG账号、消息模板、黑名单、支付订单、推送设置等所有关联数据</p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)} className="text-slate-400">取消</Button>
+            <Button variant="destructive" className="bg-red-600 hover:bg-red-700"
+              disabled={deleteUserMut.isPending}
+              onClick={() => deleteTarget && deleteUserMut.mutate({ userId: deleteTarget.id })}>
+              {deleteUserMut.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Trash2 className="w-4 h-4 mr-1" />}
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 禁用/启用确认弹窗 */}
+      <Dialog open={!!toggleTarget} onOpenChange={(open) => !open && setToggleTarget(null)}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {toggleTarget?.currentStatus === 'disabled'
+                ? <><UserCheck className="w-5 h-5 text-green-400" /> 确认启用用户</>
+                : <><Ban className="w-5 h-5 text-amber-400" /> 确认禁用用户</>}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {toggleTarget?.currentStatus === 'disabled'
+                ? '启用后用户可以正常登录和使用系统。'
+                : '禁用后用户将无法登录，但数据不会删除。'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-3">
+            <p className="text-sm text-slate-300">操作用户：<span className="font-bold text-white">{toggleTarget?.name}</span></p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setToggleTarget(null)} className="text-slate-400">取消</Button>
+            <Button
+              className={toggleTarget?.currentStatus === 'disabled' ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-600 hover:bg-amber-700'}
+              disabled={toggleStatusMut.isPending}
+              onClick={() => toggleTarget && toggleStatusMut.mutate({
+                userId: toggleTarget.id,
+                status: toggleTarget.currentStatus === 'disabled' ? 'active' : 'disabled'
+              })}>
+              {toggleStatusMut.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              {toggleTarget?.currentStatus === 'disabled' ? '确认启用' : '确认禁用'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

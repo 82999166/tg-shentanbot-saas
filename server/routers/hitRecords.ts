@@ -22,7 +22,7 @@ import {
 } from "../db";
 import { protectedProcedure, router, adminProcedure } from "../_core/trpc";
 import { getAllUsers, countAllUsers, getDb } from "../db";
-import { users, tgAccounts, keywords, monitorGroups, hitRecords, publicMonitorGroups, publicGroupJoinStatus } from "../../drizzle/schema";
+import { users, tgAccounts, keywords, monitorGroups, hitRecords, publicMonitorGroups, publicGroupJoinStatus, dmQueue, antibanSettings, blacklist, paymentOrders, pushSettings, senderHistory, keywordDailyStats, keywordGroups, messageTemplates, botConfigs, passwordResetTokens } from "../../drizzle/schema";
 import { eq, and, desc, sql, or, like, gte, lt, inArray } from "drizzle-orm";
 
 // ============================================================
@@ -604,4 +604,54 @@ export const adminRouter = router({
       recentHits,
     };
   }),
+
+  // ── 禁用/启用用户 ──────────────────────────────────────────
+  toggleUserStatus: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      status: z.enum(["active", "disabled"]),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const user = await db.select({ id: users.id, role: users.role })
+        .from(users).where(eq(users.id, input.userId)).limit(1);
+      if (!user[0]) throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+      if (user[0].role === "admin") throw new TRPCError({ code: "FORBIDDEN", message: "不能禁用管理员账号" });
+      await db.update(users)
+        .set({ status: input.status } as any)
+        .where(eq(users.id, input.userId));
+      return { success: true };
+    }),
+
+  // ── 删除用户（级联删除所有关联数据）──────────────────────────
+  deleteUser: adminProcedure
+    .input(z.object({ userId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const user = await db.select({ id: users.id, role: users.role })
+        .from(users).where(eq(users.id, input.userId)).limit(1);
+      if (!user[0]) throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+      if (user[0].role === "admin") throw new TRPCError({ code: "FORBIDDEN", message: "不能删除管理员账号" });
+      const uid = input.userId;
+      // 按依赖顺序级联删除所有关联数据
+      await db.delete(senderHistory).where(eq(senderHistory.userId, uid));
+      await db.delete(keywordDailyStats).where(eq(keywordDailyStats.userId, uid));
+      await db.delete(pushSettings).where(eq(pushSettings.userId, uid));
+      await db.delete(botConfigs).where(eq(botConfigs.userId, uid));
+      await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, uid));
+      await db.delete(paymentOrders).where(eq(paymentOrders.userId, uid));
+      await db.delete(blacklist).where(eq(blacklist.userId, uid));
+      await db.delete(antibanSettings).where(eq(antibanSettings.userId, uid));
+      await db.delete(dmQueue).where(eq(dmQueue.userId, uid));
+      await db.delete(hitRecords).where(eq(hitRecords.userId, uid));
+      await db.delete(monitorGroups).where(eq(monitorGroups.userId, uid));
+      await db.delete(messageTemplates).where(eq(messageTemplates.userId, uid));
+      await db.delete(keywordGroups).where(eq(keywordGroups.userId, uid));
+      await db.delete(keywords).where(eq(keywords.userId, uid));
+      await db.delete(tgAccounts).where(eq(tgAccounts.userId, uid));
+      await db.delete(users).where(eq(users.id, uid));
+      return { success: true };
+    }),
 });

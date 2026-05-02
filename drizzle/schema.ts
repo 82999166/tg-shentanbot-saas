@@ -32,6 +32,7 @@ export const users = mysqlTable("users", {
   tgUsername: varchar("tgUsername", { length: 128 }),        // TG 用户名
   tgFirstName: varchar("tgFirstName", { length: 128 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  status: mysqlEnum("status", ["active", "disabled"]).default("active").notNull(),
   // 套餐
   planId: mysqlEnum("planId", ["free", "basic", "pro", "enterprise"]).default("free").notNull(),
   planExpiresAt: timestamp("planExpiresAt"),
