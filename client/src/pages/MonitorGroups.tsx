@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Monitor, Plus, Trash2, Play, Pause, Users, Hash, Pencil, RefreshCw, Search } from "lucide-react";
+import { Monitor, Plus, Trash2, Play, Pause, Users, Hash, Pencil, RefreshCw, Search, Wifi, WifiOff, Activity } from "lucide-react";
 import { useState, useMemo } from "react";
 
 type TgDialog = {
@@ -50,6 +50,29 @@ export default function MonitorGroups() {
   const utils = trpc.useUtils();
   const { data: groups, isLoading } = trpc.monitorGroups.list.useQuery();
   const { data: tgAccounts } = trpc.tgAccounts.list.useQuery();
+
+  // 引擎心跳数据（从 systemConfig 读取）
+  const { data: heartbeatConfig, refetch: refetchHeartbeat, isFetching: fetchingHeartbeat } =
+    trpc.systemConfig.getPublic.useQuery({ key: "engine_last_heartbeat" }, { refetchInterval: 30000 });
+
+  const heartbeat = useMemo(() => {
+    try { return heartbeatConfig?.value ? JSON.parse(heartbeatConfig.value) : null; } catch { return null; }
+  }, [heartbeatConfig]);
+
+  const engineOnline = useMemo(() => {
+    if (!heartbeat?.timestamp) return false;
+    const ts = heartbeat.timestamp > 1e12 ? heartbeat.timestamp : heartbeat.timestamp * 1000;
+    return (Date.now() - ts) < 120000; // 2分钟内有心跳
+  }, [heartbeat]);
+
+  const lastHeartbeatText = useMemo(() => {
+    if (!heartbeat?.timestamp) return "从未";
+    const ts = heartbeat.timestamp > 1e12 ? heartbeat.timestamp : heartbeat.timestamp * 1000;
+    const sec = Math.floor((Date.now() - ts) / 1000);
+    if (sec < 60) return `${sec}秒前`;
+    if (sec < 3600) return `${Math.floor(sec / 60)}分钟前`;
+    return `${Math.floor(sec / 3600)}小时前`;
+  }, [heartbeat]);
 
   const batchCreateMut = trpc.monitorGroups.batchCreate.useMutation({
     onSuccess: (res) => {
@@ -92,6 +115,9 @@ export default function MonitorGroups() {
   const [editOpen, setEditOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditFormState>(defaultEditForm);
+
+  // ─── 引擎检测弹窗状态 ─────────────────────────────────────────────────────
+  const [engineCheckOpen, setEngineCheckOpen] = useState(false);
 
   const resetAddDialog = () => {
     setForm(defaultForm);
@@ -212,10 +238,47 @@ export default function MonitorGroups() {
   return (
     <AppLayout title="群组监控">
       <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <p className="text-sm text-muted-foreground">配置需要监控的 Telegram 群组</p>
-          <Button size="sm" onClick={() => { resetAddDialog(); setOpen(true); }}>
-            <Plus className="w-4 h-4 mr-2" /> 添加监控群组
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="border-border text-xs" onClick={() => setEngineCheckOpen(true)}>
+              <Activity className="w-3.5 h-3.5 mr-1.5" /> 引擎状态检测
+            </Button>
+            <Button size="sm" onClick={() => { resetAddDialog(); setOpen(true); }}>
+              <Plus className="w-4 h-4 mr-2" /> 添加监控群组
+            </Button>
+          </div>
+        </div>
+
+        {/* 引擎状态栏 */}
+        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-lg mb-5 text-sm border ${engineOnline ? "bg-emerald-950/40 border-emerald-800/50" : "bg-slate-800/60 border-slate-700"}`}>
+          {engineOnline
+            ? <Wifi className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            : <WifiOff className="w-4 h-4 text-slate-400 flex-shrink-0" />
+          }
+          <span className={engineOnline ? "text-emerald-300 font-medium" : "text-slate-400"}>
+            引擎{engineOnline ? "在线" : "离线"}
+          </span>
+          {heartbeat && (
+            <>
+              <span className="text-slate-500 text-xs">最后心跳: {lastHeartbeatText}</span>
+              {heartbeat.totalGroups != null && (
+                <span className="text-slate-400 text-xs">· 监控群组: <span className="text-blue-400 font-medium">{heartbeat.totalGroups}</span> 个</span>
+              )}
+              {heartbeat.activeAccounts != null && (
+                <span className="text-slate-400 text-xs">· 活跃账号: <span className="text-green-400 font-medium">{heartbeat.activeAccounts}</span> 个</span>
+              )}
+            </>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto h-6 px-2 text-xs text-slate-400 hover:text-white"
+            onClick={() => refetchHeartbeat()}
+            disabled={fetchingHeartbeat}
+          >
+            <RefreshCw className={`w-3 h-3 mr-1 ${fetchingHeartbeat ? "animate-spin" : ""}`} />
+            刷新
           </Button>
         </div>
 
@@ -236,11 +299,22 @@ export default function MonitorGroups() {
                       <div>
                         <div className="font-medium text-sm">{g.groupTitle ?? `群组 ${g.groupId}`}</div>
                         <div className="text-xs text-muted-foreground font-mono">ID: {g.groupId}</div>
+                        {(g as any).groupUsername && (
+                          <div className="text-xs text-blue-400/70 font-mono">@{(g as any).groupUsername}</div>
+                        )}
                       </div>
                     </div>
-                    <Badge className={`text-xs border-0 ${statusColors[g.monitorStatus] ?? "bg-slate-700 text-slate-300"}`}>
-                      {statusLabels[g.monitorStatus] ?? g.monitorStatus}
-                    </Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge className={`text-xs border-0 ${statusColors[g.monitorStatus] ?? "bg-slate-700 text-slate-300"}`}>
+                        {statusLabels[g.monitorStatus] ?? g.monitorStatus}
+                      </Badge>
+                      {/* 引擎在线时显示引擎监控状态 */}
+                      {engineOnline && (
+                        <Badge className={`text-xs border-0 ${g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "bg-blue-900/60 text-blue-300" : "bg-slate-700/60 text-slate-400"}`}>
+                          {g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "🔍 引擎监控中" : "⏸ 引擎未监控"}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -282,6 +356,102 @@ export default function MonitorGroups() {
           </div>
         )}
       </div>
+
+      {/* ─── 引擎状态检测弹窗 ──────────────────────────────────────────────── */}
+      <Dialog open={engineCheckOpen} onOpenChange={setEngineCheckOpen}>
+        <DialogContent className="bg-card border-border max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5 text-primary" /> 引擎监控状态检测
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {/* 引擎连接状态 */}
+            <div className={`flex items-center gap-3 p-4 rounded-lg border ${engineOnline ? "bg-emerald-950/40 border-emerald-800" : "bg-slate-800 border-slate-700"}`}>
+              {engineOnline
+                ? <Wifi className="w-6 h-6 text-emerald-400" />
+                : <WifiOff className="w-6 h-6 text-slate-400" />
+              }
+              <div>
+                <div className={`font-semibold ${engineOnline ? "text-emerald-300" : "text-slate-300"}`}>
+                  引擎{engineOnline ? "在线运行中" : "离线 / 未响应"}
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5">最后心跳: {lastHeartbeatText}</div>
+              </div>
+            </div>
+
+            {/* 引擎详细数据 */}
+            {heartbeat ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700">
+                  <div className="text-xs text-slate-400 mb-1">引擎类型</div>
+                  <div className="font-medium text-white text-sm">🐍 {heartbeat.engineType ?? "Pyrogram"}</div>
+                </div>
+                <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700">
+                  <div className="text-xs text-slate-400 mb-1">活跃账号数</div>
+                  <div className="font-bold text-green-400 text-xl">{heartbeat.activeAccounts ?? 0}</div>
+                </div>
+                <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700">
+                  <div className="text-xs text-slate-400 mb-1">监控群组总数</div>
+                  <div className="font-bold text-blue-400 text-xl">{heartbeat.totalGroups ?? 0}</div>
+                </div>
+                <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700">
+                  <div className="text-xs text-slate-400 mb-1">数据库群组数</div>
+                  <div className="font-bold text-purple-400 text-xl">{groups?.length ?? 0}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-6 text-center text-slate-500 text-sm">
+                <WifiOff className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                <p>暂无心跳数据，请确认监控引擎已启动</p>
+              </div>
+            )}
+
+            {/* 各群组监控状态列表 */}
+            {groups && groups.length > 0 && (
+              <div>
+                <div className="text-xs text-slate-400 mb-2 font-medium">各群组监控状态</div>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {groups.map((g) => (
+                    <div key={g.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/50">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-white truncate">{g.groupTitle ?? `群组 ${g.groupId}`}</div>
+                        <div className="text-xs text-slate-500 font-mono truncate">ID: {g.groupId}</div>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                        <Badge className={`text-xs border-0 ${statusColors[g.monitorStatus] ?? "bg-slate-700 text-slate-300"}`}>
+                          {statusLabels[g.monitorStatus] ?? g.monitorStatus}
+                        </Badge>
+                        {engineOnline && (
+                          <Badge className={`text-xs border-0 ${g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "bg-blue-900/60 text-blue-300" : "bg-slate-700/60 text-slate-500"}`}>
+                            {g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "引擎✓" : "引擎✗"}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 说明 */}
+            <div className="text-xs text-slate-500 bg-slate-800/40 rounded-lg p-3 border border-slate-700/50">
+              <p className="font-medium text-slate-400 mb-1">说明</p>
+              <p>• 引擎每 30 秒上报一次心跳，2 分钟内无心跳则判定为离线</p>
+              <p>• 「引擎✓」表示该群组状态为「监控中」，引擎应已加载该群组</p>
+              <p>• 「引擎✗」表示该群组已暂停或异常，引擎不会监控该群组消息</p>
+              <p>• 若群组状态正常但未命中，请检查关键词配置是否正确</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => refetchHeartbeat()} disabled={fetchingHeartbeat} className="border-border">
+              <RefreshCw className={`w-4 h-4 mr-2 ${fetchingHeartbeat ? "animate-spin" : ""}`} />
+              刷新检测
+            </Button>
+            <Button onClick={() => setEngineCheckOpen(false)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── 添加群组对话框 ──────────────────────────────────────────────────── */}
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetAddDialog(); }}>

@@ -453,6 +453,7 @@ export default function AdminUsers() {
                                 {u.role === "admin" && <Badge className="text-xs bg-amber-900/50 text-amber-300 border border-amber-700 px-1 py-0">管理员</Badge>}
                               </div>
                               <span className="text-xs text-slate-500 truncate block max-w-[160px]">{u.email}</span>
+                              <span className="text-xs text-slate-600 font-mono">ID: {u.id}</span>
                             </div>
                           </div>
                         </td>
