@@ -1506,29 +1506,30 @@ export const engineRouter = router({
       const groupMap = new Map(groupList.map((g) => [g.id, g]));
       // 批量获取最近3天搜索词统计（按 senderTgId + userId 分组）
       const senderIds = [...new Set(hits.filter(h => h.senderTgId).map(h => h.senderTgId as string))];
-      const userIdList = [...new Set(hits.map(h => h.userId))];
       const threeDaysAgo = new Date(Date.now() - 3 * 86400 * 1000);
-      type RecentKwRow = { senderTgId: string | null; userId: number; matchedKeyword: string | null; cnt: number };
+      // 最近搜索：只按 senderTgId 统计（不限 userId），反映该发送者最近搜索了什么
+      type RecentKwRow = { senderTgId: string | null; matchedKeyword: string | null; cnt: number };
       let recentKwRows: RecentKwRow[] = [];
       if (senderIds.length > 0) {
         recentKwRows = await db.execute(sql`
-          SELECT senderTgId, userId, matchedKeyword, COUNT(*) as cnt
+          SELECT senderTgId, matchedKeyword, COUNT(*) as cnt
           FROM hit_records
           WHERE senderTgId IN (${sql.join(senderIds.map(id => sql`${id}`), sql`, `)})
-            AND userId IN (${sql.join(userIdList.map(id => sql`${id}`), sql`, `)})
             AND createdAt >= ${threeDaysAgo}
             AND matchedKeyword IS NOT NULL
-          GROUP BY senderTgId, userId, matchedKeyword
+          GROUP BY senderTgId, matchedKeyword
           ORDER BY cnt DESC
         `) as unknown as RecentKwRow[];
       }
-      // 构建 Map: senderTgId+userId -> { keyword: count }
+      // 构建 Map: senderTgId -> { keyword: count }
       const recentKwMap = new Map<string, Record<string, number>>();
       for (const row of recentKwRows) {
         if (!row.senderTgId || !row.matchedKeyword) continue;
-        const key = `${row.senderTgId}:${row.userId}`;
+        const key = row.senderTgId;
         if (!recentKwMap.has(key)) recentKwMap.set(key, {});
-        recentKwMap.get(key)![row.matchedKeyword] = Number(row.cnt);
+        // 累加次数（同一关键词可能来自多条记录）
+        const existing = recentKwMap.get(key)![row.matchedKeyword] || 0;
+        recentKwMap.get(key)![row.matchedKeyword] = existing + Number(row.cnt);
       }
       // 获取用户 tgUserId
       const userList = await db
@@ -1571,7 +1572,7 @@ export const engineRouter = router({
           collaborationGroupId: collabGroupId,
           targetChatId,
           pushToPersonal,
-          recentKeywords: hit.senderTgId ? (recentKwMap.get(`${hit.senderTgId}:${hit.userId}`) || {}) : {},
+          recentKeywords: hit.senderTgId ? (recentKwMap.get(hit.senderTgId) || {}) : {},
         };
       }).filter((h) => h.pushEnabled && h.targetChatId);
     }),
