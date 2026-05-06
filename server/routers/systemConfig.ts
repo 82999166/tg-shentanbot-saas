@@ -29,6 +29,12 @@ const CONFIG_KEYS = [
   { key: "data_retention_days", description: "命中记录保留天数（0=永久保留）" },
   // Bot 告警配置
   { key: "account_health_alert_threshold", description: "账号健康度告警阈值（0-100）" },
+  // /buy 购买配置
+  { key: "buy_usdt_address", description: "USDT收款地址（TRC-20）" },
+  { key: "buy_qr_image_url", description: "/buy 二维码图片URL（留空则不显示图片）" },
+  { key: "buy_plans_text", description: "套餐价格说明（每行一个，如：1月 = 30U）" },
+  { key: "buy_support_username", description: "购买客服TG用户名（不含@）" },
+  { key: "buy_payment_note", description: "支付说明备注" },
 ];
 
 export const systemConfigRouter = router({
@@ -97,9 +103,10 @@ export const systemConfigRouter = router({
         .limit(1);
 
       const def = CONFIG_KEYS.find((d) => d.key === input.key);
-      if (!def) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "未知配置键" });
-      }
+      // 允许所有配置键（不限于 CONFIG_KEYS 中的预定义键）
+      // if (!def) {
+      //   throw new TRPCError({ code: "BAD_REQUEST", message: "未知配置键" });
+      // }
 
       if (existing.length > 0) {
         await db
@@ -140,6 +147,7 @@ export const systemConfigRouter = router({
 
         const def = CONFIG_KEYS.find((d) => d.key === item.key);
         const description = def?.description ?? item.key;
+        // 允许所有键更新（不限于 CONFIG_KEYS）
 
         if (existing.length > 0) {
           await db

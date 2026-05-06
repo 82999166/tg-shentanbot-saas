@@ -1634,6 +1634,53 @@ export const engineRouter = router({
         planExpiresAt: u.planExpiresAt,
       }));
     }),
+  // ── Bot API：获取已到期用户（用于推送到期通知）──────────────────────────────────
+  botGetExpiredUsers: engineProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const now = new Date();
+      // 查询套餐已到期且有 tgUserId 的用户（最近7天内到期，避免重复推送太旧的）
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const expiredUsers = await db
+        .select({
+          id: users.id,
+          name: users.name,
+          tgUserId: users.tgUserId,
+          planId: users.planId,
+          planExpiresAt: users.planExpiresAt,
+        })
+        .from(users)
+        .where(
+          and(
+            sql`${users.planExpiresAt} IS NOT NULL`,
+            sql`${users.planExpiresAt} < ${now}`,
+            sql`${users.planExpiresAt} >= ${sevenDaysAgo}`,
+            sql`${users.tgUserId} IS NOT NULL`
+          )
+        );
+      return expiredUsers.map((u) => ({
+        id: u.id,
+        name: u.name,
+        tgUserId: u.tgUserId,
+        planId: u.planId,
+        planExpiresAt: u.planExpiresAt ? u.planExpiresAt.toISOString() : null,
+      }));
+    }),
+  // ── Bot API：获取购买配置（USDT地址、套餐说明、二维码等）──────────────────────────
+  botGetBuyConfig: engineProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return {};
+      const keys = ['buy_usdt_address', 'buy_qr_image_url', 'buy_plans_text', 'buy_support_username', 'buy_payment_note'];
+      const rows = await db.select().from(systemConfig)
+        .where(sql`${systemConfig.configKey} IN (${sql.join(keys.map(k => sql`${k}`), sql`, `)})`);
+      const result: Record<string, string> = {};
+      for (const row of rows) {
+        result[row.configKey] = row.configValue || '';
+      }
+      return result;
+    }),
 });
 
 // ── 配置查询（独立函数，避免循环引用） ──────────────────────────────────────────────────────────────

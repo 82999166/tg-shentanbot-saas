@@ -1117,6 +1117,189 @@ function BotConfigTab() {
   );
 }
 
+
+// ── 购买配置 Tab（/buy 命令配置）──────────────────────────────────────────────
+function BuyConfigTab() {
+  const { data: configs, refetch } = trpc.sysConfig.getAll.useQuery();
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [qrPreview, setQrPreview] = useState<string>("");
+  const updateMutation = trpc.sysConfig.updateBatch.useMutation({
+    onSuccess: () => { toast.success("购买配置已保存"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const getValue = (key: string) => {
+    if (values[key] !== undefined) return values[key];
+    return configs?.find((c: any) => c.key === key)?.value ?? "";
+  };
+  const handleChange = (key: string, value: string) => {
+    setValues((prev) => ({ ...prev, [key]: value }));
+    if (key === "buy_qr_image_url") setQrPreview(value);
+  };
+  const handleSave = () => {
+    const allKeys = ["buy_usdt_address", "buy_qr_image_url", "buy_plans_text", "buy_support_username", "buy_payment_note"];
+    const configsToSave = allKeys.map((key) => ({ key, value: getValue(key) }));
+    updateMutation.mutate({ configs: configsToSave });
+  };
+
+  // 初始化二维码预览
+  const currentQrUrl = getValue("buy_qr_image_url");
+
+  return (
+    <div className="space-y-6">
+      {/* 说明 */}
+      <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+        配置用户发送 <code className="bg-blue-900/40 px-1 rounded">/buy</code> 命令时 Bot 自动回复的购买信息，包括二维码图片、USDT地址和套餐价格。
+      </div>
+
+      {/* USDT 收款地址 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            💰 USDT 收款地址（TRC-20）
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">TRC-20 收款地址</Label>
+            <Input
+              placeholder="TFaCj2bUdyB8xYmBZCaF8yTUVDcoUMLQ2M"
+              value={getValue("buy_usdt_address")}
+              onChange={(e) => handleChange("buy_usdt_address", e.target.value)}
+              className="bg-gray-900 border-gray-600 text-white font-mono text-xs"
+            />
+            <p className="text-gray-500 text-xs mt-1">用户点击 /buy 后，Bot 会显示此地址供用户付款</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 二维码图片 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            🔲 收款二维码图片
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">二维码图片 URL</Label>
+            <Input
+              placeholder="https://example.com/qrcode.png"
+              value={getValue("buy_qr_image_url")}
+              onChange={(e) => handleChange("buy_qr_image_url", e.target.value)}
+              className="bg-gray-900 border-gray-600 text-white text-xs"
+            />
+            <p className="text-gray-500 text-xs mt-1">
+              建议尺寸：400×400px，格式：PNG/JPG。填写图片直链 URL，留空则不发送图片。
+            </p>
+          </div>
+          {/* 二维码预览 */}
+          {(currentQrUrl || qrPreview) && (
+            <div className="mt-2">
+              <Label className="text-gray-400 text-xs mb-1.5 block">预览</Label>
+              <img
+                src={qrPreview || currentQrUrl}
+                alt="二维码预览"
+                className="w-32 h-32 object-contain rounded border border-gray-600 bg-white"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 套餐价格说明 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            📋 套餐价格说明
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">价格说明（每行一条）</Label>
+            <textarea
+              rows={5}
+              placeholder={"1月 = 30U\n3月 = 80U\n6月 = 140U\n1年 = 280U"}
+              value={getValue("buy_plans_text")}
+              onChange={(e) => handleChange("buy_plans_text", e.target.value)}
+              className="w-full bg-gray-900 border border-gray-600 text-white rounded-md p-3 text-sm resize-y font-mono"
+            />
+            <p className="text-gray-500 text-xs mt-1">每行一条价格说明，Bot 会逐行展示</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 客服和支付说明 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            💬 客服与支付说明
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">购买客服 TG 用户名（不含 @）</Label>
+            <Input
+              placeholder="bailidf2"
+              value={getValue("buy_support_username")}
+              onChange={(e) => handleChange("buy_support_username", e.target.value)}
+              className="bg-gray-900 border-gray-600 text-white"
+            />
+          </div>
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">支付说明备注</Label>
+            <Input
+              placeholder="支付后请将支付信息以及ID发送给客服"
+              value={getValue("buy_payment_note")}
+              onChange={(e) => handleChange("buy_payment_note", e.target.value)}
+              className="bg-gray-900 border-gray-600 text-white"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 消息预览 */}
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            👁 Bot 消息预览
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="bg-gray-900 rounded-lg p-4 text-sm text-gray-200 font-mono whitespace-pre-wrap border border-gray-700">
+            {[
+              "✅ 价格说明（免费3小时试用）：",
+              ...(getValue("buy_plans_text") || "1月 = 30U\n3月 = 80U\n6月 = 140U\n1年 = 280U").split("\n").filter(Boolean),
+              "",
+              "✅ 支付方式：",
+              "USDT",
+              "",
+              "✅ 支付说明：",
+              "1.金额请参照价格说明",
+              `2.${getValue("buy_payment_note") || "支付后请将支付信息以及ID发送给客服"}`,
+              getValue("buy_support_username") ? `3.客服：@${getValue("buy_support_username")}` : "",
+              "",
+              getValue("buy_usdt_address") ? `USDT地址(TRC-20)：${getValue("buy_usdt_address")}` : "",
+              "",
+              "⚠️ 注意：收款地址以此消息为准，其他任何地址都是假的，否则后果自负！！！",
+            ].filter(line => line !== undefined).join("\n")}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Button
+        className="w-full bg-blue-600 hover:bg-blue-700"
+        onClick={handleSave}
+        disabled={updateMutation.isPending}
+      >
+        <Save className="w-4 h-4 mr-2" />
+        {updateMutation.isPending ? "保存中..." : "保存购买配置"}
+      </Button>
+    </div>
+  );
+}
+
 // ── 系统配置 Tab（客服、官方频道、使用教程）────────────────────────────────
 function SysConfigTab() {
   const { data: configs, refetch } = trpc.sysConfig.getAll.useQuery();
@@ -1432,7 +1615,10 @@ export default function SystemSettings() {
             <Mail className="w-4 h-4 mr-1.5" />
             邮件配置
           </TabsTrigger>
-          <TabsTrigger value="sysconfig" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
+          <TabsTrigger value="buy" className="text-xs data-[state=active]:bg-blue-600">
+              💰 购买配置
+            </TabsTrigger>
+            <TabsTrigger value="sysconfig" className="data-[state=active]:bg-blue-600 text-gray-300 data-[state=active]:text-white">
             <Settings className="w-4 h-4 mr-1.5" />
             系统配置
           </TabsTrigger>
@@ -1451,7 +1637,10 @@ export default function SystemSettings() {
         <TabsContent value="smtp">
           <SmtpSettingsTab />
         </TabsContent>
-        <TabsContent value="sysconfig">
+        <TabsContent value="buy">
+            <BuyConfigTab />
+          </TabsContent>
+          <TabsContent value="sysconfig">
           <SysConfigTab />
         </TabsContent>
         <TabsContent value="tdlib">
