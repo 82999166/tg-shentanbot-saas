@@ -1467,7 +1467,7 @@ export const engineRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
-      const { pushSettings, monitorGroups } = await import("../../drizzle/schema");
+      const { pushSettings, publicMonitorGroups: pubGroups } = await import("../../drizzle/schema");
       const limit = Math.min(input.limit ?? 10, 50);
       // 查询 pending 状态的命中记录
       const hits = await db
@@ -1497,13 +1497,39 @@ export const engineRouter = router({
         .from(pushSettings)
         .where(sql`${pushSettings.userId} IN (${sql.join(userIds.map((id) => sql`${id}`), sql`, `)})`);
       const pushMap = new Map(pushSettingsList.map((p) => [p.userId, p]));
-      // 批量获取群组信息
+      // 批量获取群组信息（从 public_monitor_groups 表查询）
       const groupIds = [...new Set(hits.map((h) => h.monitorGroupId))];
       const groupList = await db
-        .select({ id: monitorGroups.id, groupId: monitorGroups.groupId, groupTitle: monitorGroups.groupTitle })
-        .from(monitorGroups)
-        .where(sql`${monitorGroups.id} IN (${sql.join(groupIds.map((id) => sql`${id}`), sql`, `)})`);
+        .select({ id: pubGroups.id, groupId: pubGroups.groupId, groupTitle: pubGroups.groupTitle })
+        .from(pubGroups)
+        .where(sql`${pubGroups.id} IN (${sql.join(groupIds.map((id) => sql`${id}`), sql`, `)})`);
       const groupMap = new Map(groupList.map((g) => [g.id, g]));
+      // 批量获取最近3天搜索词统计（按 senderTgId + userId 分组）
+      const senderIds = [...new Set(hits.filter(h => h.senderTgId).map(h => h.senderTgId as string))];
+      const userIdList = [...new Set(hits.map(h => h.userId))];
+      const threeDaysAgo = new Date(Date.now() - 3 * 86400 * 1000);
+      type RecentKwRow = { senderTgId: string | null; userId: number; matchedKeyword: string | null; cnt: number };
+      let recentKwRows: RecentKwRow[] = [];
+      if (senderIds.length > 0) {
+        recentKwRows = await db.execute(sql`
+          SELECT senderTgId, userId, matchedKeyword, COUNT(*) as cnt
+          FROM hit_records
+          WHERE senderTgId IN (${sql.join(senderIds.map(id => sql`${id}`), sql`, `)})
+            AND userId IN (${sql.join(userIdList.map(id => sql`${id}`), sql`, `)})
+            AND createdAt >= ${threeDaysAgo}
+            AND matchedKeyword IS NOT NULL
+          GROUP BY senderTgId, userId, matchedKeyword
+          ORDER BY cnt DESC
+        `) as unknown as RecentKwRow[];
+      }
+      // 构建 Map: senderTgId+userId -> { keyword: count }
+      const recentKwMap = new Map<string, Record<string, number>>();
+      for (const row of recentKwRows) {
+        if (!row.senderTgId || !row.matchedKeyword) continue;
+        const key = `${row.senderTgId}:${row.userId}`;
+        if (!recentKwMap.has(key)) recentKwMap.set(key, {});
+        recentKwMap.get(key)![row.matchedKeyword] = Number(row.cnt);
+      }
       // 获取用户 tgUserId
       const userList = await db
         .select({ id: users.id, tgUserId: users.tgUserId })
@@ -1545,6 +1571,7 @@ export const engineRouter = router({
           collaborationGroupId: collabGroupId,
           targetChatId,
           pushToPersonal,
+          recentKeywords: hit.senderTgId ? (recentKwMap.get(`${hit.senderTgId}:${hit.userId}`) || {}) : {},
         };
       }).filter((h) => h.pushEnabled && h.targetChatId);
     }),
