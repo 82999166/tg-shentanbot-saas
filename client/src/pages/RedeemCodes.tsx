@@ -10,6 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Key, Copy, RefreshCw } from "lucide-react";
 
+const DURATION_OPTIONS = [
+  { value: 1,  label: "1 个月" },
+  { value: 3,  label: "3 个月（季度）" },
+  { value: 6,  label: "6 个月（半年）" },
+  { value: 12, label: "12 个月（1 年）" },
+  { value: 24, label: "24 个月（2 年）" },
+];
+
 export default function RedeemCodes() {
   const [genPlan, setGenPlan] = useState<"basic" | "pro" | "enterprise">("pro");
   const [genMonths, setGenMonths] = useState(1);
@@ -77,15 +85,19 @@ export default function RedeemCodes() {
                 </Select>
               </div>
               <div>
-                <Label className="text-gray-400 text-xs mb-1 block">有效月数</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={24}
-                  value={genMonths}
-                  onChange={(e) => setGenMonths(Number(e.target.value))}
-                  className="bg-gray-700 border-gray-600 text-gray-200 h-8 text-xs"
-                />
+                <Label className="text-gray-400 text-xs mb-1 block">有效时长</Label>
+                <Select value={String(genMonths)} onValueChange={(v) => setGenMonths(Number(v))}>
+                  <SelectTrigger className="bg-gray-700 border-gray-600 text-gray-200 h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-800 border-gray-700">
+                    {DURATION_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={String(opt.value)} className="text-gray-300 text-xs">
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label className="text-gray-400 text-xs mb-1 block">生成数量</Label>
@@ -103,14 +115,14 @@ export default function RedeemCodes() {
                 <Input
                   type="number"
                   min={1}
-                  max={365}
+                  max={3650}
                   value={genExpireDays}
                   onChange={(e) => setGenExpireDays(Number(e.target.value))}
                   className="bg-gray-700 border-gray-600 text-gray-200 h-8 text-xs"
                 />
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-3">
               <Button
                 size="sm"
                 className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
@@ -119,8 +131,14 @@ export default function RedeemCodes() {
               >
                 {generateMutation.isPending ? "生成中..." : `生成 ${genCount} 个卡密`}
               </Button>
+              <span className="text-gray-500 text-xs">
+                将生成 <span className="text-blue-400 font-medium">{genPlan === "basic" ? "基础版" : genPlan === "pro" ? "专业版" : "企业版"}</span>
+                {" · "}
+                <span className="text-green-400 font-medium">{DURATION_OPTIONS.find(o => o.value === genMonths)?.label ?? `${genMonths}个月`}</span>
+                {" 卡密"}
+              </span>
               {generatedCodes.length > 0 && (
-                <Button size="sm" variant="outline" className="border-gray-600 text-gray-300 text-xs" onClick={copyAllCodes}>
+                <Button size="sm" variant="outline" className="border-gray-600 text-gray-300 text-xs ml-auto" onClick={copyAllCodes}>
                   <Copy className="w-3 h-3 mr-1" />
                   复制全部 ({generatedCodes.length})
                 </Button>
@@ -172,7 +190,9 @@ export default function RedeemCodes() {
                       <Badge className={`text-xs px-1.5 py-0 ${statusColors[c.status] || ""}`}>
                         {statusLabels[c.status] || c.status}
                       </Badge>
-                      <span className="text-xs text-gray-500">{c.plan} · {c.months}个月</span>
+                      <span className="text-xs text-gray-500">
+                        {c.plan} · {c.months >= 12 ? `${c.months / 12}年` : `${c.months}个月`}
+                      </span>
                     </div>
                     <div className="text-xs text-gray-500">
                       {c.usedAt ? `使用于 ${new Date(c.usedAt).toLocaleDateString()}` : `过期 ${new Date(c.expiresAt).toLocaleDateString()}`}

@@ -749,7 +749,7 @@ export const paymentRouter = router({
     .input(
       z.object({
         planId: z.enum(["basic", "pro", "enterprise"]),
-        durationMonths: z.number().int().min(1).max(12),
+        durationMonths: z.number().int().min(1).max(24),
         count: z.number().int().min(1).max(500),
         expiresInDays: z.number().int().optional(),
       })

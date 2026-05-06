@@ -1575,6 +1575,38 @@ export const engineRouter = router({
       return { success: true };
     }),
 
+
+  // -- 获取即将到期用户（3天内）
+  botGetExpiringUsers: engineProcedure
+    .query(async () => {
+      const db = await getDb();
+      const now = new Date();
+      const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+      const expiringUsers = await db
+        .select({
+          id: users.id,
+          name: users.name,
+          tgUserId: users.tgUserId,
+          planId: users.planId,
+          planExpiresAt: users.planExpiresAt,
+        })
+        .from(users)
+        .where(
+          and(
+            sql`${users.planExpiresAt} IS NOT NULL`,
+            sql`${users.planExpiresAt} > ${now}`,
+            sql`${users.planExpiresAt} <= ${threeDaysLater}`,
+            sql`${users.tgUserId} IS NOT NULL`
+          )
+        );
+      return expiringUsers.map((u) => ({
+        id: u.id,
+        name: u.name,
+        tgUserId: u.tgUserId,
+        planId: u.planId,
+        planExpiresAt: u.planExpiresAt,
+      }));
+    }),
 });
 
 // ── 配置查询（独立函数，避免循环引用） ──────────────────────────────────────────────────────────────
