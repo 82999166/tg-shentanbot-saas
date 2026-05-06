@@ -191,7 +191,7 @@ export default function RedeemCodes() {
                         {statusLabels[c.status] || c.status}
                       </Badge>
                       <span className="text-xs text-gray-500">
-                        {c.plan} · {c.months >= 12 ? `${c.months / 12}年` : `${c.months}个月`}
+                        {c.planId} · {c.durationMonths >= 12 ? `${c.durationMonths / 12}年` : `${c.durationMonths}个月`}
                       </span>
                     </div>
                     <div className="text-xs text-gray-500">
