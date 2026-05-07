@@ -1591,8 +1591,22 @@ export const engineRouter = router({
               if (matchMode === 'exact') {
                 return h.matchedKeyword === bk;
               } else {
-                // fuzzy: 屏蔽关键词包含在命中内容中，或命中内容包含屏蔽关键词
-                return (h.messageContent || '').includes(bk) || (h.matchedKeyword || '').includes(bk);
+                // fuzzy: 去除特殊字符后做模糊匹配（忽略 # @ 等符号），同时支持分词匹配
+                const normalize = (s: string) => s.replace(/[#@!！＃*\s]/g, '').toLowerCase();
+                const normContent = normalize(h.messageContent || '');
+                const normKeyword = normalize(h.matchedKeyword || '');
+                const normBk = normalize(bk);
+                // 方式1：去除特殊字符后直接包含匹配
+                if (normContent.includes(normBk) || normKeyword.includes(normBk)) return true;
+                // 方式2：分词匹配（屏蔽词按空格分词，所有词都出现在内容中则屏蔽）
+                const bkWords = bk.split(/\s+/).filter((w: string) => w.length > 0);
+                if (bkWords.length > 1) {
+                  const allMatch = bkWords.every((w: string) =>
+                    (h.messageContent || '').includes(w) || (h.matchedKeyword || '').includes(w)
+                  );
+                  if (allMatch) return true;
+                }
+                return false;
               }
             });
             if (isBlocked) return false;
