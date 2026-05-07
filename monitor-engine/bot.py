@@ -17,6 +17,7 @@ import json
 import aiohttp
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand,
+    BotCommandScopeDefault, BotCommandScopeAllGroupChats,
 )
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -239,6 +240,7 @@ def main_menu_text(s: dict) -> str:
 # ─── /start ───────────────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.warning(f"[CMD_START CALLED] from user={update.effective_user} chat={update.effective_chat}")
     tg = update.effective_user
     msg = await update.message.reply_text("⏳ 正在初始化...")
     try:
@@ -272,8 +274,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "5️⃣ 开启自动私信\n\n"
             "💡 如有卡密，点击「🎟 激活套餐」即可开通高级功能。",
             reply_markup=InlineKeyboardMarkup([
-                [{"text": "🎟 激活套餐", "callback_data": "menu_activate"}],
-                [{"text": "🚀 进入主菜单", "callback_data": "menu_main"}],
+                [InlineKeyboardButton("🎟 激活套餐", callback_data="menu_activate")],
+                [InlineKeyboardButton("🚀 进入主菜单", callback_data="menu_main")],
             ]),
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -823,35 +825,47 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── 命中记录操作（推送消息按鈕）──
     elif data.startswith("dm:"):
+        # callback_data 格式：dm:{hit_id}:{sender_tg_id}:{sender_username}
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
+        sender_uname = parts[3] if len(parts) > 3 else ""
         await q.answer()
         try:
-            # 发送临时纯文本超链接消息，tg://openmessage 在纯文本链接中可被客户端识别
-            import asyncio as _asyncio
-            msg = await context.bot.send_message(
-                chat_id=q.message.chat_id,
-                text=f'<a href="tg://openmessage?user_id={sender_tg_id_str}">💬 点击此处打开私信</a>（3秒后自动消失）',
-                parse_mode="HTML",
-            )
-            # 3秒后自动删除
-            async def _delete_later(m):
-                await _asyncio.sleep(3)
+            if sender_uname:
+                # 有用户名：按钮已是 URL 按钮直接拉起对话，此分支不会触发
+                pass
+            elif sender_tg_id_str and sender_tg_id_str.isdigit() and int(sender_tg_id_str) > 0:
+                # 无 username 但有 TG ID：编辑原消息，在顶部插入"💬 点此发起私聊"蓝色链接，长期显示
+                orig_text = q.message.text or q.message.caption or ""
+                dm_link = f'<a href="tg://user?id={sender_tg_id_str}">💬 点此发起私聊</a>'
+                # 如果顶部已有私聊链接，不重复插入
+                if "点此发起私聊" not in orig_text:
+                    new_text = dm_link + "\n" + orig_text
+                else:
+                    new_text = orig_text
                 try:
-                    await m.delete()
-                except Exception:
-                    pass
-            _asyncio.create_task(_delete_later(msg))
+                    await q.message.edit_text(
+                        text=new_text,
+                        parse_mode="HTML",
+                        reply_markup=q.message.reply_markup,
+                    )
+                except Exception as edit_err:
+                    logger.warning(f"edit_message failed: {edit_err}")
+            else:
+                await q.answer("该用户未设置用户名且隐藏了身份，无法发起私聊", show_alert=True)
         except Exception as e:
             logger.warning(f"dm handler error: {e}")
     elif data.startswith("history:"):
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
-        records = await api_get("engine.botGetSenderHistory", {"userId": uid, "senderTgId": sender_tg_id_str, "limit": 10}) or []
+        records = await api_get("engine.botGetSenderHistory", {"userId": uid, "senderTgId": sender_tg_id_str, "limit": 20}) or []
         if not records:
             await q.answer("该用户暂无命中记录", show_alert=True)
         else:
-            # 统计关键词出现次数，仿截图格式：最近搜索：关键词1(N) 关键词2(M)
+            # 生成详细历史记录消息
+            from datetime import datetime, timezone, timedelta
+            tz_cst = timezone(timedelta(hours=8))
+            # 统计关键词汇总
             kw_count: dict = {}
             for r in records:
                 kw = r.get("matchedKeyword", "") or r.get("keyword", "")
@@ -860,8 +874,58 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         k = k.strip()
                         if k:
                             kw_count[k] = kw_count.get(k, 0) + 1
-            recent_str = " ".join(f"{k}({v})" for k, v in list(kw_count.items())[:6])
-            await q.answer(f"最近搜索：{recent_str}" if recent_str else "暂无命中记录", show_alert=True)
+            # 用户显示名
+            first_rec = records[0]
+            fn = first_rec.get("senderFirstName", "") or ""
+            ln = first_rec.get("senderLastName", "") or ""
+            uname = first_rec.get("senderUsername", "") or ""
+            display_name = f"{fn} {ln}".strip() or (f"@{uname}" if uname else f"ID:{sender_tg_id_str}")
+            # 构建消息头部
+            kw_summary = " ".join(f"<b>#{_esc(k)}</b>({v})" for k, v in sorted(kw_count.items(), key=lambda x: x[1], reverse=True)[:8])
+            lines_hist = [f"<b>📊 {_esc(display_name)} 的历史查询记录</b>"]
+            if kw_summary:
+                lines_hist.append(f"关键词汇总：{kw_summary}")
+            lines_hist.append("")
+            # 逐条展示最近20条
+            for i, r in enumerate(records[:20], 1):
+                kw = r.get("matchedKeyword", "") or r.get("keyword", "") or "-"
+                grp = r.get("groupTitle", "") or r.get("groupId", "") or "未知群组"
+                msg_content = (r.get("messageContent", "") or "")[:30]
+                if len(r.get("messageContent", "") or "") > 30:
+                    msg_content += "..."
+                # 时间格式化
+                rec_date = r.get("messageDate", "") or r.get("createdAt", "") or ""
+                if rec_date:
+                    try:
+                        if isinstance(rec_date, str):
+                            dt = datetime.fromisoformat(rec_date.replace("Z", "+00:00"))
+                        else:
+                            dt = rec_date
+                        time_label = dt.astimezone(tz_cst).strftime("%m-%d %H:%M")
+                    except:
+                        time_label = str(rec_date)[:16]
+                else:
+                    time_label = ""
+                line = f"{i}. <b>#{_esc(kw)}</b> | {_esc(grp)}"
+                if msg_content:
+                    line += f"\n    └ {_esc(msg_content)}"
+                if time_label:
+                    line += f" [{time_label}]"
+                lines_hist.append(line)
+            hist_text = "\n".join(lines_hist)
+            # 发送历史记录消息（回复到当前群组）
+            try:
+                await q.answer()
+                await context.bot.send_message(
+                    chat_id=q.message.chat_id,
+                    text=hist_text,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=True,
+                    reply_to_message_id=q.message.message_id
+                )
+            except Exception as e:
+                logger.warning(f"history send error: {e}")
+                await q.answer("历史记录发送失败", show_alert=True)
     elif data.startswith("block:"):
         parts = data.split(":")
         sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
@@ -932,38 +996,40 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if uname:
             tg_url = f"https://t.me/{uname}"
-            await q.answer(
-                f"用户：@{uname}\n点击下方按鈕开始私聊",
-                show_alert=True
-            )
-            # 发送一条带跳转链接的消息
-            try:
-                await context.bot.send_message(
-                    chat_id=q.message.chat_id,
-                    text=f"💬 私聊用户 @{uname}",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton(f"💬 开始私聊 @{uname}", url=tg_url)]
-                    ])
-                )
-            except Exception:
-                pass
+            btn_label = f"💬 开始私聊 @{uname}"
+            msg_text = f"💬 私聊用户 @{uname}"
+        elif sender_tg_id_str and sender_tg_id_str.isdigit() and int(sender_tg_id_str) > 0:
+            # 无 username 但有 TG ID：用 tg://user?id= 协议（更通用，支持所有客户端）
+            tg_url = f"tg://user?id={sender_tg_id_str}"
+            btn_label = "💬 尝试私聊"
+            msg_text = f"💬 私聊用户 ID:{sender_tg_id_str}"
         else:
-            # 没有 username，尝试用数字 ID 构造链接
-            tg_url = f"https://t.me/+{sender_tg_id_str}"
-            await q.answer(
-                f"该用户未设置用户名\nID: {sender_tg_id_str}",
-                show_alert=True
+            tg_url = None
+            btn_label = None
+            msg_text = "⚠️ 该用户未设置用户名且隐藏了身份，无法私聊"
+        await q.answer()
+        # 发送私聊链接消息
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(btn_label, url=tg_url)]]) if tg_url else None
+        try:
+            await context.bot.send_message(
+                chat_id=q.message.chat_id,
+                text=msg_text,
+                reply_to_message_id=q.message.message_id,
+                reply_markup=reply_markup
             )
+        except Exception as e1:
+            logger.warning(f"[DM] reply 失败({e1})，改用直接发送")
             try:
                 await context.bot.send_message(
                     chat_id=q.message.chat_id,
-                    text=f"💬 私聊用户 ID:{sender_tg_id_str}",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton(f"💬 尝试私聊", url=tg_url)]
-                    ])
+                    text=msg_text,
+                    reply_markup=reply_markup
                 )
-            except Exception:
-                pass
+            except Exception as e2:
+                logger.error(f"[DM] 发送失败: {e2}")
+    elif data.startswith("no_username:"):
+        # 私聊按钮：用户无 username 且 TG ID 也无效，弹窗提示
+        await q.answer("该用户未设置用户名且隐藏了身份，无法发起私聊", show_alert=True)
     elif data == "menu_expiry":
         await q.answer()
         s = await api_get("engine.botGetUserStatus", {"userId": uid}) or {}
@@ -1606,8 +1672,349 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── 命中通知推送（由监控引擎调用）──────────────────────────────────────────
 
+
+# ─── 命中通知推送 Job（定时轮询并推送到群组）──────────────────────────────────
+
+def _esc(text: str) -> str:
+    """HTML 转义"""
+    return (str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;"))
+
+def format_hit_message(hit: dict, fmt: str = "standard") -> str:
+    """格式化命中消息（仿竞品样式2）"""
+    keyword = hit.get("matchedKeyword", "") or ""
+    content_raw = hit.get("messageContent", "") or ""
+    sender_username = hit.get("senderUsername", "") or ""
+    sender_first = hit.get("senderFirstName", "") or ""
+    sender_last = hit.get("senderLastName", "") or ""
+    sender_tg_id = hit.get("senderTgId", "") or ""
+    hit_id = hit.get("id", 0)
+    group_title = hit.get("groupTitle", "") or hit.get("groupId", "") or "未知群组"
+    message_date = hit.get("messageDate", "") or hit.get("createdAt", "") or ""
+    recent_keywords = hit.get("recentKeywords", {}) or {}
+
+    # 发送者显示：优先用名字，其次用 @username
+    if sender_first or sender_last:
+        sender_name = _esc(f"{sender_first} {sender_last}".strip())
+    elif sender_username:
+        sender_name = f"@{_esc(sender_username)}"
+    else:
+        sender_name = f"ID:{sender_tg_id}" if sender_tg_id else "未知"
+
+    # 消息内容：固定宽度截取（50字符），关键词加#号加粗进行高亮
+    MAX_CONTENT_LEN = 50
+    if content_raw:
+        truncated = content_raw[:MAX_CONTENT_LEN]
+        suffix = "..." if len(content_raw) > MAX_CONTENT_LEN else ""
+        content_display = _esc(truncated) + suffix
+        # 高亮关键词：替换为 #关键词 加粗
+        if keyword and keyword in truncated:
+            content_display = content_display.replace(_esc(keyword), f"<b>#{_esc(keyword)}</b>")
+    else:
+        content_display = "(无内容)"
+
+    # 时间格式化
+    if message_date:
+        try:
+            from datetime import datetime, timezone, timedelta
+            if isinstance(message_date, str):
+                dt = datetime.fromisoformat(message_date.replace("Z", "+00:00"))
+            else:
+                dt = message_date
+            # 转换为北京时间 UTC+8
+            tz_cst = timezone(timedelta(hours=8))
+            dt_cst = dt.astimezone(tz_cst)
+            time_str = dt_cst.strftime("%Y-%m-%d %H:%M:%S")
+        except:
+            time_str = str(message_date)[:19]
+    else:
+        time_str = ""
+
+    # 最近搜索统计
+    recent_str = ""
+    if recent_keywords:
+        # 按次数排序，取前8个
+        sorted_kw = sorted(recent_keywords.items(), key=lambda x: x[1], reverse=True)[:8]
+        recent_str = " ".join(f"{_esc(k)}({v})" for k, v in sorted_kw)
+
+    # 构建消息链接（来源）
+    group_id_str = hit.get("groupId", "") or ""
+    message_id_str = hit.get("messageId", "") or ""
+    # 构建 Telegram 消息跳转链接
+    # 格式：https://t.me/groupusername/messageId
+    # 如果 groupId 是数字（私有群），使用 c/groupId/messageId 格式
+    if group_id_str and message_id_str and str(message_id_str).isdigit():
+        if group_id_str.lstrip("-").isdigit():
+            # 私有群组：去掉 -100 前缀
+            pure_id = group_id_str.lstrip("-")
+            if pure_id.startswith("100"):
+                pure_id = pure_id[3:]
+            msg_link = f"https://t.me/c/{pure_id}/{message_id_str}"
+        else:
+            # 公开群组：直接用 @username
+            msg_link = f"https://t.me/{group_id_str}/{message_id_str}"
+        source_str = f'<a href="{msg_link}">{_esc(group_title)}</a>'
+    else:
+        source_str = _esc(group_title)
+
+    # 构建消息（竞品格式：正文不含私聊链接，点击按鈕后 Bot 回复链接）
+    lines = []
+    lines.append(f"用户：{sender_name}")
+    if sender_username and (sender_first or sender_last):
+        lines.append(f"账号：@{_esc(sender_username)}")
+    lines.append(f"来源：{source_str}")
+    # 内容行：显示固定长度消息原文，关键词高亮为 #号加粗
+    lines.append(f"内容：{content_display}")
+    if time_str:
+        lines.append(f"时间：{time_str}")
+    # 最近搜索：显示在消息正文中
+    if recent_keywords:
+        sorted_kw = sorted(recent_keywords.items(), key=lambda x: x[1], reverse=True)[:8]
+        recent_str = " ".join(f"<b>#{_esc(k)}</b>({v})" for k, v in sorted_kw)
+        lines.append(f"最近搜索：{recent_str}")
+    return "\n".join(lines)
+
+
+def make_hit_keyboard(hit: dict) -> InlineKeyboardMarkup:
+    """生成命中消息的操作按钮"""
+    hit_id = hit.get("id", 0)
+    sender_tg_id = hit.get("senderTgId", "") or ""
+    sender_username = hit.get("senderUsername", "") or ""
+    user_id = hit.get("userId", 0)
+    group_id_str = hit.get("groupId", "") or ""
+    message_id_str = str(hit.get("messageId", "") or "")
+
+    # 构建原始消息跳转链接（用于无 username 时的私聊按钮）
+    msg_link_for_btn = None
+    if group_id_str and message_id_str and message_id_str.isdigit():
+        if group_id_str.lstrip("-").isdigit():
+            pure_id = group_id_str.lstrip("-")
+            if pure_id.startswith("100"):
+                pure_id = pure_id[3:]
+            msg_link_for_btn = f"https://t.me/c/{pure_id}/{message_id_str}"
+        else:
+            msg_link_for_btn = f"https://t.me/{group_id_str}/{message_id_str}"
+
+    buttons = []
+    # 第一行：历史、私聊
+    row1 = []
+    row1.append(InlineKeyboardButton("📋 历史", callback_data=f"history:{hit_id}:{sender_tg_id}:{user_id}"))
+    # 私聊按钮：有 username 用 URL 按钮直接拉起对话；无 username 用 callback 回复链接
+    if sender_username:
+        row1.append(InlineKeyboardButton("💬 私聊", url=f"https://t.me/{sender_username}"))
+    elif sender_tg_id and str(sender_tg_id).isdigit() and int(str(sender_tg_id)) > 0:
+        row1.append(InlineKeyboardButton("💬 私聊", callback_data=f"dm:{hit_id}:{sender_tg_id}:"))
+    elif msg_link_for_btn:
+        row1.append(InlineKeyboardButton("💬 查看原消息", url=msg_link_for_btn))
+    buttons.append(row1)
+    # 第二行：已处理、屏蔽、删除
+    row2 = []
+    row2.append(InlineKeyboardButton("✅ 已处理", callback_data=f"done:{hit_id}"))
+    row2.append(InlineKeyboardButton("🚫 屏蔽", callback_data=f"block:{hit_id}:{sender_tg_id}:{user_id}"))
+    row2.append(InlineKeyboardButton("🗑️ 删除", callback_data=f"delete:{hit_id}"))
+    buttons.append(row2)
+    return InlineKeyboardMarkup(buttons)
+
+
+
+
+# ─── /buy ─────────────────────────────────────────────────────────────────────
+async def cmd_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """发送购买信息：二维码图片 + USDT地址 + 套餐价格"""
+    if not update.message:
+        return
+    # 从后端获取购买配置
+    cfg = await api_get("engine.botGetBuyConfig", {}) or {}
+    usdt_address = cfg.get("buy_usdt_address", "").strip()
+    qr_image_url = cfg.get("buy_qr_image_url", "").strip()
+    plans_text = cfg.get("buy_plans_text", "1月 = 30U\n3月 = 80U\n6月 = 140U\n1年 = 280U").strip()
+    support_username = cfg.get("buy_support_username", "").strip()
+    payment_note = cfg.get("buy_payment_note", "支付后请将支付信息以及ID发送给客服").strip()
+
+    # 构建消息文本
+    lines = []
+    lines.append("✅ **价格说明（免费3小时试用）：**")
+    for line in plans_text.split("\n"):
+        if line.strip():
+            lines.append(line.strip())
+    lines.append("")
+    lines.append("✅ **支付方式：**")
+    lines.append("USDT")
+    lines.append("")
+    lines.append("✅ **支付说明：**")
+    lines.append("1.金额请参照价格说明")
+    lines.append(f"2.{payment_note}")
+    if support_username:
+        lines.append(f"3.客服：@{support_username}")
+    if usdt_address:
+        lines.append("")
+        lines.append(f"USDT地址(TRC-20)：`{usdt_address}`")
+        lines.append("")
+        lines.append("⚠️ **注意：收款地址以此消息为准，其他任何地址都是假的，否则后果自负！！！**")
+
+    msg_text = "\n".join(lines)
+
+    # 如果有二维码图片 URL，先发图片再发文字
+    if qr_image_url:
+        try:
+            await update.message.reply_photo(
+                photo=qr_image_url,
+                caption=msg_text,
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+        except Exception as e:
+            logger.warning(f"[Buy] 发送二维码图片失败: {e}，改为纯文字")
+
+    # 无图片时纯文字发送
+    await update.message.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN)
+
+# ─── 套餐到期提醒（每天检查一次）────────────────────────────────────────────────
+async def remind_expiring_users(context):
+    """检查3天内即将到期 + 已到期的用户，发送续费提醒"""
+    try:
+        PLAN_NAMES_LOCAL = {'free': '免费版', 'basic': '基础版', 'pro': '专业版', 'enterprise': '企业版'}
+
+        # ── 1. 即将到期提醒（3天内）──
+        users_list = await api_get('engine.botGetExpiringUsers', {})
+        if users_list:
+            for user in users_list:
+                tg_user_id = user.get('tgUserId')
+                if not tg_user_id:
+                    continue
+                plan = PLAN_NAMES_LOCAL.get(user.get('planId', 'free'), '未知')
+                exp_raw = user.get('planExpiresAt', '')
+                exp = str(exp_raw)[:10] if exp_raw else '未知'
+                try:
+                    from datetime import datetime as dt
+                    exp_date = dt.fromisoformat(str(exp_raw).replace('Z', '+00:00'))
+                    now_utc = dt.now(exp_date.tzinfo)
+                    days_left = (exp_date - now_utc).days
+                except Exception:
+                    days_left = -1
+                days_str = f'{days_left} 天' if days_left >= 0 else '即将'
+                msg = (
+                    f'⏰ **套餐即将到期提醒**\n\n'
+                    f'您的 **{plan}** 套餐将在 **{days_str}** 后到期（{exp}）。\n\n'
+                    f'为避免服务中断，请及时续费。\n'
+                    f'发送 /buy 查看购买方式，或使用 /activate 命令输入卡密续费。'
+                )
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(tg_user_id),
+                        text=msg,
+                        parse_mode='Markdown'
+                    )
+                    logger.info(f'[Remind] 已向用户 {tg_user_id} 发送即将到期提醒（{days_str}后到期）')
+                except Exception as e:
+                    logger.warning(f'[Remind] 发送即将到期提醒失败 tgUserId={tg_user_id}: {e}')
+
+        # ── 2. 已到期提醒 ──
+        expired_list = await api_get('engine.botGetExpiredUsers', {})
+        if expired_list:
+            for user in expired_list:
+                tg_user_id = user.get('tgUserId')
+                if not tg_user_id:
+                    continue
+                plan = PLAN_NAMES_LOCAL.get(user.get('planId', 'free'), '未知')
+                exp_raw = user.get('planExpiresAt', '')
+                # 格式化到期时间为 "2026-04-30 14:17:32"
+                try:
+                    from datetime import datetime as dt, timezone, timedelta
+                    exp_date = dt.fromisoformat(str(exp_raw).replace('Z', '+00:00'))
+                    tz_cst = timezone(timedelta(hours=8))
+                    exp_str = exp_date.astimezone(tz_cst).strftime('%Y-%m-%d %H:%M:%S')
+                except Exception:
+                    exp_str = str(exp_raw)[:19] if exp_raw else '未知'
+                msg = (
+                    f'⚠️ **服务已到期提醒**\n\n'
+                    f'您的监听服务已于 **{exp_str}** 到期，请及时续费以保证本服务继续正常使用。\n\n'
+                    f'点击 /buy 查看如何购买'
+                )
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(tg_user_id),
+                        text=msg,
+                        parse_mode='Markdown'
+                    )
+                    logger.info(f'[Remind] 已向用户 {tg_user_id} 发送已到期提醒（到期时间={exp_str}）')
+                except Exception as e:
+                    logger.warning(f'[Remind] 发送已到期提醒失败 tgUserId={tg_user_id}: {e}')
+
+    except Exception as e:
+        logger.error(f'[Remind Job] 到期提醒任务失败: {e}')
+
+async def dispatch_pending_hits(context):
+    """定时 Job：轮询并推送待处理的命中记录
+    推送降级策略：有协作群→推到协作群；无协作群但有 tgUserId→推到用户个人 TG
+    """
+    import asyncio as _asyncio
+    try:
+        # 每批最多处理 10 条，避免积压时一次性爆发触发 TG 限流
+        hits = await api_get("engine.botGetPendingHits", {"limit": 10})
+        if not hits:
+            return
+        for hit in hits:
+            hit_id = hit.get("id")
+            push_format = hit.get("pushFormat", "standard")
+            # 优先使用协作群，降级使用个人 TG（targetChatId 由 web 服务计算好）
+            target_chat_id = hit.get("targetChatId") or hit.get("collaborationGroupId")
+            push_to_personal = hit.get("pushToPersonal", False)
+            if not hit_id or not target_chat_id:
+                continue
+            try:
+                msg_text = format_hit_message(hit, push_format)
+                keyboard = make_hit_keyboard(hit)
+                await context.bot.send_message(
+                    chat_id=target_chat_id,
+                    text=msg_text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=keyboard,
+                    disable_web_page_preview=True
+                )
+                # 标记为已发送
+                await api_post("engine.botMarkHitSent", {"hitRecordId": hit_id})
+                push_type = "个人 TG" if push_to_personal else "协作群"
+                logger.info(f"[Push] ✅ 命中记录 #{hit_id} 已推送到{push_type} {target_chat_id}")
+                # 每条消息发送后等待 0.5 秒，防止触发 TG Flood Control
+                await _asyncio.sleep(0.5)
+            except Exception as e:
+                err_str = str(e)
+                # 遇到 Flood Control，自动等待并重试一次
+                if "Flood control" in err_str or "Too Many Requests" in err_str or "retry" in err_str.lower():
+                    import re
+                    wait_sec = 10
+                    m = re.search(r"Retry in (\d+)", err_str)
+                    if m:
+                        wait_sec = int(m.group(1)) + 1
+                    logger.warning(f"[Push] ⚠️ 命中记录 #{hit_id} 触发限流，等待 {wait_sec} 秒后重试")
+                    await _asyncio.sleep(wait_sec)
+                    try:
+                        await context.bot.send_message(
+                            chat_id=target_chat_id,
+                            text=msg_text,
+                            parse_mode=ParseMode.HTML,
+                            reply_markup=keyboard,
+                            disable_web_page_preview=True
+                        )
+                        await api_post("engine.botMarkHitSent", {"hitRecordId": hit_id})
+                        push_type = "个人 TG" if push_to_personal else "协作群"
+                        logger.info(f"[Push] ✅ 命中记录 #{hit_id} 重试推送成功")
+                    except Exception as e2:
+                        logger.error(f"[Push] ❌ 命中记录 #{hit_id} 重试失败: {e2}")
+                        await api_post("engine.botMarkHitFailed", {"hitRecordId": hit_id, "error": str(e2)})
+                else:
+                    logger.error(f"[Push] ❌ 命中记录 #{hit_id} 推送失败: {e}")
+                    await api_post("engine.botMarkHitFailed", {"hitRecordId": hit_id, "error": err_str})
+    except Exception as e:
+        logger.error(f"[Push Job] 轮询失败: {e}")
+
 async def post_init(app):
-    cmds = [
+    # 私聊命令菜单（完整功能）
+    private_cmds = [
         BotCommand("start", "主菜单"),
         BotCommand("help", "使用帮助"),
         BotCommand("kw", "添加关键词 /kw 词1 词2"),
@@ -1617,8 +2024,20 @@ async def post_init(app):
         BotCommand("stats", "今日统计"),
         BotCommand("activate", "激活套餐卡密"),
     ]
-    await app.bot.set_my_commands(cmds)
-    logger.info("✅ Bot commands registered")
+    # 群组命令菜单（仅 /listen 绑定推送群组）
+    group_cmds = [
+        BotCommand("listen", "绑定本群为推送目标群组"),
+        BotCommand("start", "查看机器人信息"),
+    ]
+    await app.bot.set_my_commands(private_cmds, scope=BotCommandScopeDefault())
+    await app.bot.set_my_commands(group_cmds, scope=BotCommandScopeAllGroupChats())
+    logger.info("✅ Bot commands registered (private + group)")
+    # 注册命中推送定时 Job（每5秒轮询一次）
+    app.job_queue.run_repeating(dispatch_pending_hits, interval=5, first=5, name="dispatch_hits")
+    # 注册套餐到期提醒定时 Job（每天执行一次）
+    app.job_queue.run_repeating(remind_expiring_users, interval=86400, first=10, name="remind_expiry")
+    logger.info("✅ Expiry reminder job registered (interval=24h)")
+    logger.info("✅ Hit dispatch job registered (interval=5s)")
 
 def main():
     if not BOT_TOKEN:
@@ -1633,10 +2052,14 @@ def main():
     app.add_handler(CommandHandler("group", cmd_group))
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("activate", cmd_activate))
+    app.add_handler(CommandHandler("buy", cmd_buy))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    async def error_handler(update, context):
+        logger.error(f"[GLOBAL ERROR] update={update} error={context.error}", exc_info=context.error)
+    app.add_error_handler(error_handler)
     logger.info("🤖 TG Monitor Pro Bot starting...")
-    app.run_polling(drop_pending_updates=True)
+    app.run_polling(drop_pending_updates=True, allowed_updates=["message", "callback_query", "edited_message"])
 
 if __name__ == "__main__":
     main()
