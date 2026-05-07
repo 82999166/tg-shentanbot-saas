@@ -1511,7 +1511,8 @@ export const engineRouter = router({
       type RecentKwRow = { senderTgId: string | null; matchedKeyword: string | null; cnt: number };
       let recentKwRows: RecentKwRow[] = [];
       if (senderIds.length > 0) {
-        recentKwRows = await db.execute(sql`
+        // Drizzle MySQL2 的 db.execute() 返回 [rows, fields] 元组，需取第一个元素
+        const recentKwResult = await db.execute(sql`
           SELECT senderTgId, matchedKeyword, COUNT(*) as cnt
           FROM hit_records
           WHERE senderTgId IN (${sql.join(senderIds.map(id => sql`${id}`), sql`, `)})
@@ -1519,7 +1520,8 @@ export const engineRouter = router({
             AND matchedKeyword IS NOT NULL
           GROUP BY senderTgId, matchedKeyword
           ORDER BY cnt DESC
-        `) as unknown as RecentKwRow[];
+        `);
+        recentKwRows = (Array.isArray((recentKwResult as any)[0]) ? (recentKwResult as any)[0] : recentKwResult) as unknown as RecentKwRow[];
       }
       // 构建 Map: senderTgId -> { keyword: count }
       const recentKwMap = new Map<string, Record<string, number>>();
@@ -1574,7 +1576,30 @@ export const engineRouter = router({
           pushToPersonal,
           recentKeywords: hit.senderTgId ? (recentKwMap.get(hit.senderTgId) || {}) : {},
         };
-      }).filter((h) => h.pushEnabled && h.targetChatId);
+      }).filter((h) => {
+        if (!h.pushEnabled || !h.targetChatId) return false;
+        // 屏蔽关键词过滤：如果命中内容包含用户设置的屏蔽关键词，则跳过该条推送
+        const ps = pushMap.get(h.userId);
+        if (ps?.blacklistKeywords) {
+          const blockedList = ps.blacklistKeywords
+            .split(',')
+            .map((k: string) => k.trim())
+            .filter((k: string) => k.length > 0);
+          if (blockedList.length > 0 && h.matchedKeyword) {
+            const matchMode = ps.blacklistMatchMode || 'fuzzy';
+            const isBlocked = blockedList.some((bk: string) => {
+              if (matchMode === 'exact') {
+                return h.matchedKeyword === bk;
+              } else {
+                // fuzzy: 屏蔽关键词包含在命中内容中，或命中内容包含屏蔽关键词
+                return (h.messageContent || '').includes(bk) || (h.matchedKeyword || '').includes(bk);
+              }
+            });
+            if (isBlocked) return false;
+          }
+        }
+        return true;
+      });
     }),
 
   // ── Bot 推送：标记命中记录已发送 ──────────────────────────────────────────

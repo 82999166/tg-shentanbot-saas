@@ -68,6 +68,9 @@ export default function PushSettings() {
   const [collaborationGroupTitle, setCollaborationGroupTitle] = useState("");
   const [pushFormat, setPushFormat] = useState<"simple" | "standard" | "detailed">("standard");
   const [unblockDialog, setUnblockDialog] = useState<number | null>(null);
+  // 屏蔽关键词列表
+  const [blockedKeywords, setBlockedKeywords] = useState<string[]>([]);
+  const [newBlockedKeyword, setNewBlockedKeyword] = useState("");
 
   // 广告过滤规则管理
   const [adRules, setAdRules] = useState(DEFAULT_AD_RULES);
@@ -82,6 +85,12 @@ export default function PushSettings() {
       setCollaborationGroupId(settings.collaborationGroupId ?? "");
       setCollaborationGroupTitle(settings.collaborationGroupTitle ?? "");
       setPushFormat((settings.pushFormat as "simple" | "standard" | "detailed") ?? "standard");
+      // 加载屏蔽关键词
+      if (settings.blacklistKeywords) {
+        setBlockedKeywords(settings.blacklistKeywords.split(',').map((k: string) => k.trim()).filter((k: string) => k.length > 0));
+      } else {
+        setBlockedKeywords([]);
+      }
     }
   }, [settings]);
 
@@ -348,6 +357,7 @@ export default function PushSettings() {
               collaborationGroupId: collaborationGroupId || undefined,
               collaborationGroupTitle: collaborationGroupTitle || undefined,
               pushFormat,
+              blacklistKeywords: blockedKeywords.length > 0 ? blockedKeywords.join(',') : undefined,
             })
           }
           disabled={saveSettings.isPending || isLoading}
@@ -356,6 +366,76 @@ export default function PushSettings() {
           保存设置
         </Button>
       </div>
+
+      {/* 屏蔽关键词 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Ban className="h-5 w-5 text-orange-500" />
+            指定屏蔽关键词
+            {blockedKeywords.length > 0 && (
+              <Badge variant="secondary">{blockedKeywords.length} 个</Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            当命中内容包含以下关键词时，该条推送将被自动跳过，不会发送到协作群。支持添加多个屏蔽关键词。
+          </p>
+          {/* 关键词列表 */}
+          {blockedKeywords.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {blockedKeywords.map((kw, idx) => (
+                <div key={idx} className="flex items-center gap-1 px-2 py-1 bg-orange-500/10 border border-orange-500/30 rounded-full text-sm">
+                  <span>{kw}</span>
+                  <button
+                    className="text-muted-foreground hover:text-destructive ml-1"
+                    onClick={() => setBlockedKeywords(prev => prev.filter((_, i) => i !== idx))}
+                    title="删除"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* 添加新屏蔽关键词 */}
+          <div className="flex gap-2">
+            <Input
+              placeholder="输入屏蔽关键词，按 Enter 添加"
+              value={newBlockedKeyword}
+              onChange={(e) => setNewBlockedKeyword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newBlockedKeyword.trim()) {
+                  const kw = newBlockedKeyword.trim();
+                  if (!blockedKeywords.includes(kw)) {
+                    setBlockedKeywords(prev => [...prev, kw]);
+                  }
+                  setNewBlockedKeyword("");
+                }
+              }}
+              className="flex-1"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const kw = newBlockedKeyword.trim();
+                if (kw && !blockedKeywords.includes(kw)) {
+                  setBlockedKeywords(prev => [...prev, kw]);
+                }
+                setNewBlockedKeyword("");
+              }}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              添加
+            </Button>
+          </div>
+          {blockedKeywords.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-2">暂未设置屏蔽关键词</p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 屏蔽列表 */}
       <Card>
