@@ -1806,7 +1806,7 @@ def make_hit_keyboard(hit: dict) -> InlineKeyboardMarkup:
     if sender_username:
         row1.append(InlineKeyboardButton("💬 私聊", url=f"https://t.me/{sender_username}"))
     elif sender_tg_id and str(sender_tg_id).isdigit() and int(str(sender_tg_id)) > 0:
-        row1.append(InlineKeyboardButton("💬 私聊", callback_data=f"dm:{hit_id}:{sender_tg_id}:"))
+        row1.append(InlineKeyboardButton("💬 私聊", url=f"tg://user?id={sender_tg_id}"))
     elif msg_link_for_btn:
         row1.append(InlineKeyboardButton("💬 查看原消息", url=msg_link_for_btn))
     buttons.append(row1)
