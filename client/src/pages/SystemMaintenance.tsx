@@ -38,6 +38,34 @@ export default function SystemMaintenance() {
 
   const forceSync = trpc.engine.forceSync.useMutation();
   const cleanupRecords = trpc.engine.cleanupRecords.useMutation();
+  const restartEngine = trpc.systemConfig.restartEngine.useMutation();
+  const restartBot = trpc.systemConfig.restartBot.useMutation();
+  const [restartEngineLoading, setRestartEngineLoading] = useState(false);
+  const [restartBotLoading, setRestartBotLoading] = useState(false);
+
+  const handleRestartEngine = async () => {
+    setRestartEngineLoading(true);
+    try {
+      await restartEngine.mutateAsync();
+      toast.success("神探-引擎 重启成功，约 10 秒后恢复工作");
+    } catch (e: any) {
+      toast.error(e.message ?? "重启引擎失败");
+    } finally {
+      setRestartEngineLoading(false);
+    }
+  };
+
+  const handleRestartBot = async () => {
+    setRestartBotLoading(true);
+    try {
+      await restartBot.mutateAsync();
+      toast.success("神探-Bot 重启成功，约 5 秒后恢复工作");
+    } catch (e: any) {
+      toast.error(e.message ?? "重启 Bot 失败");
+    } finally {
+      setRestartBotLoading(false);
+    }
+  };
 
   const handleForceSync = async () => {
     setSyncLoading(true);
@@ -90,6 +118,43 @@ export default function SystemMaintenance() {
         <h1 className="text-2xl font-bold">系统维护</h1>
         <p className="text-muted-foreground mt-1">监控引擎管理、数据清理与系统健康维护</p>
       </div>
+
+      {/* ─── 进程重启 ─── */}
+      <Card className="bg-slate-900 border-slate-700">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
+            <RefreshCw className="w-5 h-5 text-orange-400" /> 进程重启
+          </CardTitle>
+          <CardDescription className="text-slate-400">
+            当引擎出现断连、推送停止等异常情况时，可点击下方按鈕手动重启对应进程。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-4">
+            <Button
+              onClick={handleRestartEngine}
+              disabled={restartEngineLoading}
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+            >
+              {restartEngineLoading
+                ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />重启中...</>
+                : <><RefreshCw className="w-4 h-4 mr-2" />重启监控引擎</>
+              }
+            </Button>
+            <Button
+              onClick={handleRestartBot}
+              disabled={restartBotLoading}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {restartBotLoading
+                ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />重启中...</>
+                : <><RefreshCw className="w-4 h-4 mr-2" />重启 Bot进程</>
+              }
+            </Button>
+          </div>
+          <p className="text-xs text-slate-500 mt-3">⚠️ 重启期间（约 5–10 秒）将暂停监控和推送，请勿频繁操作。</p>
+        </CardContent>
+      </Card>
 
       {/* ─── 监控引擎同步 ─── */}
       <Card className="bg-slate-900 border-slate-700">

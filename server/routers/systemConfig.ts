@@ -1,11 +1,35 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
+import { exec } from "child_process";
+import { promisify } from "util";
 import { getDb } from "../db";
 import { systemConfig, publicMonitorGroups, publicGroupKeywords, publicGroupJoinStatus, tgAccounts, monitorGroups } from "../../drizzle/schema";
 import { inArray } from "drizzle-orm";
 import { and } from "drizzle-orm";
 import { adminProcedure, publicProcedure, router } from "../_core/trpc";
+
+const execAsync = promisify(exec);
+
+// PM2 可执行文件路径列表（按优先级排列）
+const PM2_PATHS = [
+  "/home/hjroot/.local/lib/node_modules/pm2/bin/pm2",
+  "/usr/bin/pm2",
+  "/www/server/nvm/versions/node/v22.22.0/bin/pm2",
+  "pm2",
+];
+
+async function pm2Restart(processName: string): Promise<{ success: boolean; message: string }> {
+  for (const pm2 of PM2_PATHS) {
+    try {
+      await execAsync(`${pm2} restart "${processName}" 2>&1`);
+      return { success: true, message: `${processName} 重启成功` };
+    } catch (_) {
+      // 继续尝试下一个路径
+    }
+  }
+  return { success: false, message: `${processName} 重启失败，未找到 PM2 或进程不存在` };
+}
 
 // 默认配置键列表
 const CONFIG_KEYS = [
@@ -751,6 +775,22 @@ export const systemConfigRouter = router({
         });
       }
       return { success: true };
+    }),
+
+  // 重启引擎进程
+  restartEngine: adminProcedure
+    .mutation(async () => {
+      const result = await pm2Restart("神探-引擎");
+      if (!result.success) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.message });
+      return result;
+    }),
+
+  // 重启 Bot 进程
+  restartBot: adminProcedure
+    .mutation(async () => {
+      const result = await pm2Restart("神探-Bot");
+      if (!result.success) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.message });
+      return result;
     }),
 
   // 获取某账号的加群日志详情
