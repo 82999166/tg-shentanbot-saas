@@ -38,8 +38,8 @@ export default function SystemMaintenance() {
 
   const forceSync = trpc.engine.forceSync.useMutation();
   const cleanupRecords = trpc.engine.cleanupRecords.useMutation();
-  const restartEngine = trpc.systemConfig.restartEngine.useMutation();
-  const restartBot = trpc.systemConfig.restartBot.useMutation();
+  const restartEngine = trpc.sysConfig.restartEngine.useMutation();
+  const restartBot = trpc.sysConfig.restartBot.useMutation();
   const [restartEngineLoading, setRestartEngineLoading] = useState(false);
   const [restartBotLoading, setRestartBotLoading] = useState(false);
 
