@@ -787,45 +787,57 @@ class AccountWorker:
 
         # 进入轮询循环
         warmup_counter = 0
-        disconnect_count = 0  # 连续断连计数
-        MAX_DISCONNECT = 3    # 连续断连超过此次数则重连
+        error_count = 0       # 连续错误计数（包括 ConnectionResetError）
+        MAX_ERRORS = 5        # 连续错误超过此次数则强制重连
         while self._running:
             try:
-                # 检测连接状态，断连时自动重连
+                # 检测连接状态（is_connected 可能不准，同时用错误计数兜底）
                 if self.client and not self.client.is_connected:
-                    disconnect_count += 1
+                    error_count += 1
                     logger.warning(
-                        f"[Account {self.account_id}] 连接已断开 (第{disconnect_count}次检测)"
+                        f"[Account {self.account_id}] 连接已断开 (第{error_count}次检测)"
                     )
-                    if disconnect_count >= MAX_DISCONNECT:
-                        logger.warning(
-                            f"[Account {self.account_id}] 连续断连 {disconnect_count} 次，执行重连..."
-                        )
-                        disconnect_count = 0
-                        warmup_counter = 0
-                        # 停止旧连接
-                        try:
-                            if self.client:
-                                await self.client.stop()
-                        except Exception:
-                            pass
-                        self.client = None
-                        await asyncio.sleep(5)
-                        # 重新启动
-                        ok = await self.start()
-                        if ok:
-                            logger.info(f"[Account {self.account_id}] 重连成功")
-                        else:
-                            logger.error(f"[Account {self.account_id}] 重连失败，60秒后重试")
-                            await asyncio.sleep(60)
-                        continue
+                else:
+                    error_count = 0  # 连接正常，重置计数
+
+                # 错误次数达到阈值，强制重连
+                if error_count >= MAX_ERRORS:
+                    logger.warning(
+                        f"[Account {self.account_id}] 连续异常 {error_count} 次，执行强制重连..."
+                    )
+                    error_count = 0
+                    warmup_counter = 0
+                    try:
+                        if self.client:
+                            await self.client.stop()
+                    except Exception:
+                        pass
+                    self.client = None
+                    await asyncio.sleep(5)
+                    ok = await self.start()
+                    if ok:
+                        logger.info(f"[Account {self.account_id}] 重连成功")
+                    else:
+                        logger.error(f"[Account {self.account_id}] 重连失败，60秒后重试")
+                        await asyncio.sleep(60)
+                    continue
+
+                if self.client and not self.client.is_connected:
                     await asyncio.sleep(GROUP_POLL_INTERVAL)
                     continue
-                else:
-                    disconnect_count = 0  # 连接正常，重置计数
+
                 await self._poll_public_groups()
+                error_count = 0  # 轮询成功，重置错误计数
+            except (ConnectionResetError, OSError) as e:
+                error_count += 1
+                logger.warning(
+                    f"[Account {self.account_id}] 连接异常 (第{error_count}次): {e}"
+                )
+                await asyncio.sleep(GROUP_POLL_INTERVAL)
+                continue
             except Exception as e:
-                logger.warning(f"[Account {self.account_id}] 轮询循环异常: {e}")
+                error_count += 1
+                logger.warning(f"[Account {self.account_id}] 轮询循环异常 (第{error_count}次): {e}")
             # 每小时重新激活一次 updates 流
             warmup_counter += 1
             if warmup_counter >= 3600 // GROUP_POLL_INTERVAL:
