@@ -392,7 +392,8 @@ export default function TgAccounts() {
                     <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="该账号监控的私有群组数">私有群组</span></th>
                     <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="已加入的公共群组数（subscribed 状态）">已加入</span></th>
                     <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="已分配给该账号的公共群组总数（包含已加入和待加入）">已分配</span></th>
-                    <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="已分配但尚未加入的群组数（pending/joining/failed）">待加入</span></th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="已分配但尚未加入的群组数（pending/joining/failed，不含已解散群组）">待加入</span></th>
+                    <th className="text-center px-4 py-3 text-slate-400 font-medium"><span title="群组已解散或不存在（not_found）">无效</span></th>
                     <th className="text-center px-4 py-3 text-slate-400 font-medium">健康度</th>
                     <th className="text-center px-4 py-3 text-slate-400 font-medium">今日发信</th>
                     <th className="text-center px-4 py-3 text-slate-400 font-medium" title="是否加入监控引擎">引擎</th>
@@ -416,6 +417,7 @@ export default function TgAccounts() {
                     const joinedCount = (account as any).joinedGroupCount;
                     const assignedCount = (account as any).assignedGroupCount ?? 0;
                     const pendingCount = (account as any).pendingGroupCount ?? 0;
+                    const notFoundCount = (account as any).notFoundGroupCount ?? 0;
                     return (
                       <tr key={account.id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${idx % 2 === 0 ? "" : "bg-slate-800/20"}`}>
                         {/* 复选框 */}
@@ -472,6 +474,10 @@ export default function TgAccounts() {
                         {/* 待加入群组数 */}
                         <td className="px-4 py-3 text-center">
                           <span className={`text-sm font-bold ${pendingCount > 0 ? "text-yellow-400" : "text-slate-600"}`}>{pendingCount}</span>
+                        </td>
+                        {/* 无效群组数（not_found） */}
+                        <td className="px-4 py-3 text-center">
+                          <span className={`text-sm font-bold ${notFoundCount > 0 ? "text-red-400" : "text-slate-600"}`}>{notFoundCount}</span>
                         </td>
                         {/* 健康度 */}
                         <td className="px-4 py-3 text-center">

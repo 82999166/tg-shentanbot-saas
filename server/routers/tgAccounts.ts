@@ -131,15 +131,25 @@ export const tgAccountsRouter = router({
       for (const r of assignedCounts) {
         if (r.monitorAccountId) assignedCountMap[r.monitorAccountId] = r.cnt;
       }
-      // 查询每个账号的待加入数量（pending/joining/failed/not_found）
+      // 查询每个账号的待加入数量（pending/joining/failed，不含 not_found）
       const pendingCounts = await db
         .select({ monitorAccountId: publicGroupJoinStatus.monitorAccountId, cnt: count() })
         .from(publicGroupJoinStatus)
-        .where(inArray(publicGroupJoinStatus.status, ["pending", "joining", "failed", "not_found"]))
+        .where(inArray(publicGroupJoinStatus.status, ["pending", "joining", "failed"]))
         .groupBy(publicGroupJoinStatus.monitorAccountId);
       const pendingCountMap: Record<number, number> = {};
       for (const r of pendingCounts) {
         if (r.monitorAccountId) pendingCountMap[r.monitorAccountId] = r.cnt;
+      }
+      // 查询每个账号的无效群组数量（not_found = 群组已解散/不存在）
+      const notFoundCounts = await db
+        .select({ monitorAccountId: publicGroupJoinStatus.monitorAccountId, cnt: count() })
+        .from(publicGroupJoinStatus)
+        .where(eq(publicGroupJoinStatus.status, "not_found"))
+        .groupBy(publicGroupJoinStatus.monitorAccountId);
+      const notFoundCountMap: Record<number, number> = {};
+      for (const r of notFoundCounts) {
+        if (r.monitorAccountId) notFoundCountMap[r.monitorAccountId] = r.cnt;
       }
       // joinedGroupCount 直接使用数据库中的公共群组加入数量（避免实时调用引擎导致加载慢）
       return rows.map(r => ({
@@ -150,6 +160,7 @@ export const tgAccountsRouter = router({
         joinedGroupCount: publicCountMap[r.id] ?? 0,
         assignedGroupCount: assignedCountMap[r.id] ?? 0,
         pendingGroupCount: pendingCountMap[r.id] ?? 0,
+        notFoundGroupCount: notFoundCountMap[r.id] ?? 0,
       }));
     }
     return getTgAccountsByUserId(ctx.user.id);
