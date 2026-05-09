@@ -1478,14 +1478,14 @@ function SysConfigTab() {
             配置后，当监控引擎或 Bot 重启、意外停止、新用户注册时，系统将自动发送 Telegram 消息通知到指定账号。
           </div>
           <div>
-            <Label className="text-gray-400 text-xs mb-1.5 block">接收通知的 TG 账号 ID</Label>
+            <Label className="text-gray-400 text-xs mb-1.5 block">接收通知的 TG 账号</Label>
             <Input
-              placeholder="例如：123456789（纯数字 ID）"
+              placeholder="数字 ID（如 123456789）或 @用户名（如 @yourname）"
               value={getValue("alert_tg_id")}
               onChange={(e) => handleChange("alert_tg_id", e.target.value)}
               className="bg-gray-900 border-gray-600 text-white"
             />
-            <p className="text-gray-500 text-xs mt-1">向 @userinfobot 发送任意消息可获取自己的 TG 数字 ID。留空则不发送通知。</p>
+            <p className="text-gray-500 text-xs mt-1">支持填写数字 ID 或 @用户名两种格式。用户名需先向该 Bot 发送一条消息才能收到通知。留空则不发送通知。</p>
           </div>
         </CardContent>
       </Card>
