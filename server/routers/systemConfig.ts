@@ -4,7 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { getDb } from "../db";
-import { systemConfig, publicMonitorGroups, publicGroupKeywords, publicGroupJoinStatus, tgAccounts, monitorGroups } from "../../drizzle/schema";
+import { systemConfig, systemSettings, publicMonitorGroups, publicGroupKeywords, publicGroupJoinStatus, tgAccounts, monitorGroups } from "../../drizzle/schema";
 import { inArray } from "drizzle-orm";
 import { and } from "drizzle-orm";
 import { adminProcedure, publicProcedure, router } from "../_core/trpc";
@@ -16,14 +16,14 @@ async function sendTgAlert(message: string): Promise<void> {
   try {
     const db = await getDb();
     if (!db) return;
-    // 读取告警 TG ID 和 Bot Token
-    const rows = await db.select().from(systemConfig)
-      .where(sql`${systemConfig.configKey} IN ('alert_tg_id', 'bot_token')`);
-    const cfgMap: Record<string, string> = {};
-    for (const r of rows) cfgMap[r.configKey] = r.configValue ?? "";
-    const alertTgId = cfgMap["alert_tg_id"] || "";
-    // Bot Token：优先从 system_config 读取，其次从环境变量读取
-    const botToken = cfgMap["bot_token"] || process.env.BOT_TOKEN || "8678159362:AAFqfg8uoL7RBQ_tWvd7YgklsoeShuEF2QU";
+    // 从 system_config 读取告警 TG ID
+    const cfgRows = await db.select().from(systemConfig)
+      .where(sql`${systemConfig.configKey} = 'alert_tg_id'`);
+    const alertTgId = cfgRows[0]?.configValue || "";
+    // 从 system_settings 表读取 Bot Token（管理后台配置的真实 Token）
+    const settingRows = await db.select().from(systemSettings)
+      .where(sql`${systemSettings.key} = 'bot_token'`);
+    const botToken = settingRows[0]?.value || process.env.BOT_TOKEN || "";
     if (!alertTgId || !botToken) return;
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
     await fetch(url, {
