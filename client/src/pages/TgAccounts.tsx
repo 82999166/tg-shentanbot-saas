@@ -1249,11 +1249,42 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
 function AccountPendingGroupsTab({ accountId }: { accountId: number }) {
   const { data, isLoading, refetch } = trpc.tgAccounts.getAccountPendingGroups.useQuery({ accountId });
   const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const batchDelete = trpc.tgAccounts.batchDeleteJoinStatus.useMutation({
+    onSuccess: (res) => {
+      toast.success(`已删除 ${res.deleted} 条记录`);
+      setSelected(new Set());
+      refetch();
+    },
+    onError: () => toast.error('删除失败'),
+  });
 
   const filtered = (data?.groups ?? []).filter(g => {
     const kw = search.toLowerCase();
     return !kw || g.groupTitle.toLowerCase().includes(kw) || g.groupId.toLowerCase().includes(kw);
   });
+
+  const allFilteredIds = filtered.map(g => g.id);
+  const isAllSelected = allFilteredIds.length > 0 && allFilteredIds.every(id => selected.has(id));
+  const isPartialSelected = allFilteredIds.some(id => selected.has(id)) && !isAllSelected;
+
+  const toggleAll = () => {
+    if (isAllSelected) {
+      setSelected(prev => { const s = new Set(prev); allFilteredIds.forEach(id => s.delete(id)); return s; });
+    } else {
+      setSelected(prev => { const s = new Set(prev); allFilteredIds.forEach(id => s.add(id)); return s; });
+    }
+  };
+
+  const toggleOne = (id: number) => {
+    setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  };
+
+  const handleBatchDelete = () => {
+    if (selected.size === 0) return;
+    if (!confirm(`确认删除已选的 ${selected.size} 条待加入记录？删除后引擎将不再自动尝试加入这些群组。`)) return;
+    batchDelete.mutate({ ids: Array.from(selected) });
+  };
 
   const statusLabel = (status: string) => {
     switch (status) {
@@ -1286,14 +1317,28 @@ function AccountPendingGroupsTab({ accountId }: { accountId: number }) {
             已分配但尚未加入，引擎将自动执行加群
           </span>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          className="border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700 gap-1"
-          onClick={() => refetch()}
-        >
-          <RefreshCw className="w-3.5 h-3.5" /> 刷新
-        </Button>
+        <div className="flex items-center gap-2">
+          {selected.size > 0 && (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="gap-1 h-7 text-xs"
+              onClick={handleBatchDelete}
+              disabled={batchDelete.isPending}
+            >
+              {batchDelete.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+              删除已选 ({selected.size})
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-slate-600 text-slate-300 hover:text-white hover:bg-slate-700 gap-1"
+            onClick={() => refetch()}
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> 刷新
+          </Button>
+        </div>
       </div>
 
       {/* 搜索框 */}
@@ -1315,6 +1360,15 @@ function AccountPendingGroupsTab({ accountId }: { accountId: number }) {
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-slate-800 text-slate-400 text-xs">
               <tr>
+                <th className="px-3 py-2 w-8">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    ref={el => { if (el) el.indeterminate = isPartialSelected; }}
+                    onChange={toggleAll}
+                    className="w-3.5 h-3.5 cursor-pointer accent-yellow-500"
+                  />
+                </th>
                 <th className="text-left px-3 py-2">群组</th>
                 <th className="text-left px-3 py-2 w-20">状态</th>
                 <th className="text-left px-3 py-2 w-32">更新时间</th>
@@ -1326,7 +1380,15 @@ function AccountPendingGroupsTab({ accountId }: { accountId: number }) {
               {filtered.map((g) => {
                 const sl = statusLabel(g.status);
                 return (
-                  <tr key={g.id} className={`border-t border-slate-700/50 hover:bg-slate-800/50 ${!g.isActive ? "opacity-50" : ""}`}>
+                  <tr key={g.id} className={`border-t border-slate-700/50 hover:bg-slate-800/50 ${!g.isActive ? "opacity-50" : ""} ${selected.has(g.id) ? "bg-yellow-900/20" : ""}`}>
+                    <td className="px-3 py-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(g.id)}
+                        onChange={() => toggleOne(g.id)}
+                        className="w-3.5 h-3.5 cursor-pointer accent-yellow-500"
+                      />
+                    </td>
                     <td className="px-3 py-2">
                       <div className="font-medium text-white truncate max-w-[180px]" title={g.groupTitle}>{g.groupTitle || g.groupId}</div>
                       <div className="text-slate-500 text-xs">@{g.groupId}</div>

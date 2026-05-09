@@ -647,6 +647,17 @@ export const tgAccountsRouter = router({
       };
     }),
 
+  batchDeleteJoinStatus: adminProcedure
+    .input(z.object({ ids: z.array(z.number()) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '数据库不可用' });
+      if (input.ids.length === 0) return { deleted: 0 };
+      await db.delete(publicGroupJoinStatus)
+        .where(inArray(publicGroupJoinStatus.id, input.ids));
+      return { deleted: input.ids.length };
+    }),
+
   getAccountPendingGroups: adminProcedure
     .input(z.object({ accountId: z.number() }))
     .query(async ({ input }) => {
