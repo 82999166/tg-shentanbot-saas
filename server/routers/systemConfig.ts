@@ -353,6 +353,61 @@ export const systemConfigRouter = router({
         }
       }
 
+      // 导入成功后，触发异步验证任务（清理频道）
+      if (toAdd.length > 0) {
+        const engineUrl = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
+        const engineSecret = process.env.ENGINE_SECRET || "c9a64a70df17752d00de552b4e01ca94e22835909230539552c9a9a18a79a7ac";
+        
+        // 异步执行，不阻塞导入响应
+        (async () => {
+          try {
+            console.log(`[Import] 开始为 ${toAdd.length} 个新群组异步验证类型...`);
+            let cleanedCount = 0;
+            for (const g of toAdd) {
+              try {
+                const resp = await fetch(`${engineUrl}/resolve-group`, {
+                  method: 'POST',
+                  headers: { 
+                    'Content-Type': 'application/json',
+                    'X-Engine-Secret': engineSecret
+                  },
+                  body: JSON.stringify({ group_id: g })
+                });
+                const data: any = await resp.json();
+                
+                if (data.success) {
+                  const chatType = data.chat_type; // CHANNEL, SUPERGROUP, GROUP, PRIVATE
+                  if (chatType === 'CHANNEL' || chatType === 'PRIVATE' || chatType === 'BOT') {
+                    // 如果是频道或个人账号，自动停用
+                    await db.update(publicMonitorGroups)
+                      .set({ 
+                        isActive: false, 
+                        note: `自动过滤：检测到类型为 ${chatType}，非群组类型已停用` 
+                      })
+                      .where(eq(publicMonitorGroups.groupId, g));
+                    cleanedCount++;
+                  } else {
+                    // 如果是群组，更新标题
+                    await db.update(publicMonitorGroups)
+                      .set({ groupTitle: data.title, realId: data.real_id })
+                      .where(eq(publicMonitorGroups.groupId, g));
+                  }
+                }
+                // 稍微延迟，避免给引擎压力过大
+                await new Promise(resolve => setTimeout(resolve, 500));
+              } catch (err) {
+                console.error(`[Import] 验证群组 ${g} 失败:`, err);
+              }
+            }
+            if (cleanedCount > 0) {
+              await sendTgAlert(`📊 导入群组清理报告：\n本次导入 ${toAdd.length} 个地址，自动识别并清理了 ${cleanedCount} 个非群组地址（频道/个人）。`);
+            }
+          } catch (err) {
+            console.error("[Import] 异步验证任务崩溃:", err);
+          }
+        })();
+      }
+
       return { success: true, added: toAdd.length, skipped, total: normalized.length };
     }),
   // 按账号配额分配公共群组
