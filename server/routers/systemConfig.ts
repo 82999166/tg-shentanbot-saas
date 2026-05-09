@@ -11,6 +11,38 @@ import { adminProcedure, publicProcedure, router } from "../_core/trpc";
 
 const execAsync = promisify(exec);
 
+// ── 发送 TG 告警通知 ──────────────────────────────────────────────────────────
+async function sendTgAlert(message: string): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    // 读取告警 TG ID 和 Bot Token
+    const rows = await db.select().from(systemConfig)
+      .where(sql`${systemConfig.configKey} IN ('alert_tg_id', 'bot_token')`);
+    const cfgMap: Record<string, string> = {};
+    for (const r of rows) cfgMap[r.configKey] = r.configValue ?? "";
+    const alertTgId = cfgMap["alert_tg_id"] || "";
+    // Bot Token：优先从 system_config 读取，其次从环境变量读取
+    const botToken = cfgMap["bot_token"] || process.env.BOT_TOKEN || "8678159362:AAFqfg8uoL7RBQ_tWvd7YgklsoeShuEF2QU";
+    if (!alertTgId || !botToken) return;
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: alertTgId,
+        text: message,
+        parse_mode: "HTML",
+      }),
+    });
+  } catch (e) {
+    console.error("[TgAlert] 发送 TG 告警失败:", e);
+  }
+}
+
+// 导出 sendTgAlert 供其他模块使用
+export { sendTgAlert };
+
 // PM2 可执行文件路径列表（按优先级排列）
 const PM2_PATHS = [
   "/home/hjroot/.local/lib/node_modules/pm2/bin/pm2",
@@ -59,6 +91,8 @@ const CONFIG_KEYS = [
   { key: "buy_plans_text", description: "套餐价格说明（每行一个，如：1月 = 30U）" },
   { key: "buy_support_username", description: "购买客服TG用户名（不含@）" },
   { key: "buy_payment_note", description: "支付说明备注" },
+  // 监控告警通知
+  { key: "alert_tg_id", description: "监控告警接收 TG 账号 ID（数字 ID，留空则不发送通知）" },
 ];
 
 export const systemConfigRouter = router({
@@ -782,6 +816,9 @@ export const systemConfigRouter = router({
     .mutation(async () => {
       const result = await pm2Restart("神探-引擎");
       if (!result.success) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.message });
+      // 发送 TG 告警通知
+      const now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+      await sendTgAlert(`🔄 <b>监控引擎已重启</b>\n\n⏰ 时间：${now}\n👤 操作：管理员手动重启\n✅ 状态：重启成功`);
       return result;
     }),
 
@@ -790,6 +827,9 @@ export const systemConfigRouter = router({
     .mutation(async () => {
       const result = await pm2Restart("神探-Bot");
       if (!result.success) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.message });
+      // 发送 TG 告警通知
+      const now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+      await sendTgAlert(`🤖 <b>Bot 已重启</b>\n\n⏰ 时间：${now}\n👤 操作：管理员手动重启\n✅ 状态：重启成功`);
       return result;
     }),
 

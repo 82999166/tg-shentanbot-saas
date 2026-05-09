@@ -1320,7 +1320,7 @@ function SysConfigTab() {
   };
 
   const handleSave = () => {
-    const allKeys = ["support_username", "official_channel", "tutorial_text", "bot_name", "site_name", "anti_spam_enabled", "anti_spam_daily_limit", "anti_spam_rate_window", "anti_spam_rate_limit", "anti_spam_min_msg_len", "anti_spam_max_msg_len"];
+    const allKeys = ["support_username", "official_channel", "tutorial_text", "bot_name", "site_name", "anti_spam_enabled", "anti_spam_daily_limit", "anti_spam_rate_window", "anti_spam_rate_limit", "anti_spam_min_msg_len", "anti_spam_max_msg_len", "alert_tg_id"];
     const configsToSave = allKeys.map((key) => ({ key, value: getValue(key) }));
     updateMutation.mutate({ configs: configsToSave });
   };
@@ -1464,6 +1464,28 @@ function SysConfigTab() {
               />
               <p className="text-gray-500 text-xs mt-1">0 = 不限制；超过此长度的消息将被过滤</p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+      <Card className="bg-gray-800/50 border-gray-700">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-gray-200 text-sm font-medium flex items-center gap-2">
+            🔔 监控告警通知
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-xs text-yellow-300">
+            配置后，当监控引擎或 Bot 重启、意外停止、新用户注册时，系统将自动发送 Telegram 消息通知到指定账号。
+          </div>
+          <div>
+            <Label className="text-gray-400 text-xs mb-1.5 block">接收通知的 TG 账号 ID</Label>
+            <Input
+              placeholder="例如：123456789（纯数字 ID）"
+              value={getValue("alert_tg_id")}
+              onChange={(e) => handleChange("alert_tg_id", e.target.value)}
+              className="bg-gray-900 border-gray-600 text-white"
+            />
+            <p className="text-gray-500 text-xs mt-1">向 @userinfobot 发送任意消息可获取自己的 TG 数字 ID。留空则不发送通知。</p>
           </div>
         </CardContent>
       </Card>

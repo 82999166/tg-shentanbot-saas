@@ -10,7 +10,9 @@ import {
   passwordResetTokens,
   loginAttempts,
 } from "../../drizzle/schema";
-import { sendVerifyEmail, sendResetPasswordEmail } from "../mailer";import { sdk } from "../_core/sdk";
+import { sendVerifyEmail, sendResetPasswordEmail } from "../mailer";
+import { sdk } from "../_core/sdk";
+import { sendTgAlert } from "./systemConfig";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "../_core/cookies";
 
@@ -101,6 +103,14 @@ export const emailAuthRouter = router({
         await sendVerifyEmail(input.email, input.name, emailVerifyToken);
       } catch (e) {
         console.error("[EmailAuth] 发送验证邮件失败:", e);
+      }
+
+      // 发送新用户注册 TG 告警（失败不影响注册）
+      try {
+        const now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+        await sendTgAlert(`🎉 <b>新用户注册</b>\n\n👤 用户名：${input.name}\n📧 邮箱：${input.email}\n⏰ 时间：${now}`);
+      } catch (e) {
+        console.error("[EmailAuth] 发送注册通知失败:", e);
       }
 
       return { success: true, message: "注册成功！请查收验证邮件并激活账号。" };
