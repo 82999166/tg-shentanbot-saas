@@ -372,8 +372,12 @@ export const systemConfigRouter = router({
         .where(eq(publicMonitorGroups.isActive, true));
       let totalAssigned = 0;
       // 全局已分配群组集合（跨所有账号），确保每个群组只分配给一个账号
+      // 只有 subscribed/not_found/pending/joining/failed 状态的记录才算已分配（避免重复分配给多个账号）
+      // 注意：subscribed 表示已成功加入，not_found 表示群组不存在，这两种不再重新分配
+      // pending/joining/failed 状态的群组已有分配记录，也不重复分配
       const globalAssignedRows = await db.select({ publicGroupId: publicGroupJoinStatus.publicGroupId })
-        .from(publicGroupJoinStatus);
+        .from(publicGroupJoinStatus)
+        .where(inArray(publicGroupJoinStatus.status, ['subscribed', 'not_found', 'pending', 'joining', 'failed']));
       const globalAssignedSet = new Set(globalAssignedRows.map(r => r.publicGroupId));
       for (const account of accounts) {
         // 优先使用账号级别上限，否则使用全局配置

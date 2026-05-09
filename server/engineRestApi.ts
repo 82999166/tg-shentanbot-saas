@@ -941,7 +941,7 @@ export function registerEngineRestRoutes(app: Router) {
           .where(
             and(
               eq(publicGroupJoinStatus.monitorAccountId, account.id),
-              inArray(publicGroupJoinStatus.status, ["pending", "failed"]),
+              inArray(publicGroupJoinStatus.status, ["pending", "failed", "joining"]),
               eq(publicMonitorGroups.isActive, 1)
             )
           )
