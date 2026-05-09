@@ -26,6 +26,7 @@ import {
 } from "../../drizzle/schema";
 import { eq, and, inArray, sql, desc, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { sendTgAlert } from "./systemConfig";
 
 const ENGINE_SECRET = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
 
@@ -460,10 +461,17 @@ export const engineRouter = router({
         planId: 'free',
         dailyDmSent: 0,
       });
-      const newId = (result as any).insertId || (result as any)[0]?.insertId;
+       const newId = (result as any).insertId || (result as any)[0]?.insertId;
+      // 发送新用户注册 TG 通知
+      try {
+        const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+        const tgLink = input.tgUsername ? `@${input.tgUsername}` : `TG ID: ${input.tgUserId}`;
+        await sendTgAlert(`🎉 <b>新用户注册</b>\n\n👤 用户名：${displayName}\n🔗 TG账号：${tgLink}\n⏰ 时间：${now}`);
+      } catch (e) {
+        console.error('[BotRegister] 发送注册通知失败:', e);
+      }
       return { isNew: true, id: newId, name: displayName, planId: 'free', planExpiresAt: null };
     }),
-
   // ── Bot API：设置消息模板 ──────────────────────────────────
   botSetTemplate: engineProcedure
     .input(z.object({ userId: z.number(), content: z.string(), name: z.string().default('默认模板') }))
