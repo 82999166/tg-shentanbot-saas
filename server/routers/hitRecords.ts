@@ -558,8 +558,8 @@ export const adminRouter = router({
     const [totalHitsRow] = await db.select({ count: sql`count(*)` }).from(hitRecords);
     const [todayDmRow] = await db.select({ count: sql`count(*)` }).from(hitRecords)
       .where(and(eq(hitRecords.dmStatus, "sent"), sql`${hitRecords.createdAt} >= ${today}`));
-    const [activeGroupsRow] = await db.select({ count: sql`count(*)` }).from(monitorGroups)
-      .where(and(eq(monitorGroups.isActive, true), eq(monitorGroups.monitorStatus, "active")));
+    const [activeGroupsRow] = await db.select({ count: sql`count(*)` }).from(publicMonitorGroups)
+      .where(eq(publicMonitorGroups.isActive, true));
     const [activeAccountsRow] = await db.select({ count: sql`count(*)` }).from(tgAccounts)
       .where(and(eq(tgAccounts.isActive, true), eq(tgAccounts.sessionStatus, "active")));
     const [pendingQueueRow] = await db.select({ count: sql`count(*)` }).from(hitRecords)
