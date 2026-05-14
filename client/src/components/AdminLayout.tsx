@@ -6,8 +6,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Globe, Users, Bot, Shield, Settings, LogOut, ShieldCheck, PanelLeft, UserPlus, LayoutDashboard,
-  MessageCircle, BarChart2, Send, UserCog, Wrench, ShoppingCart, Key, KeyRound, Search
+  Globe, Users, Bot, Shield, Settings, LogOut, ShieldCheck, PanelLeft, LayoutDashboard,
+  MessageCircle, BarChart2, Send, Wrench, ShoppingCart, Key, KeyRound, Search
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -29,16 +29,13 @@ const adminMenuItems = [
   { icon: Search, label: "群组采集", path: "/admin-group-scrape", group: "监控管理" },
   { icon: Users, label: "系统 TG 账号", path: "/admin-accounts", group: "监控管理" },
   { icon: Bot, label: "Bot 配置", path: "/bot-config", group: "监控管理" },
-  { icon: UserPlus, label: "加群配置", path: "/admin-join-config", group: "监控管理" },
-
-  // 推送配置
-  { icon: Send, label: "推送设置", path: "/admin-push-settings", group: "推送配置" },
 
   // 财务管理
   { icon: ShoppingCart, label: "订单管理", path: "/admin-orders", group: "财务管理" },
   { icon: Key, label: "卡密管理", path: "/admin-redeem-codes", group: "财务管理" },
 
   // 系统配置
+  { icon: Send, label: "推送设置", path: "/admin-push-settings", group: "系统配置" },
   { icon: Shield, label: "防封设置", path: "/admin-antiban", group: "系统配置" },
   { icon: Settings, label: "系统设置", path: "/system-settings", group: "系统配置" },
   { icon: Wrench, label: "系统维护", path: "/admin-maintenance", group: "系统配置" },
@@ -76,12 +73,12 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
       {/* 侧边栏 - 仅显示管理员菜单 */}
       <aside
         className="flex flex-col border-r border-gray-800 bg-gray-900 transition-all duration-200 shrink-0"
-        style={{ width: collapsed ? 56 : 220 }}
+        style={{ width: collapsed ? 56 : 200 }}
       >
         {/* Logo 区域 */}
-        <div className="flex items-center gap-2 px-3 py-4 border-b border-gray-800">
-          <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-4 h-4 text-white" />
+        <div className="flex items-center gap-2 px-3 py-3 border-b border-gray-800 shrink-0">
+          <div className="w-7 h-7 bg-red-600 rounded-lg flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-3.5 h-3.5 text-white" />
           </div>
           {collapsed ? null : (
             <div className="min-w-0">
@@ -97,13 +94,13 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
           </button>
         </div>
 
-        {/* 菜单 */}
-        <nav className="flex-1 overflow-y-auto py-2">
+        {/* 菜单 - 不滚动，自动压缩间距以适应屏幕高度 */}
+        <nav className="flex-1 overflow-hidden flex flex-col" style={{ paddingTop: 2, paddingBottom: 2 }}>
           {groups.map(group => (
             <div key={group}>
               {collapsed ? null : (
-                <div className="px-3 pt-3 pb-1">
-                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">{group}</span>
+                <div style={{ padding: "4px 12px 1px" }}>
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ fontSize: 10 }}>{group}</span>
                 </div>
               )}
               {adminMenuItems.filter(i => i.group === group).map(item => {
@@ -114,15 +111,19 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
                     onClick={() => setLocation(item.path)}
                     title={item.label}
                     className={[
-                      "flex items-center gap-3 w-full text-sm font-medium transition-colors rounded-lg my-0.5",
-                      collapsed ? "justify-center px-0 py-2.5 mx-auto" : "px-3 py-2.5 mx-1",
+                      "flex items-center gap-2 w-full font-medium transition-colors rounded-md",
+                      collapsed ? "justify-center px-0 mx-auto" : "mx-1",
                       isActive
                         ? "bg-red-600/20 text-red-400"
                         : "text-gray-400 hover:bg-gray-800 hover:text-gray-100",
                     ].join(" ")}
-                    style={{ width: collapsed ? 40 : "calc(100% - 8px)" }}
+                    style={{
+                      width: collapsed ? 36 : "calc(100% - 8px)",
+                      fontSize: 11,
+                      padding: collapsed ? "5px 0" : "4px 10px",
+                    }}
                   >
-                    <item.icon className={"w-4 h-4 shrink-0" + (isActive ? " text-red-400" : "")} />
+                    <item.icon className={"shrink-0" + (isActive ? " text-red-400" : "")} style={{ width: 13, height: 13 }} />
                     {collapsed ? null : <span className="truncate">{item.label}</span>}
                   </button>
                 );
@@ -132,14 +133,14 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
         </nav>
 
         {/* 底部用户信息 */}
-        <div className="border-t border-gray-800 p-3">
+        <div className="border-t border-gray-800 p-2 shrink-0">
           {collapsed ? null : (
-            <div className="text-xs text-gray-600 text-center mb-2">TG Monitor Pro v1.2.0</div>
+            <div className="text-xs text-gray-600 text-center mb-1.5">TG Monitor Pro v1.2.0</div>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2 w-full rounded-lg px-2 py-1.5 hover:bg-gray-800 transition-colors text-left">
-                <div className="w-7 h-7 bg-red-700 rounded-full flex items-center justify-center shrink-0">
+                <div className="w-6 h-6 bg-red-700 rounded-full flex items-center justify-center shrink-0">
                   <span className="text-xs font-bold text-white">{user?.name?.charAt(0)?.toUpperCase() ?? "A"}</span>
                 </div>
                 {collapsed ? null : (
