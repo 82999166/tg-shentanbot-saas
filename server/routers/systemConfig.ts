@@ -870,15 +870,21 @@ export const systemConfigRouter = router({
       return { success: true };
     }),
 
-  // 重启引擎进程
+  // 重启引擎进程（多账号模式：重启 Acc2/Acc3/Acc4 三个进程）
   restartEngine: adminProcedure
     .mutation(async () => {
-      const result = await pm2Restart("神探-引擎");
-      if (!result.success) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.message });
+      const engineProcesses = ["神探-引擎-Acc2", "神探-引擎-Acc3", "神探-引擎-Acc4"];
+      const results = await Promise.all(engineProcesses.map(name => pm2Restart(name)));
+      const failed = results.filter(r => !r.success);
+      if (failed.length === results.length) {
+        // 全部失败才报错
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: failed.map(r => r.message).join("; ") });
+      }
       // 发送 TG 告警通知
       const now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
-      await sendTgAlert(`🔄 <b>监控引擎已重启</b>\n\n⏰ 时间：${now}\n👤 操作：管理员手动重启\n✅ 状态：重启成功`);
-      return result;
+      const successCount = results.length - failed.length;
+      await sendTgAlert(`🔄 <b>监控引擎已重启</b>\n\n⏰ 时间：${now}\n👤 操作：管理员手动重启\n✅ 状态：${successCount}/${results.length} 个进程重启成功`);
+      return { success: true, message: `${successCount}/${results.length} 个引擎进程重启成功` };
     }),
 
   // 重启 Bot 进程

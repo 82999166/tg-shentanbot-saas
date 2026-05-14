@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Globe, Users, Bot, Shield, Settings, LogOut, ShieldCheck, PanelLeft, UserPlus,
+  Globe, Users, Bot, Shield, Settings, LogOut, ShieldCheck, PanelLeft, UserPlus, LayoutDashboard,
   MessageCircle, BarChart2, Send, UserCog, Wrench, ShoppingCart, Key, KeyRound, Search
 } from "lucide-react";
 import { useState } from "react";
@@ -14,6 +14,9 @@ import { useLocation } from "wouter";
 
 // 管理后台专属菜单 - 与用户后台完全独立
 const adminMenuItems = [
+  // 仪表盘
+  { icon: LayoutDashboard, label: "系统仪表盘", path: "/admin-dashboard", group: "概览" },
+
   // 用户管理
   { icon: Users, label: "客户管理", path: "/admin-users", group: "用户管理" },
 
