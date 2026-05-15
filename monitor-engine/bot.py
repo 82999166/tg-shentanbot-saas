@@ -1779,15 +1779,15 @@ def format_hit_message(hit: dict, fmt: str = "standard") -> str:
 
 
 def make_hit_keyboard(hit: dict) -> InlineKeyboardMarkup:
-    """生成命中消息的操作按钮"""
+    """Generate hit message buttons"""
     hit_id = hit.get("id", 0)
-    sender_tg_id = hit.get("senderTgId", "") or ""
+    sender_tg_id = str(hit.get("senderTgId", "") or "")
     sender_username = hit.get("senderUsername", "") or ""
     user_id = hit.get("userId", 0)
     group_id_str = hit.get("groupId", "") or ""
     message_id_str = str(hit.get("messageId", "") or "")
+    hit_status = hit.get("status", "pending") or "pending"
 
-    # 构建原始消息跳转链接（用于无 username 时的私聊按钮）
     msg_link_for_btn = None
     if group_id_str and message_id_str and message_id_str.isdigit():
         if group_id_str.lstrip("-").isdigit():
@@ -1799,24 +1799,28 @@ def make_hit_keyboard(hit: dict) -> InlineKeyboardMarkup:
             msg_link_for_btn = f"https://t.me/{group_id_str}/{message_id_str}"
 
     buttons = []
-    # 第一行：历史、私聊
+
     row1 = []
-    row1.append(InlineKeyboardButton("📋 历史", callback_data=f"history:{hit_id}:{sender_tg_id}:{user_id}"))
-    # 私聊按钮：有 username 用 URL 按钮直接拉起对话；无 username 用 callback 回复链接
+    if msg_link_for_btn:
+        row1.append(InlineKeyboardButton("\U0001f517 \u67e5\u770b\u539f\u6d88\u606f", url=msg_link_for_btn))
     if sender_username:
-        row1.append(InlineKeyboardButton("💬 私聊", url=f"https://t.me/{sender_username}"))
-    elif sender_tg_id and str(sender_tg_id).isdigit() and int(str(sender_tg_id)) > 0:
-        row1.append(InlineKeyboardButton("💬 私聊", url=f"tg://user?id={sender_tg_id}"))
-    elif msg_link_for_btn:
-        row1.append(InlineKeyboardButton("💬 查看原消息", url=msg_link_for_btn))
-    buttons.append(row1)
-    # 第二行：已处理、屏蔽、删除
+        row1.append(InlineKeyboardButton("\U0001f4ac \u79c1\u804a\u8054\u7cfb", url=f"https://t.me/{sender_username}"))
+    else:
+        row1.append(InlineKeyboardButton("\U0001f4ac \u79c1\u804a\u8054\u7cfb", callback_data=f"dm:{hit_id}:{sender_tg_id}:"))
+    if row1:
+        buttons.append(row1)
+
     row2 = []
-    row2.append(InlineKeyboardButton("✅ 已处理", callback_data=f"done:{hit_id}"))
-    row2.append(InlineKeyboardButton("🚫 屏蔽", callback_data=f"block:{hit_id}:{sender_tg_id}:{user_id}"))
-    row2.append(InlineKeyboardButton("🗑️ 删除", callback_data=f"delete:{hit_id}"))
+    if hit_status in ("pending", ""):
+        row2.append(InlineKeyboardButton("\u23f3 \u5f85\u5904\u7406", callback_data=f"done:{hit_id}"))
+    else:
+        row2.append(InlineKeyboardButton("\u2705 \u5df2\u5904\u7406", callback_data=f"done:{hit_id}"))
+    row2.append(InlineKeyboardButton("\U0001f6ab \u5c4f\u853d", callback_data=f"block:{hit_id}:{sender_tg_id}:{user_id}"))
+    row2.append(InlineKeyboardButton("\U0001f5d1\ufe0f \u5220\u9664", callback_data=f"delete:{hit_id}"))
     buttons.append(row2)
+
     return InlineKeyboardMarkup(buttons)
+
 
 
 
@@ -2063,3 +2067,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
