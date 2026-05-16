@@ -1733,16 +1733,18 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
   const [batchJoining, setBatchJoining] = useState(false);
   const [batchResult, setBatchResult] = useState('');
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; currentLine: string }>({ current: 0, total: 0, currentLine: '' });
-  const [batchFailures, setBatchFailures] = useState<{ line: string; reason: string }[]>([]);
-  const [showFailures, setShowFailures] = useState(false);
   const [search, setSearch] = useState("");
-  // 记录每个群组链接的实时加群状态
+  // 加群进行中的实时状态（批量时显示）
   const [groupStatusMap, setGroupStatusMap] = useState<Record<string, { status: 'joining' | 'success' | 'failed'; reason?: string }>>({});
+  // 重试中的记录 ID
+  const [retryingIds, setRetryingIds] = useState<Set<number>>(new Set());
+
   const { data: monitorData, isLoading, refetch: refetchMonitor } = trpc.monitorGroups.list.useQuery();
   const importGroup = trpc.engine.importGroup.useMutation();
+  const retryImportGroup = trpc.engine.retryImportGroup.useMutation();
   const deleteGroup = trpc.monitorGroups.delete.useMutation();
 
-  // 只显示当前账号的监控群组
+  // 只显示当前账号的监控群组（包括失败记录）
   const myGroups = (monitorData ?? []).filter((g: any) => g.tgAccountId === accountId);
   const filtered = myGroups.filter((g: any) => {
     const kw = search.toLowerCase();
@@ -1756,9 +1758,14 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'joining' } }));
     try {
       const res = await importGroup.mutateAsync({ tgAccountId: accountId, groupInput: line });
-      toast.success(res.message);
-      setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'success' } }));
-      setGroupInput("");
+      if (res.success) {
+        toast.success(res.message);
+        setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'success' } }));
+        setGroupInput("");
+      } else {
+        toast.error(res.message);
+        setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'failed', reason: res.error ?? res.message } }));
+      }
       refetchMonitor();
     } catch (e: any) {
       const reason = e.message ?? "加群失败";
@@ -1774,73 +1781,99 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     if (!lines.length || batchJoining) return;
     setBatchJoining(true);
     setBatchResult('');
-    setBatchFailures([]);
-    setShowFailures(false);
     setBatchProgress({ current: 0, total: lines.length, currentLine: '' });
+    setGroupStatusMap({});
     let success = 0;
-    const failures: { line: string; reason: string }[] = [];
+    let failed = 0;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       setBatchProgress({ current: i + 1, total: lines.length, currentLine: line });
       setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'joining' } }));
       try {
-        await importGroup.mutateAsync({ tgAccountId: accountId, groupInput: line });
-        success++;
-        setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'success' } }));
+        const res = await importGroup.mutateAsync({ tgAccountId: accountId, groupInput: line });
+        if (res.success) {
+          success++;
+          setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'success' } }));
+        } else {
+          failed++;
+          setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'failed', reason: res.error ?? res.message } }));
+        }
       } catch (e: any) {
+        failed++;
         const reason = e.message ?? '未知错误';
-        failures.push({ line, reason });
         setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'failed', reason } }));
       }
     }
-    setBatchFailures(failures);
-    setBatchResult(`完成：成功 ${success} 个，失败 ${failures.length} 个`);
+    setBatchResult(`完成：成功 ${success} 个，失败 ${failed} 个（失败记录已保存，可在下表重试）`);
     setBatchProgress({ current: lines.length, total: lines.length, currentLine: '' });
     setBatchInput('');
     setBatchJoining(false);
-    if (failures.length > 0) setShowFailures(true);
     refetchMonitor();
+  };
+
+  const handleRetry = async (g: any) => {
+    setRetryingIds(prev => new Set(prev).add(g.id));
+    try {
+      const res = await retryImportGroup.mutateAsync({ monitorGroupId: g.id, tgAccountId: accountId });
+      if (res.success) {
+        toast.success(res.message);
+      } else {
+        toast.error(res.message);
+      }
+      refetchMonitor();
+    } catch (e: any) {
+      toast.error(e.message ?? "重试失败");
+    } finally {
+      setRetryingIds(prev => { const s = new Set(prev); s.delete(g.id); return s; });
+    }
   };
 
   const handleDelete = async (id: number) => {
     try {
       await deleteGroup.mutateAsync({ id });
-      toast.success("已移除监控群组");
+      toast.success("已移除记录");
       refetchMonitor();
     } catch (e: any) {
       toast.error(e.message ?? "删除失败");
     }
   };
 
-  // 已加入 = 当前账号在 monitorGroups 表中 active 的数量（实时统计）
+  // 统计各状态数量
   const joinedCount = myGroups.filter((g: any) => g.monitorStatus === 'active').length;
-  // 待加入 = 公共群组池中分配给该账号的 pending 数量
+  const failedCount = myGroups.filter((g: any) => g.monitorStatus === 'error').length;
   const { data: statsData } = trpc.tgAccounts.getAccounts.useQuery(undefined, { select: (d: any) => d.accounts?.find((a: any) => a.id === accountId) });
   const pendingCount = statsData?.pendingGroupCount ?? 0;
 
   return (
     <div className="flex flex-col gap-3 py-2 h-full">
       {/* 统计徽章 */}
-      <div className="flex items-center gap-3 shrink-0">
+      <div className="flex items-center gap-3 shrink-0 flex-wrap">
         <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
           <CheckCircle className="w-4 h-4 text-blue-500" />
-          <span className="text-sm text-slate-600">已加入</span>
+          <span className="text-sm text-slate-600">监控中</span>
           <span className="text-lg font-bold text-blue-600">{joinedCount}</span>
-          <span className="text-xs text-slate-500">个群组</span>
         </div>
-        <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <Loader2 className="w-4 h-4 text-yellow-500" />
-          <span className="text-sm text-slate-600">待加入</span>
-          <span className="text-lg font-bold text-yellow-600">{pendingCount}</span>
-          <span className="text-xs text-slate-500">个群组</span>
-        </div>
+        {failedCount > 0 && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
+            <XCircle className="w-4 h-4 text-red-500" />
+            <span className="text-sm text-slate-600">加群失败</span>
+            <span className="text-lg font-bold text-red-600">{failedCount}</span>
+          </div>
+        )}
+        {pendingCount > 0 && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <Loader2 className="w-4 h-4 text-yellow-500" />
+            <span className="text-sm text-slate-600">待加入</span>
+            <span className="text-lg font-bold text-yellow-600">{pendingCount}</span>
+          </div>
+        )}
       </div>
       {/* 说明 */}
-      <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
-        <strong>添加群组</strong>：输入群组链接或用户名，账号将自动加入并开始实时监控（延迟 &lt;1 秒）。
-        支持格式：<code>@groupname</code>、<code>https://t.me/groupname</code>、<code>https://t.me/+invitelink</code>
+      <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700 shrink-0">
+        <strong>添加群组</strong>：输入群组链接或用户名，账号将自动加入并开始实时监控。失败记录保存到数据库，可点击“重试”再次尝试加群。
+        支持：<code>@groupname</code>、<code>https://t.me/groupname</code>、<code>https://t.me/+invitelink</code>
       </div>
-      {/* 输入框 + 按钮 */}
+      {/* 输入框 + 按鈕 */}
       <div className="flex gap-2 shrink-0">
         <Input
           placeholder="输入群组链接或用户名..."
@@ -1910,48 +1943,25 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
           )}
           {/* 完成结果 */}
           {batchResult && !batchJoining && (
-            <div className="space-y-2">
-              <p className={`text-xs font-medium ${batchFailures.length === 0 ? 'text-green-600' : 'text-orange-600'}`}>
-                {batchResult}
-              </p>
-              {batchFailures.length > 0 && (
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowFailures(v => !v)}
-                    className="text-xs text-red-500 hover:text-red-700 underline"
-                  >
-                    {showFailures ? '▲ 收起失败详情' : `▼ 查看 ${batchFailures.length} 个失败原因`}
-                  </button>
-                  {showFailures && (
-                    <div className="mt-1 max-h-40 overflow-y-auto border border-red-200 rounded bg-red-50 p-2 space-y-1">
-                      {batchFailures.map((f, idx) => (
-                        <div key={idx} className="text-xs">
-                          <span className="text-slate-700 font-medium truncate block max-w-full" title={f.line}>{f.line}</span>
-                          <span className="text-red-600">✗ {f.reason}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            <p className={`text-xs font-medium ${
+              batchResult.includes('失败 0') ? 'text-green-600' : 'text-orange-600'
+            }`}>{batchResult}</p>
           )}
         </div>
       </details>
       {/* 搜索 + 统计 */}
       <div className="flex items-center gap-2 shrink-0">
         <Input
-          placeholder="搜索已监控群组..."
+          placeholder="搜索群组..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 h-8 text-sm flex-1"
         />
         <span className="text-xs text-slate-500 shrink-0">
-          共 <span className="text-slate-800 font-bold">{myGroups.length}</span> 个
+          共 <span className="text-slate-800 font-bold">{myGroups.length}</span> 条记录
         </span>
       </div>
-      {/* 列表 */}
+      {/* 详细表格 */}
       <div className="flex-1 overflow-y-auto min-h-0 rounded border border-slate-200">
         {isLoading ? (
           <div className="flex items-center justify-center py-10">
@@ -1961,43 +1971,74 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-slate-500 text-sm">
             <Shield className="w-8 h-8 mb-2 opacity-40" />
-            {search ? "没有匹配的群组" : "暂无监控群组，请在上方输入群组链接添加"}
+            {search ? "没有匹配的群组" : "暂无记录，请在上方输入群组链接添加"}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-slate-100 text-slate-500 text-xs">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-100 text-slate-500">
               <tr>
-                <th className="text-left px-3 py-2">群组</th>
-                <th className="text-left px-3 py-2 w-20">状态</th>
-                <th className="text-center px-3 py-2 w-16">操作</th>
+                <th className="text-left px-3 py-2">群组名称</th>
+                <th className="text-left px-3 py-2 hidden sm:table-cell">群组 ID</th>
+                <th className="text-center px-3 py-2 w-16">状态</th>
+                <th className="text-left px-3 py-2">失败原因</th>
+                <th className="text-center px-3 py-2 w-20">操作</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((g: any) => (
-                <tr key={g.id} className="border-t border-slate-200/50 hover:bg-slate-100/70">
+                <tr key={g.id} className={`border-t border-slate-200/50 hover:bg-slate-100/70 ${
+                  g.monitorStatus === 'error' ? 'bg-red-50/30' : ''
+                }`}>
                   <td className="px-3 py-2">
-                    <div className="font-medium text-slate-800 truncate max-w-[220px]" title={g.groupTitle}>{g.groupTitle || g.groupId}</div>
-                    <div className="text-slate-500 text-xs">{g.groupId}</div>
+                    <div className="font-medium text-slate-800 truncate max-w-[160px]" title={g.groupTitle}>
+                      {g.groupTitle || g.groupId}
+                    </div>
                   </td>
-                  <td className="px-3 py-2">
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${
-                      g.monitorStatus === "active" ? "bg-green-900/50 text-green-300" :
-                      g.monitorStatus === "paused" ? "bg-yellow-900/50 text-yellow-300" :
-                      "bg-red-900/50 text-red-600"
-                    }`}>
-                      {g.monitorStatus === "active" ? "监控中" : g.monitorStatus === "paused" ? "已暂停" : "异常"}
-                    </span>
+                  <td className="px-3 py-2 hidden sm:table-cell">
+                    <div className="text-slate-500 truncate max-w-[120px]" title={g.groupId}>{g.groupId}</div>
                   </td>
                   <td className="px-3 py-2 text-center">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="w-6 h-6 text-slate-500 hover:text-red-400"
-                      title="移除监控"
-                      onClick={() => handleDelete(g.id)}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
+                    <span className={`inline-block px-1.5 py-0.5 rounded text-xs ${
+                      g.monitorStatus === "active" ? "bg-green-100 text-green-700" :
+                      g.monitorStatus === "paused" ? "bg-yellow-100 text-yellow-700" :
+                      "bg-red-100 text-red-700"
+                    }`}>
+                      {g.monitorStatus === "active" ? "监控中" : g.monitorStatus === "paused" ? "已暂停" : "加群失败"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    {g.monitorStatus === 'error' && g.errorMessage ? (
+                      <span className="text-red-500 text-xs truncate max-w-[180px] block" title={g.errorMessage}>
+                        {g.errorMessage}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center justify-center gap-1">
+                      {g.monitorStatus === 'error' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
+                          title="重试加群"
+                          disabled={retryingIds.has(g.id)}
+                          onClick={() => handleRetry(g)}
+                        >
+                          {retryingIds.has(g.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                        </Button>
+                      )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="w-6 h-6 text-slate-500 hover:text-red-400"
+                        title="删除记录"
+                        onClick={() => handleDelete(g.id)}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -1800,6 +1800,7 @@ export const engineRouter = router({
       const engineHttpPort = ENGINE_HTTP_PORT_BASE + input.tgAccountId;
       const engineHttpUrl = `http://127.0.0.1:${engineHttpPort}/join-group`;
       let joinResult: any = null;
+      let engineCallError: string | null = null;
       try {
         const resp = await fetch(engineHttpUrl, {
           method: "POST",
@@ -1810,30 +1811,70 @@ export const engineRouter = router({
         });
         joinResult = await resp.json();
       } catch (e: any) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `引擎加群接口调用失败：${e.message}` });
+        engineCallError = `引擎加群接口调用失败：${e.message}`;
       }
 
-      if (!joinResult?.success) {
-        const errMsg = joinResult?.error || "加群失败";
-        if (joinResult?.floodWait) {
-          throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: `请求过于频繁，请 ${joinResult.floodWait} 秒后重试` });
+      // ── 加群失败：写入 error 记录到数据库，不再 throw ──────────────────────────
+      if (engineCallError || !joinResult?.success) {
+        const errMsg = engineCallError || (joinResult?.floodWait
+          ? `请求过于频繁，请 ${joinResult.floodWait} 秒后重试`
+          : (joinResult?.error || "加群失败"));
+        // 检查是否已存在同一群组的记录（用 groupInput 作为 groupId 暂存）
+        const existingErr = await db.select({ id: monitorGroups.id })
+          .from(monitorGroups)
+          .where(and(
+            eq(monitorGroups.userId, ctx.user.id),
+            eq(monitorGroups.tgAccountId, input.tgAccountId),
+            eq(monitorGroups.groupId, input.groupInput),
+          ))
+          .limit(1);
+        let failedGroupId: number;
+        if (existingErr.length > 0) {
+          failedGroupId = existingErr[0].id;
+          await db.update(monitorGroups)
+            .set({ monitorStatus: "error", errorMessage: errMsg, isActive: false, updatedAt: new Date() })
+            .where(eq(monitorGroups.id, failedGroupId));
+        } else {
+          failedGroupId = await createMonitorGroup({
+            userId: ctx.user.id,
+            tgAccountId: input.tgAccountId,
+            groupId: input.groupInput,
+            groupTitle: input.groupInput,
+            groupUsername: "",
+            groupType: "supergroup",
+            memberCount: null,
+            keywordIds: [],
+            monitorStatus: "error",
+            errorMessage: errMsg,
+            isActive: false,
+          });
         }
-        throw new TRPCError({ code: "BAD_REQUEST", message: errMsg });
+        return {
+          success: false,
+          monitorGroupId: failedGroupId,
+          chatId: input.groupInput,
+          chatTitle: input.groupInput,
+          chatUsername: "",
+          memberCount: null,
+          alreadyJoined: false,
+          error: errMsg,
+          message: `加群失败：${errMsg}`,
+        };
       }
 
-      // 加群成功，写入 monitorGroups 表
+      // ── 加群成功，写入 monitorGroups 表 ─────────────────────────────────────────
       const chatId = joinResult.chatId;
       const chatTitle = joinResult.chatTitle || input.groupInput;
       const chatUsername = joinResult.chatUsername || "";
       const memberCount = joinResult.memberCount || null;
 
-      // 检查是否已存在（防止重复添加）
+      // 检查是否已存在（防止重复添加，包括之前失败的记录）
       const existing = await db.select({ id: monitorGroups.id })
         .from(monitorGroups)
         .where(and(
           eq(monitorGroups.userId, ctx.user.id),
           eq(monitorGroups.tgAccountId, input.tgAccountId),
-          eq(monitorGroups.groupId, chatId),
+          sql`(${monitorGroups.groupId} = ${chatId} OR ${monitorGroups.groupId} = ${input.groupInput})`,
         ))
         .limit(1);
 
@@ -1841,7 +1882,7 @@ export const engineRouter = router({
       if (existing.length > 0) {
         monitorGroupId = existing[0].id;
         await db.update(monitorGroups)
-          .set({ groupTitle: chatTitle, groupUsername: chatUsername, memberCount, isActive: true, monitorStatus: "active", updatedAt: new Date() })
+          .set({ groupId: chatId, groupTitle: chatTitle, groupUsername: chatUsername, memberCount, isActive: true, monitorStatus: "active", errorMessage: null, updatedAt: new Date() })
           .where(eq(monitorGroups.id, monitorGroupId));
       } else {
         monitorGroupId = await createMonitorGroup({
@@ -1866,6 +1907,71 @@ export const engineRouter = router({
         chatUsername,
         memberCount,
         message: joinResult.alreadyJoined ? "账号已在该群组中，已添加到监控列表" : "加群成功，已开始实时监控",
+      };
+    }),
+
+  // ── 重试失败的加群记录 ──────────────────────────────────────────────────────────
+  retryImportGroup: userProcedure
+    .input(z.object({
+      monitorGroupId: z.number(),
+      tgAccountId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库不可用" });
+      // 查找失败记录
+      const group = await db.select().from(monitorGroups)
+        .where(and(
+          eq(monitorGroups.id, input.monitorGroupId),
+          eq(monitorGroups.userId, ctx.user.id),
+          eq(monitorGroups.monitorStatus, "error"),
+        ))
+        .limit(1);
+      if (group.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "未找到失败记录或已成功" });
+      }
+      const groupInput = group[0].groupId; // 失败时用 groupInput 作为 groupId 存储
+      // 调用引擎重新加群
+      const engineHttpPort = ENGINE_HTTP_PORT_BASE + input.tgAccountId;
+      const engineHttpUrl = `http://127.0.0.1:${engineHttpPort}/join-group`;
+      let joinResult: any = null;
+      let engineCallError: string | null = null;
+      try {
+        const resp = await fetch(engineHttpUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ group: groupInput }),
+          // @ts-ignore
+          signal: AbortSignal.timeout(30000),
+        });
+        joinResult = await resp.json();
+      } catch (e: any) {
+        engineCallError = `引擎加群接口调用失败：${e.message}`;
+      }
+      if (engineCallError || !joinResult?.success) {
+        const errMsg = engineCallError || (joinResult?.floodWait
+          ? `请求过于频繁，请 ${joinResult.floodWait} 秒后重试`
+          : (joinResult?.error || "加群失败"));
+        await db.update(monitorGroups)
+          .set({ monitorStatus: "error", errorMessage: errMsg, isActive: false, updatedAt: new Date() })
+          .where(eq(monitorGroups.id, input.monitorGroupId));
+        return { success: false, error: errMsg, message: `重试失败：${errMsg}` };
+      }
+      // 重试成功，更新记录
+      const chatId = joinResult.chatId;
+      const chatTitle = joinResult.chatTitle || groupInput;
+      const chatUsername = joinResult.chatUsername || "";
+      const memberCount = joinResult.memberCount || null;
+      await db.update(monitorGroups)
+        .set({ groupId: chatId, groupTitle: chatTitle, groupUsername: chatUsername, memberCount, isActive: true, monitorStatus: "active", errorMessage: null, updatedAt: new Date() })
+        .where(eq(monitorGroups.id, input.monitorGroupId));
+      return {
+        success: true,
+        chatId,
+        chatTitle,
+        chatUsername,
+        memberCount,
+        message: "重试成功，已开始监控",
       };
     }),
 

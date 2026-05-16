@@ -310,7 +310,13 @@ export async function countKeywordsByUserId(userId: number): Promise<number> {
 export async function getMonitorGroupsByUserId(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(monitorGroups).where(and(eq(monitorGroups.userId, userId), eq(monitorGroups.isActive, true))).orderBy(desc(monitorGroups.createdAt));
+  // 返回所有记录：active（监控中）、paused（已暂停）、error（加群失败，isActive=false）
+  return db.select().from(monitorGroups).where(
+    and(
+      eq(monitorGroups.userId, userId),
+      sql`(${monitorGroups.isActive} = true OR ${monitorGroups.monitorStatus} = 'error')`
+    )
+  ).orderBy(desc(monitorGroups.createdAt));
 }
 
 export async function getMonitorGroupById(id: number, userId: number) {
