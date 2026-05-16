@@ -694,6 +694,14 @@ export const groupScrapeTasks = mysqlTable("group_scrape_tasks", {
   fissionEnabled: boolean("fissionEnabled").default(false).notNull(),  // 是否开启裂变采集
   fissionDepth: int("fissionDepth").default(1).notNull(),              // 裂变深度（1~3）
   fissionMaxPerSeed: int("fissionMaxPerSeed").default(10).notNull(),   // 每个种子群最多扩展数量
+
+  // 指定群组采集模式配置
+  scrapeMode: varchar("scrapeMode", { length: 32 }).default("keyword").notNull(),
+  targetGroups: text("targetGroups"),
+  collectTypes: varchar("collectTypes", { length: 128 }).default("group,channel,user").notNull(),
+  userLimit: int("userLimit").default(500).notNull(),
+  aiScoreEnabled: boolean("aiScoreEnabled").default(false).notNull(),
+  aiMinScore: float("aiMinScore").default(60),
 });
 export type GroupScrapeTask = typeof groupScrapeTasks.$inferSelect;
 export type InsertGroupScrapeTask = typeof groupScrapeTasks.$inferInsert;
@@ -723,3 +731,48 @@ export const groupScrapeResults = mysqlTable("group_scrape_results", {
 ]);
 export type GroupScrapeResult = typeof groupScrapeResults.$inferSelect;
 export type InsertGroupScrapeResult = typeof groupScrapeResults.$inferInsert;
+
+// ── 指定群组采集：采集到的群组/频道入库表 ──────────────────────────────────
+export const scrapeCollectedGroups = mysqlTable("scrape_collected_groups", {
+  id: int("id").autoincrement().primaryKey(),
+  taskId: int("taskId").notNull(),
+  sourceGroupId: varchar("sourceGroupId", { length: 128 }).notNull(), // 来源群组 username/id
+  type: varchar("type", { length: 16 }).notNull().default("group"),   // group / channel
+  tgId: varchar("tgId", { length: 64 }),                              // TG 数字 ID（去重键）
+  username: varchar("username", { length: 128 }),                     // TG @用户名（无@）
+  title: varchar("title", { length: 256 }),                           // 群组/频道名称
+  memberCount: int("memberCount").default(0),                         // 成员数
+  description: text("description"),                                   // 简介
+  aiScore: float("aiScore"),                                          // AI 质量评分 0-100
+  aiScoreDetail: text("aiScoreDetail"),                               // JSON: 各维度评分
+  importStatus: varchar("importStatus", { length: 32 }).default("pending").notNull(), // pending/imported/ignored
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("idx_scg_taskId").on(t.taskId),
+  index("idx_scg_type").on(t.type),
+  index("idx_scg_aiScore").on(t.aiScore),
+  uniqueIndex("idx_scg_tgId").on(t.tgId),
+]);
+export type ScrapeCollectedGroup = typeof scrapeCollectedGroups.$inferSelect;
+export type InsertScrapeCollectedGroup = typeof scrapeCollectedGroups.$inferInsert;
+
+// ── 指定群组采集：采集到的用户入库表 ──────────────────────────────────────
+export const scrapeCollectedUsers = mysqlTable("scrape_collected_users", {
+  id: int("id").autoincrement().primaryKey(),
+  taskId: int("taskId").notNull(),
+  sourceGroupId: varchar("sourceGroupId", { length: 128 }).notNull(), // 来源群组
+  tgId: varchar("tgId", { length: 64 }).notNull(),                    // TG 用户数字 ID（去重键）
+  username: varchar("username", { length: 128 }),                     // TG @用户名（无@，可为空）
+  displayName: varchar("displayName", { length: 256 }),               // 显示名称（真实姓名）
+  isBot: boolean("isBot").default(false),                             // 是否机器人
+  isPremium: boolean("isPremium").default(false),                     // 是否 Premium 用户
+  aiScore: float("aiScore"),                                          // AI 质量评分 0-100
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("idx_scu_taskId").on(t.taskId),
+  index("idx_scu_username").on(t.username),
+  uniqueIndex("idx_scu_tgId").on(t.tgId),
+]);
+export type ScrapeCollectedUser = typeof scrapeCollectedUsers.$inferSelect;
+export type InsertScrapeCollectedUser = typeof scrapeCollectedUsers.$inferInsert;
+

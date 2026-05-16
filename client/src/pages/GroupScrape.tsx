@@ -30,11 +30,13 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   Plus, Trash2, RefreshCw, Play, Search, Download,
   Users, CheckCircle2, XCircle, Clock, Loader2, Tag, Filter, ArrowRight,
-  Pencil, GitBranch, Link2, MessageSquare, FileText, FileDown
+  Pencil, GitBranch, Link2, MessageSquare, FileText, FileDown,
+  Target, Star, UserCheck, Globe, Radio, Bot, Crown
 } from "lucide-react";
 
 // 预置关键词
@@ -57,6 +59,12 @@ type Task = {
   totalFound: number | null;
   lastRunAt: string | null;
   createdAt: string;
+  scrapeMode?: "keyword" | "target";
+  targetGroups?: string[];
+  collectTypes?: string;
+  userLimit?: number;
+  aiScoreEnabled?: boolean;
+  aiMinScore?: number;
 };
 
 type ScrapeResult = {
@@ -74,10 +82,55 @@ type ScrapeResult = {
   createdAt: string;
 };
 
+type CollectedGroup = {
+  id: number;
+  taskId: number;
+  sourceGroupId: string;
+  type: string;
+  tgId: string | null;
+  username: string | null;
+  title: string | null;
+  memberCount: number | null;
+  description: string | null;
+  aiScore: number | null;
+  aiScoreDetail: Record<string, number> | null;
+  importStatus: string;
+  createdAt: string;
+};
+
+type CollectedUser = {
+  id: number;
+  taskId: number;
+  sourceGroupId: string;
+  tgId: string;
+  username: string | null;
+  displayName: string | null;
+  isBot: boolean | null;
+  isPremium: boolean | null;
+  aiScore: number | null;
+  createdAt: string;
+};
+
 type ExtractedLink = {
   url: string;
   slug: string;
 };
+
+// AI 评分条组件
+function AiScoreBar({ score }: { score: number | null }) {
+  if (score === null || score === undefined) return <span className="text-gray-600 text-xs">-</span>;
+  const pct = Math.max(0, Math.min(100, score));
+  const color = pct >= 80 ? "bg-green-500" : pct >= 60 ? "bg-yellow-500" : pct >= 40 ? "bg-orange-500" : "bg-red-500";
+  const textColor = pct >= 80 ? "text-green-400" : pct >= 60 ? "text-yellow-400" : pct >= 40 ? "text-orange-400" : "text-red-400";
+  return (
+    <div className="flex items-center gap-2 min-w-[80px]">
+      <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+        <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className={`text-xs font-medium ${textColor} w-6 text-right`}>{pct}</span>
+    </div>
+  );
+}
 
 function StatusBadge({ status }: { status: Task["status"] }) {
   const map: Record<string, { label: string; className: string }> = {
@@ -91,13 +144,13 @@ function StatusBadge({ status }: { status: Task["status"] }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${className}`}>{label}</span>;
 }
 
-function ImportStatusBadge({ status }: { status: ScrapeResult["importStatus"] }) {
-  const map = {
+function ImportStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; className: string }> = {
     pending: { label: "待审核", className: "bg-gray-700 text-gray-300" },
     imported: { label: "已导入", className: "bg-green-900/50 text-green-400" },
     ignored: { label: "已忽略", className: "bg-gray-800 text-gray-500" },
   };
-  const { label, className } = map[status] || map.pending;
+  const { label, className } = (map[status] || map.pending);
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${className}`}>{label}</span>;
 }
 
@@ -269,7 +322,7 @@ function TaskForm({
 }
 
 export default function GroupScrape() {
-  const [activeTab, setActiveTab] = useState<"tasks" | "results" | "extract">("tasks");
+  const [activeTab, setActiveTab] = useState<"tasks" | "results" | "extract" | "target">("tasks");
 
   // 新建任务状态
   const [createDialog, setCreateDialog] = useState(false);
@@ -313,12 +366,32 @@ export default function GroupScrape() {
   const [extractSelectedUrls, setExtractSelectedUrls] = useState<Set<string>>(new Set());
   const [extractImportDialog, setExtractImportDialog] = useState(false);
 
+  // ── 指定群组采集 状态 ────────────────────────────────────────────
+  const [targetTaskId, setTargetTaskId] = useState<number | undefined>(undefined);
+  const [targetGroupInput, setTargetGroupInput] = useState(""); // 单个输入
+  const [targetGroupsBatch, setTargetGroupsBatch] = useState(""); // 批量输入
+  const [targetGroups, setTargetGroups] = useState<string[]>([]);
+  const [collectTypes, setCollectTypes] = useState<string[]>(["group", "channel", "user"]);
+  const [userLimit, setUserLimit] = useState(500);
+  const [aiScoreEnabled, setAiScoreEnabled] = useState(true);
+  const [aiMinScore, setAiMinScore] = useState(60);
+  const [targetAccountId, setTargetAccountId] = useState<string>("");
+  const [targetSubTab, setTargetSubTab] = useState<"groups" | "channels" | "users">("groups");
+  const [collectedGroupPage, setCollectedGroupPage] = useState(1);
+  const [collectedUserPage, setCollectedUserPage] = useState(1);
+  const [collectedGroupType, setCollectedGroupType] = useState<"all" | "group" | "channel">("all");
+  const [selectedCollectedGroupIds, setSelectedCollectedGroupIds] = useState<Set<number>>(new Set());
+  const [importCollectedDialog, setImportCollectedDialog] = useState(false);
+  const [exportUsersDialog, setExportUsersDialog] = useState(false);
+  const [exportContent, setExportContent] = useState("");
+  const [onlyWithUsername, setOnlyWithUsername] = useState(true);
+
   const utils = trpc.useUtils();
 
   // 查询任务列表
   const { data: tasks = [], isLoading: tasksLoading, isRefetching: tasksRefetching, refetch: refetchTasks } = trpc.groupScrape.listTasks.useQuery();
 
-  // 查询采集结果
+  // 查询采集结果（关键词模式）
   const { data: resultsData, isLoading: resultsLoading, isRefetching: resultsRefetching, refetch: refetchResults } = trpc.groupScrape.listResults.useQuery({
     taskId: selectedTaskId,
     importStatus: importStatusFilter,
@@ -326,12 +399,38 @@ export default function GroupScrape() {
     pageSize: 20,
   });
 
-  // 查询 TG 账号列表（用于提取链接时选择账号）
+  // 查询采集到的群组/频道（指定群组模式）
+  const { data: collectedGroupsData, isLoading: collectedGroupsLoading, refetch: refetchCollectedGroups } = trpc.groupScrape.listCollectedGroups.useQuery({
+    taskId: targetTaskId,
+    type: collectedGroupType,
+    page: collectedGroupPage,
+    pageSize: 20,
+  }, { enabled: activeTab === "target" });
+
+  // 查询采集到的用户（指定群组模式）
+  const { data: collectedUsersData, isLoading: collectedUsersLoading, refetch: refetchCollectedUsers } = trpc.groupScrape.listCollectedUsers.useQuery({
+    taskId: targetTaskId,
+    onlyWithUsername,
+    page: collectedUserPage,
+    pageSize: 20,
+  }, { enabled: activeTab === "target" });
+
+  // 查询采集统计
+  const { data: collectedStats, refetch: refetchStats } = trpc.groupScrape.getCollectedStats.useQuery(
+    { taskId: targetTaskId! },
+    { enabled: activeTab === "target" && !!targetTaskId }
+  );
+
+  // 查询 TG 账号列表
   const { data: accountsData } = trpc.tgAccounts.list.useQuery();
   const accounts = (accountsData as any)?.accounts ?? accountsData ?? [];
 
   const results = resultsData?.items || [];
   const totalResults = resultsData?.total || 0;
+  const collectedGroups = (collectedGroupsData?.items || []) as CollectedGroup[];
+  const totalCollectedGroups = collectedGroupsData?.total || 0;
+  const collectedUsers = (collectedUsersData?.items || []) as CollectedUser[];
+  const totalCollectedUsers = collectedUsersData?.total || 0;
 
   // 创建任务
   const createTask = trpc.groupScrape.createTask.useMutation({
@@ -365,7 +464,7 @@ export default function GroupScrape() {
     onError: (e) => toast.error(e.message),
   });
 
-  // 触发任务
+  // 触发任务（关键词模式）
   const triggerTask = trpc.groupScrape.triggerTask.useMutation({
     onSuccess: () => {
       toast.success("采集任务已触发，引擎将在 60 秒内开始执行");
@@ -415,12 +514,55 @@ export default function GroupScrape() {
     onError: (e) => toast.error(e.message),
   });
 
-  // 将提取的链接批量导入公共群池（直接调用 importChatsToPublic）
+  // 将提取的链接批量导入公共群池
   const importExtractedLinks = trpc.tgAccounts.importChatsToPublic.useMutation({
     onSuccess: (data: any) => {
       toast.success(`成功导入 ${data.added} 个群组，跳过 ${data.skipped} 个（已存在）`);
       setExtractImportDialog(false);
       setExtractSelectedUrls(new Set());
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // 指定群组采集（v2）
+  const runTargetScrape = trpc.groupScrape.runTargetScrape.useMutation({
+    onSuccess: (data) => {
+      toast.success(
+        `采集完成！群组/频道: ${data.groupsSaved} 条，用户: ${data.usersSaved} 条` +
+        (data.groupsSkipped + data.usersSkipped > 0 ? `（去重跳过 ${data.groupsSkipped + data.usersSkipped} 条）` : "")
+      );
+      refetchCollectedGroups();
+      refetchCollectedUsers();
+      refetchStats();
+      refetchTasks();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // 导入采集到的群组到监控池
+  const importCollectedGroups = trpc.groupScrape.importCollectedGroupsToPool.useMutation({
+    onSuccess: (data) => {
+      toast.success(`成功导入 ${data.importedCount} 个群组，跳过 ${data.skippedCount} 个`);
+      setImportCollectedDialog(false);
+      setSelectedCollectedGroupIds(new Set());
+      refetchCollectedGroups();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // 导出用户列表
+  const exportUsers = trpc.groupScrape.exportCollectedUsers.useQuery(
+    { taskId: targetTaskId, onlyWithUsername },
+    { enabled: false }
+  );
+
+  // 清空采集数据
+  const clearCollectedData = trpc.groupScrape.clearCollectedData.useMutation({
+    onSuccess: () => {
+      toast.success("采集数据已清空");
+      refetchCollectedGroups();
+      refetchCollectedUsers();
+      refetchStats();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -483,7 +625,89 @@ export default function GroupScrape() {
     }
   }
 
+  function toggleCollectedGroupSelect(id: number) {
+    setSelectedCollectedGroupIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleCollectedGroupSelectAll() {
+    if (selectedCollectedGroupIds.size === collectedGroups.length) {
+      setSelectedCollectedGroupIds(new Set());
+    } else {
+      setSelectedCollectedGroupIds(new Set(collectedGroups.map(g => g.id)));
+    }
+  }
+
+  // 添加目标群组（单个）
+  function addTargetGroup(input: string) {
+    const trimmed = input.trim().replace(/^@/, "");
+    if (!trimmed) return;
+    const normalized = trimmed;
+    if (!targetGroups.includes(normalized)) {
+      setTargetGroups(prev => [...prev, normalized]);
+    }
+    setTargetGroupInput("");
+  }
+
+  // 批量导入目标群组
+  function importBatchGroups() {
+    const lines = targetGroupsBatch.split(/[\n,，\s]+/).map(s => s.trim().replace(/^@/, "")).filter(Boolean);
+    const unique = Array.from(new Set([...targetGroups, ...lines]));
+    setTargetGroups(unique);
+    setTargetGroupsBatch("");
+    toast.success(`已添加 ${lines.length} 个群组`);
+  }
+
+  // 切换采集类型
+  function toggleCollectType(type: string) {
+    setCollectTypes(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    );
+  }
+
+  // 执行指定群组采集
+  async function handleRunTargetScrape() {
+    if (!targetTaskId) { toast.error("请先选择或创建一个采集任务"); return; }
+    if (targetGroups.length === 0) { toast.error("请添加至少一个目标群组"); return; }
+    if (collectTypes.length === 0) { toast.error("请至少选择一种采集内容类型"); return; }
+
+    runTargetScrape.mutate({
+      taskId: targetTaskId,
+      targetGroups,
+      collectTypes: collectTypes.join(","),
+      userLimit,
+      aiScoreEnabled,
+      aiMinScore,
+      accountId: targetAccountId ? parseInt(targetAccountId) : undefined,
+    });
+  }
+
+  // 导出用户列表
+  async function handleExportUsers() {
+    const result = await utils.groupScrape.exportCollectedUsers.fetch({
+      taskId: targetTaskId,
+      onlyWithUsername,
+    });
+    setExportContent(result.content);
+    setExportUsersDialog(true);
+  }
+
+  function downloadExportContent() {
+    const blob = new Blob([exportContent], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `tg_users_${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   const totalPages = Math.ceil(totalResults / 20);
+  const totalCollectedGroupPages = Math.ceil(totalCollectedGroups / 20);
+  const totalCollectedUserPages = Math.ceil(totalCollectedUsers / 20);
 
   return (
     <AdminLayout title="群组采集">
@@ -496,7 +720,7 @@ export default function GroupScrape() {
               群组采集
             </h1>
             <p className="text-sm text-gray-400 mt-1">
-              通过关键词搜索公开群组，或从群消息中提取群链接，导入公共监控群组池
+              通过关键词搜索公开群组，或指定群组采集成员/子群，导入公共监控群组池
             </p>
           </div>
           <div className="flex gap-2">
@@ -513,7 +737,7 @@ export default function GroupScrape() {
         </div>
 
         {/* Tab 切换 */}
-        <div className="flex gap-1 mb-4 bg-gray-900 rounded-lg p-1 w-fit">
+        <div className="flex gap-1 mb-4 bg-gray-900 rounded-lg p-1 w-fit flex-wrap">
           <button
             onClick={() => setActiveTab("tasks")}
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
@@ -528,10 +752,24 @@ export default function GroupScrape() {
               activeTab === "results" ? "bg-red-600 text-white" : "text-gray-400 hover:text-gray-200"
             }`}
           >
-            采集结果
+            关键词结果
             {totalResults > 0 && (
               <span className="ml-1.5 bg-gray-700 text-gray-300 text-xs px-1.5 py-0.5 rounded-full">
                 {totalResults}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("target")}
+            className={`px-4 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1.5 ${
+              activeTab === "target" ? "bg-purple-600 text-white" : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            <Target className="w-3.5 h-3.5" />
+            指定群组采集
+            {(collectedStats?.groups || 0) + (collectedStats?.channels || 0) + (collectedStats?.users || 0) > 0 && (
+              <span className="ml-1 bg-purple-900/60 text-purple-300 text-xs px-1.5 py-0.5 rounded-full">
+                {(collectedStats?.groups || 0) + (collectedStats?.channels || 0) + (collectedStats?.users || 0)}
               </span>
             )}
           </button>
@@ -583,7 +821,7 @@ export default function GroupScrape() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {tasks.map((task: Task) => (
+                    {(tasks as Task[]).map((task) => (
                       <TableRow key={task.id} className="border-gray-800 hover:bg-gray-800/50">
                         <TableCell className="text-white font-medium">{task.name}</TableCell>
                         <TableCell>
@@ -645,6 +883,15 @@ export default function GroupScrape() {
                             <Button
                               size="sm"
                               variant="ghost"
+                              onClick={() => { setTargetTaskId(task.id); setActiveTab("target"); }}
+                              className="text-purple-400 hover:text-purple-300 hover:bg-purple-900/20"
+                              title="指定群组采集"
+                            >
+                              <Target className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
                               onClick={() => openEditDialog(task)}
                               className="text-blue-400 hover:text-blue-300 hover:bg-blue-900/20"
                               title="编辑任务"
@@ -671,7 +918,7 @@ export default function GroupScrape() {
           </Card>
         )}
 
-        {/* ── 采集结果 Tab ── */}
+        {/* ── 关键词采集结果 Tab ── */}
         {activeTab === "results" && (
           <div className="space-y-4">
             {/* 过滤栏 */}
@@ -685,7 +932,7 @@ export default function GroupScrape() {
                 </SelectTrigger>
                 <SelectContent className="bg-gray-900 border-gray-700">
                   <SelectItem value="all">全部任务</SelectItem>
-                  {tasks.map((t: Task) => (
+                  {(tasks as Task[]).map((t) => (
                     <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -781,7 +1028,7 @@ export default function GroupScrape() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {results.map((r: ScrapeResult) => (
+                        {(results as ScrapeResult[]).map((r) => (
                           <TableRow key={r.id} className="border-gray-800 hover:bg-gray-800/50">
                             <TableCell>
                               <Checkbox
@@ -858,24 +1105,8 @@ export default function GroupScrape() {
                           共 {totalResults} 条，第 {page}/{totalPages} 页
                         </span>
                         <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={page <= 1}
-                            onClick={() => setPage(p => p - 1)}
-                            className="text-gray-400"
-                          >
-                            上一页
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={page >= totalPages}
-                            onClick={() => setPage(p => p + 1)}
-                            className="text-gray-400"
-                          >
-                            下一页
-                          </Button>
+                          <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="text-gray-400">上一页</Button>
+                          <Button size="sm" variant="ghost" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="text-gray-400">下一页</Button>
                         </div>
                       </div>
                     )}
@@ -883,6 +1114,560 @@ export default function GroupScrape() {
                 )}
               </CardContent>
             </Card>
+          </div>
+        )}
+
+        {/* ── 指定群组采集 Tab ── */}
+        {activeTab === "target" && (
+          <div className="space-y-4">
+            {/* 配置区 */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* 左侧：目标群组配置 */}
+              <div className="lg:col-span-2 space-y-4">
+                <Card className="bg-gray-900 border-gray-800">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-white text-base flex items-center gap-2">
+                      <Target className="w-4 h-4 text-purple-400" />
+                      目标群组配置
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* 选择任务 */}
+                    <div>
+                      <label className="text-sm text-gray-300 block mb-1.5">关联采集任务（用于保存结果）</label>
+                      <Select
+                        value={targetTaskId?.toString() || ""}
+                        onValueChange={(v) => setTargetTaskId(parseInt(v))}
+                      >
+                        <SelectTrigger className="bg-gray-800 border-gray-700 text-gray-200">
+                          <SelectValue placeholder="请选择任务（或先在任务列表新建）" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-gray-900 border-gray-700">
+                          {(tasks as Task[]).map((t) => (
+                            <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* 单个添加 */}
+                    <div>
+                      <label className="text-sm text-gray-300 block mb-1.5">添加目标群组</label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={targetGroupInput}
+                          onChange={e => setTargetGroupInput(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && addTargetGroup(targetGroupInput)}
+                          placeholder="输入群组 @用户名 或 t.me/xxx"
+                          className="bg-gray-800 border-gray-700 text-white flex-1"
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => addTargetGroup(targetGroupInput)}
+                          className="text-gray-400 hover:text-white border border-gray-700"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* 批量导入 */}
+                    <div>
+                      <label className="text-sm text-gray-300 block mb-1.5">批量导入（每行一个，支持 @用户名 或 t.me/xxx）</label>
+                      <Textarea
+                        value={targetGroupsBatch}
+                        onChange={e => setTargetGroupsBatch(e.target.value)}
+                        placeholder={"@group1\n@group2\nt.me/group3\n..."}
+                        className="bg-gray-800 border-gray-700 text-white text-sm h-24 resize-none"
+                      />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={importBatchGroups}
+                        disabled={!targetGroupsBatch.trim()}
+                        className="mt-2 text-purple-400 hover:text-purple-300 border border-purple-800 hover:bg-purple-900/20"
+                      >
+                        <FileText className="w-4 h-4 mr-1" />
+                        批量导入
+                      </Button>
+                    </div>
+
+                    {/* 已添加的群组 */}
+                    {targetGroups.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-sm text-gray-300">已添加 {targetGroups.length} 个目标群组</label>
+                          <button
+                            onClick={() => setTargetGroups([])}
+                            className="text-xs text-red-400 hover:text-red-300"
+                          >
+                            清空
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                          {targetGroups.map(g => (
+                            <span
+                              key={g}
+                              className="bg-gray-800 text-gray-200 text-xs px-2 py-1 rounded flex items-center gap-1 border border-gray-700"
+                            >
+                              @{g}
+                              <button
+                                onClick={() => setTargetGroups(prev => prev.filter(x => x !== g))}
+                                className="text-gray-500 hover:text-red-400"
+                              >×</button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* 右侧：采集配置 */}
+              <div className="space-y-4">
+                <Card className="bg-gray-900 border-gray-800">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-white text-base flex items-center gap-2">
+                      <Filter className="w-4 h-4 text-blue-400" />
+                      采集配置
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* 采集内容类型 */}
+                    <div>
+                      <label className="text-sm text-gray-300 block mb-2">采集内容类型</label>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <Checkbox
+                            checked={collectTypes.includes("group")}
+                            onCheckedChange={() => toggleCollectType("group")}
+                            className="border-gray-600"
+                          />
+                          <Globe className="w-4 h-4 text-blue-400" />
+                          <span className="text-sm text-gray-300">群组</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <Checkbox
+                            checked={collectTypes.includes("channel")}
+                            onCheckedChange={() => toggleCollectType("channel")}
+                            className="border-gray-600"
+                          />
+                          <Radio className="w-4 h-4 text-orange-400" />
+                          <span className="text-sm text-gray-300">频道</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <Checkbox
+                            checked={collectTypes.includes("user")}
+                            onCheckedChange={() => toggleCollectType("user")}
+                            className="border-gray-600"
+                          />
+                          <Users className="w-4 h-4 text-green-400" />
+                          <span className="text-sm text-gray-300">用户成员</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* 用户采集上限 */}
+                    {collectTypes.includes("user") && (
+                      <div>
+                        <label className="text-sm text-gray-300 block mb-1.5">用户采集上限</label>
+                        <Input
+                          type="number"
+                          value={userLimit}
+                          onChange={e => setUserLimit(Math.min(2000, Math.max(1, parseInt(e.target.value) || 500)))}
+                          className="bg-gray-800 border-gray-700 text-white"
+                          min={1}
+                          max={2000}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">每个群最多采集用户数（1~2000）</p>
+                      </div>
+                    )}
+
+                    {/* 选择账号 */}
+                    <div>
+                      <label className="text-sm text-gray-300 block mb-1.5">使用账号（可选）</label>
+                      <Select value={targetAccountId} onValueChange={setTargetAccountId}>
+                        <SelectTrigger className="bg-gray-800 border-gray-700 text-gray-200">
+                          <SelectValue placeholder="自动选择" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-gray-900 border-gray-700">
+                          <SelectItem value="">自动选择</SelectItem>
+                          {(Array.isArray(accounts) ? accounts : []).map((acc: any) => (
+                            <SelectItem key={acc.id} value={String(acc.id)}>
+                              {acc.phone || acc.tgUsername || `账号 #${acc.id}`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* AI 评分 */}
+                    <div className="border border-gray-700 rounded-lg p-3 space-y-3 bg-gray-800/50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Star className="w-4 h-4 text-yellow-400" />
+                          <span className="text-sm font-medium text-gray-200">AI 质量评分</span>
+                        </div>
+                        <Switch
+                          checked={aiScoreEnabled}
+                          onCheckedChange={setAiScoreEnabled}
+                        />
+                      </div>
+                      {aiScoreEnabled && (
+                        <div>
+                          <label className="text-xs text-gray-400 block mb-1">最低评分阈值（低于此分过滤）</label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              value={aiMinScore}
+                              onChange={e => setAiMinScore(Math.min(100, Math.max(0, parseInt(e.target.value) || 60)))}
+                              className="bg-gray-800 border-gray-700 text-white h-8 text-sm"
+                              min={0}
+                              max={100}
+                            />
+                            <span className="text-gray-400 text-sm">/ 100</span>
+                          </div>
+                          <p className="text-xs text-gray-600 mt-1">评分维度：成员数、有用户名、标题质量、有简介、类型</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 开始采集按钮 */}
+                    <Button
+                      onClick={handleRunTargetScrape}
+                      disabled={runTargetScrape.isPending || targetGroups.length === 0 || !targetTaskId}
+                      className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                    >
+                      {runTargetScrape.isPending ? (
+                        <><Loader2 className="w-4 h-4 animate-spin mr-2" />采集中，请稍候...</>
+                      ) : (
+                        <><Play className="w-4 h-4 mr-2" />开始采集</>
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+
+            {/* 采集结果展示 */}
+            {targetTaskId && (
+              <Card className="bg-gray-900 border-gray-800">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-white text-base flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-green-400" />
+                      采集结果
+                      {collectedStats && (
+                        <div className="flex gap-2 ml-2">
+                          <span className="text-xs bg-blue-900/40 text-blue-300 px-2 py-0.5 rounded">
+                            群组 {collectedStats.groups}
+                          </span>
+                          <span className="text-xs bg-orange-900/40 text-orange-300 px-2 py-0.5 rounded">
+                            频道 {collectedStats.channels}
+                          </span>
+                          <span className="text-xs bg-green-900/40 text-green-300 px-2 py-0.5 rounded">
+                            用户 {collectedStats.users}
+                          </span>
+                        </div>
+                      )}
+                    </CardTitle>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => { refetchCollectedGroups(); refetchCollectedUsers(); refetchStats(); }}
+                        className="text-gray-400 hover:text-white"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </Button>
+                      {collectTypes.includes("user") && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleExportUsers}
+                          className="border-gray-600 text-gray-300 hover:text-white hover:bg-gray-700"
+                        >
+                          <FileDown className="w-4 h-4 mr-1" />
+                          导出用户
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => clearCollectedData.mutate({ taskId: targetTaskId!, clearGroups: true, clearUsers: true })}
+                        className="text-red-400 hover:text-red-300"
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        清空
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* 子 Tab */}
+                  <div className="flex gap-1 mt-3 bg-gray-800 rounded-lg p-1 w-fit">
+                    <button
+                      onClick={() => setTargetSubTab("groups")}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
+                        targetSubTab === "groups" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-gray-200"
+                      }`}
+                    >
+                      <Globe className="w-3 h-3" />
+                      群组 ({collectedStats?.groups || 0})
+                    </button>
+                    <button
+                      onClick={() => setTargetSubTab("channels")}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
+                        targetSubTab === "channels" ? "bg-orange-600 text-white" : "text-gray-400 hover:text-gray-200"
+                      }`}
+                    >
+                      <Radio className="w-3 h-3" />
+                      频道 ({collectedStats?.channels || 0})
+                    </button>
+                    <button
+                      onClick={() => setTargetSubTab("users")}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
+                        targetSubTab === "users" ? "bg-green-600 text-white" : "text-gray-400 hover:text-gray-200"
+                      }`}
+                    >
+                      <Users className="w-3 h-3" />
+                      用户 ({collectedStats?.users || 0})
+                    </button>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {/* 群组/频道列表 */}
+                  {(targetSubTab === "groups" || targetSubTab === "channels") && (
+                    <>
+                      {/* 过滤 */}
+                      <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-800">
+                        <Select
+                          value={collectedGroupType}
+                          onValueChange={(v: any) => { setCollectedGroupType(v); setCollectedGroupPage(1); }}
+                        >
+                          <SelectTrigger className="w-32 bg-gray-800 border-gray-700 text-gray-200 h-7 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-gray-900 border-gray-700">
+                            <SelectItem value="all">全部类型</SelectItem>
+                            <SelectItem value="group">群组</SelectItem>
+                            <SelectItem value="channel">频道</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {selectedCollectedGroupIds.size > 0 && (
+                          <Button
+                            size="sm"
+                            onClick={() => setImportCollectedDialog(true)}
+                            className="bg-green-700 hover:bg-green-600 text-white h-7 text-xs"
+                          >
+                            <Download className="w-3 h-3 mr-1" />
+                            导入监控池 ({selectedCollectedGroupIds.size})
+                          </Button>
+                        )}
+                      </div>
+
+                      {collectedGroupsLoading ? (
+                        <div className="flex items-center justify-center py-12 text-gray-500">
+                          <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
+                        </div>
+                      ) : collectedGroups.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500">
+                          <Globe className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                          <p>暂无采集到的群组/频道</p>
+                          <p className="text-xs mt-1">请先配置目标群组并开始采集</p>
+                        </div>
+                      ) : (
+                        <>
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="border-gray-800">
+                                <TableHead className="w-10">
+                                  <Checkbox
+                                    checked={selectedCollectedGroupIds.size === collectedGroups.length && collectedGroups.length > 0}
+                                    onCheckedChange={toggleCollectedGroupSelectAll}
+                                    className="border-gray-600"
+                                  />
+                                </TableHead>
+                                <TableHead className="text-gray-400">名称</TableHead>
+                                <TableHead className="text-gray-400">用户名</TableHead>
+                                <TableHead className="text-gray-400">类型</TableHead>
+                                <TableHead className="text-gray-400">成员数</TableHead>
+                                <TableHead className="text-gray-400">AI评分</TableHead>
+                                <TableHead className="text-gray-400">来源群组</TableHead>
+                                <TableHead className="text-gray-400">状态</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {collectedGroups.map((g) => (
+                                <TableRow key={g.id} className="border-gray-800 hover:bg-gray-800/50">
+                                  <TableCell>
+                                    <Checkbox
+                                      checked={selectedCollectedGroupIds.has(g.id)}
+                                      onCheckedChange={() => toggleCollectedGroupSelect(g.id)}
+                                      disabled={g.importStatus !== "pending"}
+                                      className="border-gray-600"
+                                    />
+                                  </TableCell>
+                                  <TableCell className="text-white font-medium max-w-[160px] truncate">
+                                    {g.title || g.username || g.tgId || "-"}
+                                  </TableCell>
+                                  <TableCell className="text-blue-400 text-sm font-mono">
+                                    {g.username ? (
+                                      <a
+                                        href={`https://t.me/${g.username}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="hover:underline"
+                                      >
+                                        @{g.username}
+                                      </a>
+                                    ) : (
+                                      <span className="text-gray-600">-</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                      g.type === "channel"
+                                        ? "bg-orange-900/40 text-orange-300"
+                                        : "bg-blue-900/40 text-blue-300"
+                                    }`}>
+                                      {g.type === "channel" ? "频道" : "群组"}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="text-gray-300">
+                                    <div className="flex items-center gap-1">
+                                      <Users className="w-3 h-3 text-gray-500" />
+                                      {(g.memberCount || 0).toLocaleString()}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <AiScoreBar score={g.aiScore} />
+                                  </TableCell>
+                                  <TableCell className="text-gray-500 text-xs">
+                                    {g.sourceGroupId}
+                                  </TableCell>
+                                  <TableCell>
+                                    <ImportStatusBadge status={g.importStatus} />
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                          {totalCollectedGroupPages > 1 && (
+                            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-800">
+                              <span className="text-sm text-gray-400">共 {totalCollectedGroups} 条，第 {collectedGroupPage}/{totalCollectedGroupPages} 页</span>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="ghost" disabled={collectedGroupPage <= 1} onClick={() => setCollectedGroupPage(p => p - 1)} className="text-gray-400">上一页</Button>
+                                <Button size="sm" variant="ghost" disabled={collectedGroupPage >= totalCollectedGroupPages} onClick={() => setCollectedGroupPage(p => p + 1)} className="text-gray-400">下一页</Button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+
+                  {/* 用户列表 */}
+                  {targetSubTab === "users" && (
+                    <>
+                      <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-800">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <Checkbox
+                            checked={onlyWithUsername}
+                            onCheckedChange={(v) => setOnlyWithUsername(!!v)}
+                            className="border-gray-600"
+                          />
+                          <span className="text-xs text-gray-300">只显示有 @用户名 的用户</span>
+                        </label>
+                      </div>
+
+                      {collectedUsersLoading ? (
+                        <div className="flex items-center justify-center py-12 text-gray-500">
+                          <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
+                        </div>
+                      ) : collectedUsers.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500">
+                          <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                          <p>暂无采集到的用户</p>
+                          <p className="text-xs mt-1">请勾选「用户成员」类型并开始采集</p>
+                        </div>
+                      ) : (
+                        <>
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="border-gray-800">
+                                <TableHead className="text-gray-400">显示名称</TableHead>
+                                <TableHead className="text-gray-400">@用户名</TableHead>
+                                <TableHead className="text-gray-400">TG ID</TableHead>
+                                <TableHead className="text-gray-400">标签</TableHead>
+                                <TableHead className="text-gray-400">AI评分</TableHead>
+                                <TableHead className="text-gray-400">来源群组</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {collectedUsers.map((u) => (
+                                <TableRow key={u.id} className="border-gray-800 hover:bg-gray-800/50">
+                                  <TableCell className="text-white font-medium max-w-[140px] truncate">
+                                    {u.displayName || "-"}
+                                  </TableCell>
+                                  <TableCell className="text-blue-400 text-sm font-mono">
+                                    {u.username ? (
+                                      <a
+                                        href={`https://t.me/${u.username}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="hover:underline"
+                                      >
+                                        @{u.username}
+                                      </a>
+                                    ) : (
+                                      <span className="text-gray-600">-</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-gray-500 text-xs font-mono">
+                                    {u.tgId}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex gap-1">
+                                      {u.isBot && (
+                                        <span className="text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                          <Bot className="w-3 h-3" /> Bot
+                                        </span>
+                                      )}
+                                      {u.isPremium && (
+                                        <span className="text-xs bg-yellow-900/40 text-yellow-400 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                          <Crown className="w-3 h-3" /> Premium
+                                        </span>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <AiScoreBar score={u.aiScore} />
+                                  </TableCell>
+                                  <TableCell className="text-gray-500 text-xs">
+                                    {u.sourceGroupId}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                          {totalCollectedUserPages > 1 && (
+                            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-800">
+                              <span className="text-sm text-gray-400">共 {totalCollectedUsers} 条，第 {collectedUserPage}/{totalCollectedUserPages} 页</span>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="ghost" disabled={collectedUserPage <= 1} onClick={() => setCollectedUserPage(p => p - 1)} className="text-gray-400">上一页</Button>
+                                <Button size="sm" variant="ghost" disabled={collectedUserPage >= totalCollectedUserPages} onClick={() => setCollectedUserPage(p => p + 1)} className="text-gray-400">下一页</Button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
@@ -896,8 +1681,8 @@ export default function GroupScrape() {
                   <MessageSquare className="w-4 h-4 text-orange-400" />
                   从群组历史消息中提取群链接
                 </CardTitle>
-                <p className="text-xs text-gray-400 mt-1">
-                  选择一个已登录的 TG 账号，输入目标群组链接，系统将扫描该群的历史消息，自动提取所有 t.me 群组链接
+                <p className="text-xs text-gray-500 mt-1">
+                  扫描指定群组的历史消息，自动提取其中的 t.me 群组/频道链接，可批量导入监控池
                 </p>
               </CardHeader>
               <CardContent>
@@ -989,7 +1774,6 @@ export default function GroupScrape() {
                       </span>
                     </CardTitle>
                     <div className="flex gap-2">
-                      {/* 导出 TXT */}
                       <Button
                         size="sm"
                         variant="outline"
@@ -1007,7 +1791,6 @@ export default function GroupScrape() {
                         <FileText className="w-4 h-4 mr-1" />
                         导出 TXT
                       </Button>
-                      {/* 导出 CSV */}
                       <Button
                         size="sm"
                         variant="outline"
@@ -1252,6 +2035,68 @@ export default function GroupScrape() {
             >
               {importToPool.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Download className="w-4 h-4 mr-1" />}
               确认导入
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── 导入采集群组到监控池弹窗 ── */}
+      <Dialog open={importCollectedDialog} onOpenChange={setImportCollectedDialog}>
+        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle>导入到监控池</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              将选中的 <strong className="text-white">{selectedCollectedGroupIds.size}</strong> 个群组/频道导入公共监控群组池。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setImportCollectedDialog(false)} className="text-gray-400">取消</Button>
+            <Button
+              onClick={() => importCollectedGroups.mutate({ ids: Array.from(selectedCollectedGroupIds) })}
+              disabled={importCollectedGroups.isPending}
+              className="bg-green-700 hover:bg-green-600 text-white"
+            >
+              {importCollectedGroups.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Download className="w-4 h-4 mr-1" />}
+              确认导入
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── 导出用户列表弹窗 ── */}
+      <Dialog open={exportUsersDialog} onOpenChange={setExportUsersDialog}>
+        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-lg">
+          <DialogHeader>
+            <DialogTitle>导出用户列表</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              每行一个 @用户名，可直接复制使用
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Textarea
+              value={exportContent}
+              readOnly
+              className="bg-gray-800 border-gray-700 text-white text-sm h-48 font-mono resize-none"
+            />
+            <p className="text-xs text-gray-500">共 {exportContent.split("\n").filter(Boolean).length} 个用户</p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setExportUsersDialog(false)} className="text-gray-400">关闭</Button>
+            <Button
+              onClick={() => {
+                navigator.clipboard.writeText(exportContent);
+                toast.success("已复制到剪贴板");
+              }}
+              className="bg-gray-700 hover:bg-gray-600 text-white"
+            >
+              复制全部
+            </Button>
+            <Button
+              onClick={downloadExportContent}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <FileDown className="w-4 h-4 mr-1" />
+              下载 TXT
             </Button>
           </DialogFooter>
         </DialogContent>
