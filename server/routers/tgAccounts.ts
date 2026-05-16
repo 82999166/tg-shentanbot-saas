@@ -736,6 +736,74 @@ export const tgAccountsRouter = router({
       };
     }),
 
+
+  // ─── 检测公共群组池中群组的健康状态 ──────────────────────────────────────
+  checkGroupHealth: adminProcedure
+    .input(z.object({
+      accountId: z.number(),
+      groupIds: z.array(z.string()),
+    }))
+    .mutation(async ({ input }) => {
+      const { accountId, groupIds } = input;
+      const enginePort = ENGINE_HTTP_PORT_BASE + accountId;
+      const engineSecret = process.env.ENGINE_SECRET ?? "tg-monitor-engine-secret";
+      return new Promise<any>((resolve, reject) => {
+        const postData = JSON.stringify({ account_id: accountId, group_ids: groupIds });
+        const options = {
+          hostname: "127.0.0.1",
+          port: enginePort,
+          path: "/check-group-health",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(postData),
+            "X-Engine-Secret": engineSecret,
+          },
+        };
+        const req = require("http").request(options, (res: any) => {
+          let data = "";
+          res.on("data", (chunk: any) => { data += chunk; });
+          res.on("end", () => {
+            try {
+              const parsed = JSON.parse(data);
+              resolve(parsed);
+            } catch (e) {
+              reject(new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "引擎响应解析失败" }));
+            }
+          });
+        });
+        req.on("error", (e: any) => {
+          reject(new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `无法连接账号引擎（端口${enginePort}）: ${e.message}` }));
+        });
+        req.setTimeout(120000, () => {
+          req.destroy();
+          reject(new TRPCError({ code: "TIMEOUT", message: "群组健康检测超时（2分钟），请减少检测数量后重试" }));
+        });
+        req.write(postData);
+        req.end();
+      });
+    }),
+
+  // ─── 批量从公共群组池删除异常群组 ────────────────────────────────────────
+  deleteAbnormalPublicGroups: adminProcedure
+    .input(z.object({
+      groupIds: z.array(z.string()),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库连接失败" });
+      let deletedCount = 0;
+      for (const gid of input.groupIds) {
+        try {
+          await db.delete(publicMonitorGroups)
+            .where(eq(publicMonitorGroups.groupId, gid));
+          deletedCount++;
+        } catch (e) {
+          // 忽略单个删除失败
+        }
+      }
+      return { success: true, deletedCount };
+    }),
 });
 
 // ─── 保存账号到数据库（检查配额）─────────────────────────────────────────
@@ -897,77 +965,6 @@ async function autoSyncChatsToPublic(
       headers: { 'X-Engine-Secret': engineSecret },
       // @ts-ignore
       signal: AbortSignal.timeout(3000),
-    
-  // ─── 检测公共群组池中群组的健康状态 ──────────────────────────────────────
-  checkGroupHealth: adminProcedure
-    .input(z.object({
-      accountId: z.number(),  // 用于检测的 TG 账号 ID
-      groupIds: z.array(z.string()),  // 要检测的群组 ID 列表
-    }))
-    .mutation(async ({ input }) => {
-      const { accountId, groupIds } = input;
-      const enginePort = ENGINE_HTTP_PORT_BASE + accountId;
-      const engineSecret = process.env.ENGINE_SECRET ?? "tg-monitor-engine-secret";
-      
-      return new Promise<any>((resolve, reject) => {
-        const postData = JSON.stringify({ account_id: accountId, group_ids: groupIds });
-        const options = {
-          hostname: "127.0.0.1",
-          port: enginePort,
-          path: "/check-group-health",
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(postData),
-            "X-Engine-Secret": engineSecret,
-          },
-        };
-        const req = require("http").request(options, (res: any) => {
-          let data = "";
-          res.on("data", (chunk: any) => { data += chunk; });
-          res.on("end", () => {
-            try {
-              const parsed = JSON.parse(data);
-              resolve(parsed);
-            } catch (e) {
-              reject(new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "引擎响应解析失败" }));
-            }
-          });
-        });
-        req.on("error", (e: any) => {
-          reject(new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `无法连接账号引擎（端口${enginePort}）: ${e.message}` }));
-        });
-        req.setTimeout(120000, () => {
-          req.destroy();
-          reject(new TRPCError({ code: "TIMEOUT", message: "群组健康检测超时（2分钟），请减少检测数量后重试" }));
-        });
-        req.write(postData);
-        req.end();
-      });
-    }),
-
-  // ─── 批量从公共群组池删除异常群组 ────────────────────────────────────────
-  deleteAbnormalPublicGroups: adminProcedure
-    .input(z.object({
-      groupIds: z.array(z.string()),  // 要删除的群组 ID 列表
-    }))
-    .mutation(async ({ input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库连接失败" });
-      
-      let deletedCount = 0;
-      for (const gid of input.groupIds) {
-        try {
-          const result = await db.delete(publicMonitorGroups)
-            .where(eq(publicMonitorGroups.groupId, gid));
-          deletedCount++;
-        } catch (e) {
-          // 忽略单个删除失败
-        }
-      }
-      return { success: true, deletedCount };
-    }),
-
-});
+    });
   } catch (_) { /* 忽略 */ }
 }
