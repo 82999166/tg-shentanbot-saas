@@ -229,11 +229,11 @@ export default function MonitorGroups() {
   const typeLabel = (type: string) => type === "channel" ? "频道" : type === "group" ? "群组" : "超级群";
 
   const statusColors: Record<string, string> = {
-    monitoring: "bg-emerald-900 text-emerald-300",
+    monitoring: "bg-emerald-100 text-emerald-700",
     paused: "bg-slate-200 text-slate-600",
     error: "bg-red-900 text-red-300",
     stopped: "bg-slate-200 text-slate-500",
-    active: "bg-emerald-900 text-emerald-300",
+    active: "bg-emerald-100 text-emerald-700",
   };
   const statusLabels: Record<string, string> = {
     monitoring: "监控中",
@@ -274,12 +274,12 @@ export default function MonitorGroups() {
         </div>
 
         {/* 引擎状态栏 */}
-        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-lg mb-5 text-sm border ${engineOnline ? "bg-emerald-950/40 border-emerald-800/50" : "bg-slate-100/80 border-slate-200"}`}>
+        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-lg mb-5 text-sm border ${engineOnline ? "bg-emerald-50 border-emerald-200" : "bg-slate-100/80 border-slate-200"}`}>
           {engineOnline
             ? <Wifi className="w-4 h-4 text-emerald-400 flex-shrink-0" />
             : <WifiOff className="w-4 h-4 text-slate-500 flex-shrink-0" />
           }
-          <span className={engineOnline ? "text-emerald-300 font-medium" : "text-slate-500"}>
+          <span className={engineOnline ? "text-emerald-700 font-medium" : "text-slate-500"}>
             引擎{engineOnline ? "在线" : "离线"}
           </span>
           {heartbeat && (
@@ -333,7 +333,7 @@ export default function MonitorGroups() {
                       </Badge>
                       {/* 引擎在线时显示引擎监控状态 */}
                       {engineOnline && (
-                        <Badge className={`text-xs border-0 ${g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "bg-blue-900/60 text-blue-300" : "bg-slate-200/60 text-slate-500"}`}>
+                        <Badge className={`text-xs border-0 ${g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "bg-blue-100 text-blue-700" : "bg-slate-200/60 text-slate-500"}`}>
                           {g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "🔍 引擎监控中" : "⏸ 引擎未监控"}
                         </Badge>
                       )}
@@ -390,13 +390,13 @@ export default function MonitorGroups() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             {/* 引擎连接状态 */}
-            <div className={`flex items-center gap-3 p-4 rounded-lg border ${engineOnline ? "bg-emerald-950/40 border-emerald-800" : "bg-slate-100 border-slate-200"}`}>
+            <div className={`flex items-center gap-3 p-4 rounded-lg border ${engineOnline ? "bg-emerald-50 border-emerald-200" : "bg-slate-100 border-slate-200"}`}>
               {engineOnline
                 ? <Wifi className="w-6 h-6 text-emerald-400" />
                 : <WifiOff className="w-6 h-6 text-slate-500" />
               }
               <div>
-                <div className={`font-semibold ${engineOnline ? "text-emerald-300" : "text-slate-600"}`}>
+                <div className={`font-semibold ${engineOnline ? "text-emerald-700" : "text-slate-600"}`}>
                   引擎{engineOnline ? "在线运行中" : "离线 / 未响应"}
                 </div>
                 <div className="text-xs text-slate-500 mt-0.5">最后心跳: {lastHeartbeatText}</div>
@@ -446,7 +446,7 @@ export default function MonitorGroups() {
                           {statusLabels[g.monitorStatus] ?? g.monitorStatus}
                         </Badge>
                         {engineOnline && (
-                          <Badge className={`text-xs border-0 ${g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "bg-blue-900/60 text-blue-300" : "bg-slate-200/60 text-slate-500"}`}>
+                          <Badge className={`text-xs border-0 ${g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "bg-blue-100 text-blue-700" : "bg-slate-200/60 text-slate-500"}`}>
                             {g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "引擎✓" : "引擎✗"}
                           </Badge>
                         )}

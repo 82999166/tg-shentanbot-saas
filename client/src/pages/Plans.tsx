@@ -18,8 +18,8 @@ const PLAN_COLORS: Record<string, string> = {
 };
 const PLAN_BADGE_COLORS: Record<string, string> = {
   free: "bg-slate-100 text-slate-600",
-  basic: "bg-blue-900 text-blue-300",
-  pro: "bg-purple-900 text-purple-300",
+  basic: "bg-blue-100 text-blue-700",
+  pro: "bg-purple-100 text-purple-700",
   enterprise: "bg-amber-900 text-amber-300",
 };
 

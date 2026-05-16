@@ -19,11 +19,11 @@ const STATUS_OPTIONS = [
 ];
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  queued: { label: "排队中", color: "bg-blue-900 text-blue-300", icon: Clock },
-  pending: { label: "排队中", color: "bg-blue-900 text-blue-300", icon: Clock },
+  queued: { label: "排队中", color: "bg-blue-100 text-blue-700", icon: Clock },
+  pending: { label: "排队中", color: "bg-blue-100 text-blue-700", icon: Clock },
   sending: { label: "发送中", color: "bg-amber-900 text-amber-300", icon: Send },
-  sent: { label: "已发送", color: "bg-emerald-900 text-emerald-300", icon: CheckCircle2 },
-  failed: { label: "失败", color: "bg-red-900 text-red-300", icon: XCircle },
+  sent: { label: "已发送", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
+  failed: { label: "失败", color: "bg-red-100 text-red-700", icon: XCircle },
   skipped: { label: "已跳过", color: "bg-slate-200 text-slate-500", icon: SkipForward },
   cancelled: { label: "已取消", color: "bg-slate-200 text-slate-500", icon: SkipForward },
 };

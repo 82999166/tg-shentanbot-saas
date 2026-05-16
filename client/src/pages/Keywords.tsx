@@ -22,12 +22,12 @@ const MATCH_TYPES = [
 ];
 
 const matchTypeColors: Record<string, string> = {
-  contains: "bg-blue-900 text-blue-300",
-  exact: "bg-purple-900 text-purple-300",
+  contains: "bg-blue-100 text-blue-700",
+  exact: "bg-purple-100 text-purple-700",
   regex: "bg-amber-900 text-amber-300",
-  and: "bg-emerald-900 text-emerald-300",
+  and: "bg-emerald-100 text-emerald-700",
   or: "bg-cyan-900 text-cyan-300",
-  not: "bg-red-900 text-red-300",
+  not: "bg-red-100 text-red-700",
 };
 
 type FormState = {
@@ -150,7 +150,7 @@ function FormFields({
           {testPending ? "测试中..." : "立即测试"}
         </Button>
         {testResult && (
-          <div className={`flex items-center gap-2 text-sm p-2 rounded-lg ${testResult.matched ? "bg-emerald-900/30 text-emerald-300" : "bg-red-900/30 text-red-300"}`}>
+          <div className={`flex items-center gap-2 text-sm p-2 rounded-lg ${testResult.matched ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
             {testResult.matched ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
             <span>{testResult.reason}</span>
           </div>

@@ -361,8 +361,8 @@ export default function TgAccounts() {
           <>
           {/* 批量操作栏 */}
           {selectedIds.length > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2 bg-blue-900/30 border border-blue-700/50 rounded-lg mb-3">
-              <span className="text-sm text-blue-300">已选 {selectedIds.length} 个账号</span>
+            <div className="flex items-center gap-3 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg mb-3">
+              <span className="text-sm text-blue-600">已选 {selectedIds.length} 个账号</span>
               <Button size="sm" variant="outline" className="h-7 text-xs border-green-600 text-green-400 hover:bg-green-900/30"
                 onClick={() => setInEngine.mutate({ ids: selectedIds, inEngine: true })}>
                 <Server className="w-3 h-3 mr-1" /> 加入监控引擎
@@ -446,7 +446,7 @@ export default function TgAccounts() {
                         {/* 归属用户（仅管理员） */}
                         {user?.role === "admin" && (
                           <td className="px-4 py-3">
-                            <span className="text-xs px-2 py-1 rounded bg-purple-900/40 text-purple-300 border border-purple-700/40">
+                            <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-700 border border-purple-700/40">
                               {(account as any).ownerName || (account as any).ownerEmail || `用户#${account.userId}`}
                             </span>
                           </td>
@@ -588,7 +588,7 @@ export default function TgAccounts() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="bg-blue-950/40 border border-blue-800/40 rounded-lg p-3 text-xs text-blue-300 space-y-1">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-600 space-y-1">
                 <p className="font-medium flex items-center gap-1"><Shield className="w-3 h-3" /> 安全提示</p>
                 <p>• 验证码将发送到您的 Telegram 账号（非 SMS）</p>
                 <p>• 建议使用专用账号，避免使用主账号</p>
@@ -925,7 +925,7 @@ export default function TgAccounts() {
               {/* ── 加群配置 Tab ── */}
               <TabsContent value="joinconfig" className="flex-1 overflow-y-auto">
                 <div className="space-y-4 py-2">
-                  <div className="p-3 bg-purple-900/20 border border-purple-700/40 rounded-lg text-xs text-purple-300">
+                  <div className="p-3 bg-purple-900/20 border border-purple-700/40 rounded-lg text-xs text-purple-600">
                     以下为全局加群参数，影响所有系统账号。账号级别的加群上限可在「基本信息」tab 中单独设置。
                   </div>
                   {/* 启用自动加群 */}
@@ -1226,7 +1226,7 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
                     <div className="text-slate-500 text-xs">@{g.groupId}</div>
                   </td>
                   <td className="px-3 py-2">
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${g.groupType === "channel" ? "bg-purple-900/50 text-purple-300" : "bg-blue-900/50 text-blue-300"}`}>
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${g.groupType === "channel" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
                       {g.groupType === "channel" ? "频道" : "群组"}
                     </span>
                   </td>
@@ -1294,8 +1294,8 @@ function AccountPendingGroupsTab({ accountId }: { accountId: number }) {
   const statusLabel = (status: string) => {
     switch (status) {
       case "pending": return { text: "待加入", cls: "bg-yellow-900/50 text-yellow-300" };
-      case "joining": return { text: "加入中", cls: "bg-blue-900/50 text-blue-300" };
-      case "failed":  return { text: "失败", cls: "bg-red-900/50 text-red-300" };
+      case "joining": return { text: "加入中", cls: "bg-blue-100 text-blue-700" };
+      case "failed":  return { text: "失败", cls: "bg-red-900/50 text-red-600" };
       case "not_found": return { text: "未找到", cls: "bg-slate-200 text-slate-500" };
       default: return { text: status, cls: "bg-slate-200 text-slate-500" };
     }
@@ -1535,7 +1535,7 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
                     <span className={`text-xs px-1.5 py-0.5 rounded ${
                       g.monitorStatus === "active" ? "bg-green-900/50 text-green-300" :
                       g.monitorStatus === "paused" ? "bg-yellow-900/50 text-yellow-300" :
-                      "bg-red-900/50 text-red-300"
+                      "bg-red-900/50 text-red-600"
                     }`}>
                       {g.monitorStatus === "active" ? "监控中" : g.monitorStatus === "paused" ? "已暂停" : "异常"}
                     </span>
