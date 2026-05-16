@@ -51,11 +51,11 @@ export default function ResetPassword() {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="text-center">
           <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-slate-800 mb-2">链接无效</h2>
-          <p className="text-gray-400 mb-6">重置密码链接缺少必要参数</p>
+          <p className="text-slate-500 mb-6">重置密码链接缺少必要参数</p>
           <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => navigate("/forgot-password")}>
             重新申请
           </Button>
@@ -66,11 +66,11 @@ export default function ResetPassword() {
 
   if (tokenValid === false) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="text-center">
           <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-slate-800 mb-2">链接已失效</h2>
-          <p className="text-gray-400 mb-6">重置密码链接已过期或已被使用，请重新申请</p>
+          <p className="text-slate-500 mb-6">重置密码链接已过期或已被使用，请重新申请</p>
           <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => navigate("/forgot-password")}>
             重新申请
           </Button>
@@ -81,13 +81,13 @@ export default function ResetPassword() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="text-center">
           <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-8 h-8 text-green-400" />
           </div>
           <h2 className="text-2xl font-bold text-slate-800 mb-3">密码重置成功！</h2>
-          <p className="text-gray-400 mb-8">您的密码已更新，请使用新密码登录</p>
+          <p className="text-slate-500 mb-8">您的密码已更新，请使用新密码登录</p>
           <Button className="bg-blue-600 hover:bg-blue-700 px-8" onClick={() => navigate("/login")}>
             立即登录
           </Button>
@@ -97,17 +97,17 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4">
             <Shield className="w-6 h-6 text-slate-800" />
           </div>
           <h1 className="text-2xl font-bold text-slate-800">重置密码</h1>
-          <p className="text-gray-400 text-sm mt-1">请输入您的新密码</p>
+          <p className="text-slate-500 text-sm mt-1">请输入您的新密码</p>
         </div>
 
-        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 shadow-xl">
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xl">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -120,22 +120,22 @@ export default function ResetPassword() {
             className="space-y-4"
           >
             <div>
-              <Label className="text-gray-300 text-sm mb-1.5 block">新密码</Label>
+              <Label className="text-slate-600 text-sm mb-1.5 block">新密码</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
                   type={showPassword ? "text" : "password"}
                   placeholder="至少8位，含大写字母和数字"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500"
+                  className="pl-10 pr-10 bg-slate-100 border-slate-300 text-slate-800 placeholder:text-slate-400 focus:border-blue-500"
                   required
                   minLength={8}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -152,21 +152,21 @@ export default function ResetPassword() {
                       />
                     ))}
                   </div>
-                  <p className="text-xs text-gray-500">密码强度：{strengthLabel}</p>
+                  <p className="text-xs text-slate-400">密码强度：{strengthLabel}</p>
                 </div>
               )}
             </div>
 
             <div>
-              <Label className="text-gray-300 text-sm mb-1.5 block">确认新密码</Label>
+              <Label className="text-slate-600 text-sm mb-1.5 block">确认新密码</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
                   type={showConfirm ? "text" : "password"}
                   placeholder="再次输入新密码"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className={`pl-10 pr-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500 ${
+                  className={`pl-10 pr-10 bg-slate-100 border-slate-300 text-slate-800 placeholder:text-slate-400 focus:border-blue-500 ${
                     confirmPassword && confirmPassword !== password ? "border-red-500" : ""
                   }`}
                   required
@@ -174,7 +174,7 @@ export default function ResetPassword() {
                 <button
                   type="button"
                   onClick={() => setShowConfirm(!showConfirm)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
                   {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>

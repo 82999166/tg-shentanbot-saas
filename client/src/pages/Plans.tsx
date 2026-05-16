@@ -17,7 +17,7 @@ const PLAN_COLORS: Record<string, string> = {
   enterprise: "border-amber-700",
 };
 const PLAN_BADGE_COLORS: Record<string, string> = {
-  free: "bg-slate-700 text-slate-300",
+  free: "bg-slate-100 text-slate-600",
   basic: "bg-blue-900 text-blue-300",
   pro: "bg-purple-900 text-purple-300",
   enterprise: "bg-amber-900 text-amber-300",
@@ -46,7 +46,7 @@ export default function Plans() {
                 <p className="text-xs text-muted-foreground">当前套餐</p>
                 <p className="text-lg font-bold mt-0.5">{cp.name}</p>
               </div>
-              <Badge className={`${PLAN_BADGE_COLORS[cp.id] ?? "bg-slate-700 text-slate-300"} border-0`}>
+              <Badge className={`${PLAN_BADGE_COLORS[cp.id] ?? "bg-slate-100 text-slate-600"} border-0`}>
                 {cp.id.toUpperCase()}
               </Badge>
             </div>

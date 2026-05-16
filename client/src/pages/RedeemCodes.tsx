@@ -184,7 +184,7 @@ export default function RedeemCodes() {
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {codes.map((c: any) => (
-                  <div key={c.id} className="flex items-center justify-between bg-gray-750 rounded px-3 py-2 border border-slate-200">
+                  <div key={c.id} className="flex items-center justify-between bg-slate-50 rounded px-3 py-2 border border-slate-200">
                     <div className="flex items-center gap-3">
                       <span className="font-mono text-xs text-slate-600">{c.code}</span>
                       <Badge className={`text-xs px-1.5 py-0 ${statusColors[c.status] || ""}`}>

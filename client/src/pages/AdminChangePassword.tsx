@@ -219,7 +219,7 @@ export default function AdminChangePassword() {
             <Button
               type="submit"
               disabled={changePasswordMutation.isPending || !oldPassword || !newPassword || !confirmPassword}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2.5 rounded-xl transition-all disabled:opacity-50"
+              className="w-full bg-red-600 hover:bg-red-700 text-slate-800 font-medium py-2.5 rounded-xl transition-all disabled:opacity-50"
             >
               {changePasswordMutation.isPending ? (
                 <span className="flex items-center gap-2">

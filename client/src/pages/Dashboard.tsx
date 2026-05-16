@@ -65,11 +65,11 @@ function StatCard({
 
 function dmStatusBadge(status: string) {
   const map: Record<string, { label: string; className: string }> = {
-    none: { label: "未发送", className: "bg-slate-700 text-slate-300" },
+    none: { label: "未发送", className: "bg-slate-100 text-slate-600" },
     queued: { label: "排队中", className: "bg-blue-900 text-blue-300" },
     sent: { label: "已发送", className: "bg-emerald-900 text-emerald-300" },
     failed: { label: "失败", className: "bg-red-900 text-red-300" },
-    skipped: { label: "已跳过", className: "bg-slate-700 text-slate-400" },
+    skipped: { label: "已跳过", className: "bg-slate-100 text-slate-500" },
   };
   const s = map[status] ?? map.none;
   return <Badge className={`text-xs ${s.className} border-0`}>{s.label}</Badge>;

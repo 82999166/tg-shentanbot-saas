@@ -50,11 +50,11 @@ export default function JoinConfig() {
     <Layout title="自动加群配置">
       <div className="p-6 max-w-2xl mx-auto space-y-6">
         {/* 说明卡片 */}
-        <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-800">
+        <Card className="border-blue-200 bg-blue-50/50">
           <CardContent className="pt-4 pb-4">
             <div className="flex gap-3">
               <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
-              <div className="space-y-1 text-sm text-blue-700 dark:text-blue-300">
+              <div className="space-y-1 text-sm text-blue-700">
                 <p className="font-medium">功能说明</p>
                 <p>引擎启动后，监控账号会自动加入公共群组列表中的所有群组，以便实时监控消息。</p>
                 <p>建议设置合理的加群间隔（30-120 秒），避免账号因频繁操作被 Telegram 限制。</p>
@@ -178,11 +178,11 @@ export default function JoinConfig() {
         </Card>
 
         {/* 操作提示 */}
-        <Card className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-800">
+        <Card className="border-amber-200 bg-amber-50/50">
           <CardContent className="pt-4 pb-4">
             <div className="flex gap-3">
               <Info className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-              <div className="space-y-1 text-sm text-amber-700 dark:text-amber-300">
+              <div className="space-y-1 text-sm text-amber-700">
                 <p className="font-medium">操作提醒</p>
                 <ul className="space-y-1 list-disc list-inside text-xs">
                   <li>修改配置后，引擎将在下次同步（约 30 秒）时自动应用新设置</li>

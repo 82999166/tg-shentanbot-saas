@@ -50,15 +50,15 @@ export default function Register() {
 
   if (registered) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md text-center">
           <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-8 h-8 text-green-400" />
           </div>
           <h2 className="text-2xl font-bold text-slate-800 mb-3">注册成功！</h2>
-          <p className="text-gray-400 mb-2">验证邮件已发送至</p>
+          <p className="text-slate-500 mb-2">验证邮件已发送至</p>
           <p className="text-blue-400 font-medium mb-6">{email}</p>
-          <p className="text-gray-500 text-sm mb-8">请查收邮件并点击验证链接激活账号，然后即可登录。</p>
+          <p className="text-slate-400 text-sm mb-8">请查收邮件并点击验证链接激活账号，然后即可登录。</p>
           <div className="space-y-3">
             <Button
               className="w-full bg-blue-600 hover:bg-blue-700"
@@ -68,7 +68,7 @@ export default function Register() {
             </Button>
             <Button
               variant="outline"
-              className="w-full border-gray-700 text-gray-300 hover:bg-gray-800"
+              className="w-full border-slate-300 text-slate-600 hover:bg-slate-100"
               onClick={() => setRegistered(false)}
             >
               返回修改信息
@@ -80,7 +80,7 @@ export default function Register() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -88,23 +88,23 @@ export default function Register() {
             <Shield className="w-6 h-6 text-slate-800" />
           </div>
           <h1 className="text-2xl font-bold text-slate-800">TG Monitor Pro</h1>
-          <p className="text-gray-400 text-sm mt-1">创建您的账号</p>
+          <p className="text-slate-500 text-sm mt-1">创建您的账号</p>
         </div>
 
         {/* Form */}
-        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 shadow-xl">
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xl">
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* 用户名 */}
             <div>
-              <Label className="text-gray-300 text-sm mb-1.5 block">用户名</Label>
+              <Label className="text-slate-600 text-sm mb-1.5 block">用户名</Label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
                   type="text"
                   placeholder="您的昵称"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="pl-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500"
+                  className="pl-10 bg-white border-slate-300 text-slate-800 placeholder:text-slate-400 focus:border-blue-500"
                   required
                 />
               </div>
@@ -112,15 +112,15 @@ export default function Register() {
 
             {/* 邮箱 */}
             <div>
-              <Label className="text-gray-300 text-sm mb-1.5 block">邮箱地址</Label>
+              <Label className="text-slate-600 text-sm mb-1.5 block">邮箱地址</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
                   type="email"
                   placeholder="your@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500"
+                  className="pl-10 bg-white border-slate-300 text-slate-800 placeholder:text-slate-400 focus:border-blue-500"
                   required
                 />
               </div>
@@ -128,21 +128,21 @@ export default function Register() {
 
             {/* 密码 */}
             <div>
-              <Label className="text-gray-300 text-sm mb-1.5 block">密码</Label>
+              <Label className="text-slate-600 text-sm mb-1.5 block">密码</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
                   type={showPassword ? "text" : "password"}
                   placeholder="至少8位，含大写字母和数字"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500"
+                  className="pl-10 pr-10 bg-white border-slate-300 text-slate-800 placeholder:text-slate-400 focus:border-blue-500"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -160,22 +160,22 @@ export default function Register() {
                       />
                     ))}
                   </div>
-                  <p className="text-xs text-gray-500">密码强度：{strengthLabel}</p>
+                  <p className="text-xs text-slate-400">密码强度：{strengthLabel}</p>
                 </div>
               )}
             </div>
 
             {/* 确认密码 */}
             <div>
-              <Label className="text-gray-300 text-sm mb-1.5 block">确认密码</Label>
+              <Label className="text-slate-600 text-sm mb-1.5 block">确认密码</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
                   type={showConfirm ? "text" : "password"}
                   placeholder="再次输入密码"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className={`pl-10 pr-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500 ${
+                  className={`pl-10 pr-10 bg-white border-slate-300 text-slate-800 placeholder:text-slate-400 focus:border-blue-500 ${
                     confirmPassword && confirmPassword !== password ? "border-red-500" : ""
                   }`}
                   required
@@ -183,7 +183,7 @@ export default function Register() {
                 <button
                   type="button"
                   onClick={() => setShowConfirm(!showConfirm)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
                   {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -195,15 +195,15 @@ export default function Register() {
 
             {/* 邀请码（可选） */}
             <div>
-              <Label className="text-gray-300 text-sm mb-1.5 block">
-                邀请码 <span className="text-gray-500 font-normal">（选填）</span>
+              <Label className="text-slate-600 text-sm mb-1.5 block">
+                邀请码 <span className="text-slate-400 font-normal">（选填）</span>
               </Label>
               <Input
                 type="text"
                 placeholder="TGM-XXXXXX"
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                className="bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500"
+                className="bg-white border-slate-300 text-slate-800 placeholder:text-slate-400 focus:border-blue-500"
               />
             </div>
 
@@ -216,7 +216,7 @@ export default function Register() {
             </Button>
           </form>
 
-          <div className="mt-4 text-center text-sm text-gray-500">
+          <div className="mt-4 text-center text-sm text-slate-400">
             已有账号？{" "}
             <Link href="/login" className="text-blue-400 hover:text-blue-300 font-medium">
               立即登录

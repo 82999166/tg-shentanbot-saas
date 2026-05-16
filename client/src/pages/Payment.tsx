@@ -129,7 +129,7 @@ function PaymentDialog({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
+      <DialogContent className="bg-white border-slate-200 max-w-md">
         <DialogHeader>
           <DialogTitle className="text-slate-800 flex items-center gap-2">
             <Clock className="w-5 h-5 text-amber-400" />
@@ -150,21 +150,21 @@ function PaymentDialog({
                 <span className="text-amber-300 text-sm font-medium">订单有效期</span>
                 <Countdown expiredAt={order.expiredAt} />
               </div>
-              <p className="text-gray-400 text-xs">系统每 15 秒自动检查链上到账状态</p>
+              <p className="text-slate-500 text-xs">系统每 15 秒自动检查链上到账状态</p>
             </div>
           )}
 
           {/* 收款信息 */}
-          <div className="bg-gray-800 rounded-lg p-4 space-y-3">
+          <div className="bg-slate-50 rounded-lg p-4 space-y-3">
             <div>
-              <Label className="text-gray-400 text-xs mb-1 block">收款网络</Label>
+              <Label className="text-slate-500 text-xs mb-1 block">收款网络</Label>
               <Badge className="bg-green-500/20 text-green-300 border-green-500/30">TRC20 (TRON)</Badge>
             </div>
 
             <div>
-              <Label className="text-gray-400 text-xs mb-1 block">收款地址</Label>
+              <Label className="text-slate-500 text-xs mb-1 block">收款地址</Label>
               <div className="flex items-center gap-2">
-                <code className="flex-1 text-xs text-cyan-300 bg-gray-900 rounded px-2 py-1.5 break-all font-mono">
+                <code className="flex-1 text-xs text-blue-600 bg-slate-100 rounded px-2 py-1.5 break-all font-mono">
                   {order.usdtAddress}
                 </code>
                 <Button size="icon" variant="ghost" className="shrink-0 h-7 w-7" onClick={copyAddress}>
@@ -174,11 +174,11 @@ function PaymentDialog({
             </div>
 
             <div>
-              <Label className="text-gray-400 text-xs mb-1 block">转账金额（精确到小数）</Label>
+              <Label className="text-slate-500 text-xs mb-1 block">转账金额（精确到小数）</Label>
               <div className="flex items-center gap-2">
-                <div className="flex-1 bg-gray-900 rounded px-3 py-1.5 flex items-center justify-between">
+                <div className="flex-1 bg-slate-100 rounded px-3 py-1.5 flex items-center justify-between">
                   <span className="text-2xl font-bold text-slate-800 font-mono">{order.usdtAmount}</span>
-                  <span className="text-gray-400 text-sm">USDT</span>
+                  <span className="text-slate-500 text-sm">USDT</span>
                 </div>
                 <Button size="icon" variant="ghost" className="shrink-0 h-7 w-7" onClick={copyAmount}>
                   <Copy className="w-3.5 h-3.5" />
@@ -196,7 +196,7 @@ function PaymentDialog({
               "等待系统自动检测到账（约 1-3 分钟）",
               "到账后自动发送卡密，用于激活套餐",
             ].map((step, i) => (
-              <div key={i} className="flex items-start gap-2 text-sm text-gray-300">
+              <div key={i} className="flex items-start gap-2 text-sm text-slate-600">
                 <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center justify-center shrink-0 mt-0.5">
                   {i + 1}
                 </span>
@@ -208,14 +208,14 @@ function PaymentDialog({
           <div className="flex gap-2">
             <Button
               variant="outline"
-              className="flex-1 border-gray-600 text-gray-300"
+              className="flex-1 border-slate-300 text-slate-600"
               onClick={handleManualCheck}
               disabled={status?.status === "expired"}
             >
               <RefreshCw className="w-4 h-4 mr-2" />
               手动检查 {checkCount > 0 && `(${checkCount})`}
             </Button>
-            <Button variant="ghost" className="text-gray-500" onClick={onClose}>
+            <Button variant="ghost" className="text-slate-400" onClick={onClose}>
               取消
             </Button>
           </div>
@@ -242,7 +242,7 @@ function RedeemDialog({ code: initialCode, onClose }: { code?: string; onClose: 
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="bg-gray-900 border-gray-700 max-w-sm">
+      <DialogContent className="bg-white border-slate-200 max-w-sm">
         <DialogHeader>
           <DialogTitle className="text-slate-800 flex items-center gap-2">
             <Key className="w-5 h-5 text-green-400" />
@@ -257,12 +257,12 @@ function RedeemDialog({ code: initialCode, onClose }: { code?: string; onClose: 
             </div>
           )}
           <div>
-            <Label className="text-gray-300 mb-2 block">输入卡密</Label>
+            <Label className="text-slate-600 mb-2 block">输入卡密</Label>
             <Input
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               placeholder="TGPRO-XXXX-XXXX-XXXX"
-              className="bg-gray-800 border-gray-600 text-slate-800 font-mono tracking-wider"
+              className="bg-slate-100 border-slate-300 text-slate-800 font-mono tracking-wider"
             />
           </div>
           <Button
@@ -329,7 +329,7 @@ export default function Payment() {
       {/* 标题 */}
       <div className="text-center space-y-2">
         <h1 className="text-3xl font-bold text-slate-800">升级套餐</h1>
-        <p className="text-gray-400">选择适合您业务规模的套餐，USDT 支付，自动发卡激活</p>
+        <p className="text-slate-500">选择适合您业务规模的套餐，USDT 支付，自动发卡激活</p>
       </div>
 
       {/* 时长选择 */}
@@ -338,7 +338,7 @@ export default function Payment() {
           <Button
             key={m}
             variant={selectedDuration === m ? "default" : "outline"}
-            className={selectedDuration === m ? "bg-blue-600" : "border-gray-600 text-gray-300"}
+            className={selectedDuration === m ? "bg-blue-600" : "border-slate-300 text-slate-600"}
             onClick={() => setSelectedDuration(m)}
           >
             {m === 1 ? "月付" : "季付（9折）"}
@@ -357,7 +357,7 @@ export default function Payment() {
           return (
             <Card
               key={planId}
-              className={`relative bg-gray-900 ${meta.border} border-2 ${meta.bg} transition-all hover:scale-[1.02] cursor-pointer ${
+              className={`relative bg-white ${meta.border} border-2 ${meta.bg} transition-all hover:scale-[1.02] cursor-pointer ${
                 selectedPlan === planId ? "ring-2 ring-blue-500" : ""
               }`}
               onClick={() => setSelectedPlan(planId)}
@@ -377,13 +377,13 @@ export default function Payment() {
                 </div>
                 <div className="flex items-baseline gap-1">
                   <span className={`text-3xl font-bold ${meta.color}`}>{price}</span>
-                  <span className="text-gray-400 text-sm">USDT/{selectedDuration === 1 ? "月" : "季"}</span>
+                  <span className="text-slate-500 text-sm">USDT/{selectedDuration === 1 ? "月" : "季"}</span>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <ul className="space-y-2">
                   {meta.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2 text-sm text-gray-300">
+                    <li key={f} className="flex items-center gap-2 text-sm text-slate-600">
                       <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />
                       {f}
                     </li>
@@ -416,7 +416,7 @@ export default function Payment() {
       </div>
 
       {/* 卡密激活区域 */}
-      <Card className="bg-gray-900 border-gray-700">
+      <Card className="bg-white border-slate-200">
         <CardContent className="p-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -425,7 +425,7 @@ export default function Payment() {
               </div>
               <div>
                 <h3 className="text-slate-800 font-medium">已有卡密？</h3>
-                <p className="text-gray-400 text-sm">直接输入卡密激活套餐</p>
+                <p className="text-slate-500 text-sm">直接输入卡密激活套餐</p>
               </div>
             </div>
             <Button
@@ -447,11 +447,11 @@ export default function Payment() {
           { icon: Zap, title: "即时发卡", desc: "到账后 1-3 分钟自动发送卡密" },
           { icon: RefreshCw, title: "自动续期", desc: "激活卡密后套餐立即生效，支持叠加" },
         ].map(({ icon: Icon, title, desc }) => (
-          <div key={title} className="bg-gray-800/50 rounded-lg p-4 flex items-start gap-3">
+          <div key={title} className="bg-slate-50 rounded-lg p-4 flex items-start gap-3">
             <Icon className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
             <div>
               <p className="text-slate-800 text-sm font-medium">{title}</p>
-              <p className="text-gray-400 text-xs mt-0.5">{desc}</p>
+              <p className="text-slate-500 text-xs mt-0.5">{desc}</p>
             </div>
           </div>
         ))}
@@ -459,7 +459,7 @@ export default function Payment() {
 
       {/* 订单历史 */}
       {myOrders && myOrders.length > 0 && (
-        <Card className="bg-gray-900 border-gray-700">
+        <Card className="bg-white border-slate-200">
           <CardHeader>
             <CardTitle className="text-slate-800 text-base">最近订单</CardTitle>
           </CardHeader>
@@ -482,13 +482,13 @@ export default function Payment() {
                     >
                       {order.status === "completed" ? "已完成" : order.status === "pending" ? "待支付" : "已过期"}
                     </Badge>
-                    <span className="text-gray-300 text-sm">
+                    <span className="text-slate-600 text-sm">
                       {PLAN_META[order.planId as keyof typeof PLAN_META]?.name} × {order.durationMonths}月
                     </span>
                   </div>
                   <div className="text-right">
                     <p className="text-slate-800 text-sm font-mono">{order.usdtAmount} USDT</p>
-                    <p className="text-gray-500 text-xs">{new Date(order.createdAt).toLocaleDateString()}</p>
+                    <p className="text-slate-400 text-xs">{new Date(order.createdAt).toLocaleDateString()}</p>
                   </div>
                 </div>
               ))}

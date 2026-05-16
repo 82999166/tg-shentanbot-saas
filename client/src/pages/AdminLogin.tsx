@@ -64,7 +64,7 @@ export default function AdminLogin() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="username"
-                className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-gray-500 focus:border-red-500 focus:ring-red-500/20 h-11"
+                className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-red-500 focus:ring-red-500/20 h-11"
               />
             </div>
 
@@ -79,7 +79,7 @@ export default function AdminLogin() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="current-password"
-                  className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-gray-500 focus:border-red-500 focus:ring-red-500/20 h-11 pr-10"
+                  className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-red-500 focus:ring-red-500/20 h-11 pr-10"
                 />
                 <button
                   type="button"
@@ -94,7 +94,7 @@ export default function AdminLogin() {
             <Button
               type="submit"
               disabled={loginMutation.isPending}
-              className="w-full h-11 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
+              className="w-full h-11 bg-red-600 hover:bg-red-700 text-slate-800 font-medium rounded-lg transition-colors"
             >
               {loginMutation.isPending ? (
                 <span className="flex items-center gap-2">
@@ -111,7 +111,7 @@ export default function AdminLogin() {
           </form>
 
           <div className="mt-6 pt-5 border-t border-slate-200 text-center">
-            <p className="text-gray-500 text-xs">
+            <p className="text-slate-400 text-xs">
               此页面仅限系统管理员访问
             </p>
             <a

@@ -289,7 +289,7 @@ export default function Keywords() {
                     <Badge className={`text-xs border-0 ${matchTypeColors[kw.matchType]}`}>
                       {MATCH_TYPES.find((t) => t.value === kw.matchType)?.label}
                     </Badge>
-                    {kw.caseSensitive && <Badge className="text-xs bg-slate-700 text-slate-300 border-0">区分大小写</Badge>}
+                    {kw.caseSensitive && <Badge className="text-xs bg-slate-100 text-slate-600 border-0">区分大小写</Badge>}
                     {kw.groupId && groupMap[kw.groupId] && (
                       <Badge className="text-xs border-0" style={{ background: (groupMap[kw.groupId].color ?? "#888") + "33", color: groupMap[kw.groupId].color ?? "#888" }}>
                         {groupMap[kw.groupId].name}

@@ -42,7 +42,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -50,7 +50,7 @@ export default function Login() {
             <Shield className="w-6 h-6 text-slate-800" />
           </div>
           <h1 className="text-2xl font-bold text-slate-800">TG Monitor Pro</h1>
-          <p className="text-gray-400 text-sm mt-1">登录您的账号</p>
+          <p className="text-slate-500 text-sm mt-1">登录您的账号</p>
         </div>
 
         {/* 邮箱未验证提示 */}
@@ -59,7 +59,7 @@ export default function Login() {
             <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div>
               <p className="text-amber-300 text-sm font-medium">邮箱未验证</p>
-              <p className="text-gray-400 text-xs mt-1">请先验证邮箱后再登录。</p>
+              <p className="text-slate-500 text-xs mt-1">请先验证邮箱后再登录。</p>
               <button
                 className="text-blue-400 text-xs underline mt-2 hover:text-blue-300"
                 onClick={() => resendMutation.mutate({ email })}
@@ -72,19 +72,19 @@ export default function Login() {
         )}
 
         {/* Form */}
-        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 shadow-xl">
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xl">
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* 邮箱 */}
             <div>
-              <Label className="text-gray-300 text-sm mb-1.5 block">邮箱地址</Label>
+              <Label className="text-slate-600 text-sm mb-1.5 block">邮箱地址</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
                   type="email"
                   placeholder="your@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500"
+                  className="pl-10 bg-white border-slate-300 text-slate-800 placeholder:text-slate-400 focus:border-blue-500"
                   required
                   autoComplete="email"
                 />
@@ -94,26 +94,26 @@ export default function Login() {
             {/* 密码 */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <Label className="text-gray-300 text-sm">密码</Label>
+                <Label className="text-slate-600 text-sm">密码</Label>
                 <Link href="/forgot-password" className="text-xs text-blue-400 hover:text-blue-300">
                   忘记密码？
                 </Link>
               </div>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
                   type={showPassword ? "text" : "password"}
                   placeholder="输入密码"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500"
+                  className="pl-10 pr-10 bg-white border-slate-300 text-slate-800 placeholder:text-slate-400 focus:border-blue-500"
                   required
                   autoComplete="current-password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -127,9 +127,9 @@ export default function Login() {
                 id="rememberMe"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-600 bg-gray-800 accent-blue-500"
+                className="w-4 h-4 rounded border-slate-300 bg-white accent-blue-500"
               />
-              <label htmlFor="rememberMe" className="text-sm text-gray-400 cursor-pointer">
+              <label htmlFor="rememberMe" className="text-sm text-slate-500 cursor-pointer">
                 记住我（30天免登录）
               </label>
             </div>
@@ -143,7 +143,7 @@ export default function Login() {
             </Button>
           </form>
 
-          <div className="mt-4 text-center text-sm text-gray-500">
+          <div className="mt-4 text-center text-sm text-slate-400">
             还没有账号？{" "}
             <Link href="/register" className="text-blue-400 hover:text-blue-300 font-medium">
               立即注册
