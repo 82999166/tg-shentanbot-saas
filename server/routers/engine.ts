@@ -1769,6 +1769,23 @@ export const engineRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库不可用" });
 
+      // 读取加群配置（join_enabled 开关 + max_groups_per_account 上限）
+      const cfgRows = await db.select().from(systemConfig)
+        .where(sql`${systemConfig.configKey} IN ('join_enabled', 'max_groups_per_account')`);
+      const cfgMap: Record<string, string> = {};
+      for (const row of cfgRows) cfgMap[row.configKey] = row.configValue ?? "";
+      const joinEnabled = cfgMap["join_enabled"] !== "false"; // 默认开启
+      if (!joinEnabled) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "加群功能已被管理员关闭，请在加群配置中开启" });
+      }
+      const maxGroupsPerAccount = parseInt(cfgMap["max_groups_per_account"] || "100", 10);
+      // 检查该账号当前已加入的群组数量是否超过上限
+      const [accountGroupCount] = await db.select({ cnt: sql<number>`count(*)` })
+        .from(monitorGroups)
+        .where(and(eq(monitorGroups.tgAccountId, input.tgAccountId), eq(monitorGroups.isActive, true)));
+      if (Number(accountGroupCount?.cnt ?? 0) >= maxGroupsPerAccount) {
+        throw new TRPCError({ code: "FORBIDDEN", message: `该账号已达到每账号最大加群上限（${maxGroupsPerAccount} 个），请在加群配置中调整上限` });
+      }
       // 检查套餐配额（管理员不受限）
       if (ctx.user.role !== "admin") {
         const plans = await getAllPlans();
@@ -1859,10 +1876,8 @@ export const engineRouter = router({
       const engineHttpPort = ENGINE_HTTP_PORT_BASE + input.tgAccountId;
       const engineHttpUrl = `http://127.0.0.1:${engineHttpPort}/dialogs`;
       try {
-        const resp = await fetch(engineHttpUrl, {
-          // @ts-ignore
-          signal: AbortSignal.timeout(60000),
-        });
+        const resp = await fetch(engineHttpUrl);
+        // 不设置超时，以引擎返回结果为准
         const data = await resp.json() as any;
         return { success: true, groups: data.groups || [], count: data.count || 0 };
       } catch (e: any) {
@@ -2061,3 +2076,4 @@ function engineRouter_config() {
     };
   });
 }
+

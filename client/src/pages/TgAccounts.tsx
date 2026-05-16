@@ -1732,6 +1732,9 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
   const [batchInput, setBatchInput] = useState('');
   const [batchJoining, setBatchJoining] = useState(false);
   const [batchResult, setBatchResult] = useState('');
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; currentLine: string }>({ current: 0, total: 0, currentLine: '' });
+  const [batchFailures, setBatchFailures] = useState<{ line: string; reason: string }[]>([]);
+  const [showFailures, setShowFailures] = useState(false);
   const [search, setSearch] = useState("");
   const { data: monitorData, isLoading, refetch: refetchMonitor } = trpc.monitorGroups.list.useQuery();
   const importGroup = trpc.engine.importGroup.useMutation();
@@ -1764,18 +1767,28 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     if (!lines.length || batchJoining) return;
     setBatchJoining(true);
     setBatchResult('');
-    let success = 0, failed = 0;
-    for (const line of lines) {
+    setBatchFailures([]);
+    setShowFailures(false);
+    setBatchProgress({ current: 0, total: lines.length, currentLine: '' });
+    let success = 0;
+    const failures: { line: string; reason: string }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      setBatchProgress({ current: i + 1, total: lines.length, currentLine: line });
       try {
         await importGroup.mutateAsync({ tgAccountId: accountId, groupInput: line });
         success++;
-      } catch {
-        failed++;
+      } catch (e: any) {
+        const reason = e.message ?? '未知错误';
+        failures.push({ line, reason });
       }
     }
-    setBatchResult(`完成：成功 ${success} 个，失败 ${failed} 个`);
+    setBatchFailures(failures);
+    setBatchResult(`完成：成功 ${success} 个，失败 ${failures.length} 个`);
+    setBatchProgress({ current: lines.length, total: lines.length, currentLine: '' });
     setBatchInput('');
     setBatchJoining(false);
+    if (failures.length > 0) setShowFailures(true);
     refetchMonitor();
   };
 
@@ -1855,7 +1868,48 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
             {batchJoining ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <PackagePlus className="w-3 h-3 mr-1" />}
             批量加群并监控
           </Button>
-          {batchResult && <p className="text-xs text-green-600">{batchResult}</p>}
+          {/* 进度条：加群中 */}
+          {batchJoining && batchProgress.total > 0 && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-slate-500">
+                <span>正在加群... {batchProgress.current} / {batchProgress.total}</span>
+                <span>{Math.round((batchProgress.current / batchProgress.total) * 100)}%</span>
+              </div>
+              <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-2" />
+              {batchProgress.currentLine && (
+                <p className="text-xs text-slate-400 truncate">当前：{batchProgress.currentLine}</p>
+              )}
+            </div>
+          )}
+          {/* 完成结果 */}
+          {batchResult && !batchJoining && (
+            <div className="space-y-2">
+              <p className={`text-xs font-medium ${batchFailures.length === 0 ? 'text-green-600' : 'text-orange-600'}`}>
+                {batchResult}
+              </p>
+              {batchFailures.length > 0 && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowFailures(v => !v)}
+                    className="text-xs text-red-500 hover:text-red-700 underline"
+                  >
+                    {showFailures ? '▲ 收起失败详情' : `▼ 查看 ${batchFailures.length} 个失败原因`}
+                  </button>
+                  {showFailures && (
+                    <div className="mt-1 max-h-40 overflow-y-auto border border-red-200 rounded bg-red-50 p-2 space-y-1">
+                      {batchFailures.map((f, idx) => (
+                        <div key={idx} className="text-xs">
+                          <span className="text-slate-700 font-medium truncate block max-w-full" title={f.line}>{f.line}</span>
+                          <span className="text-red-600">✗ {f.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </details>
       {/* 搜索 + 统计 */}
@@ -1927,6 +1981,7 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     </div>
   );
 }
+
 
 
 
