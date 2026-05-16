@@ -1205,16 +1205,14 @@ export default function TgAccounts() {
 
 // ─── 已加入群组 Tab 子组件 ─────────────────────────────────────────────────────
 function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
-  // 频道检测状态
+  // 频道检测状态（分批检测，进度实时显示在表格上方）
   const [detectMode, setDetectMode] = useState<'idle' | 'detecting' | 'done' | 'error'>('idle');
   const [detectProgress, setDetectProgress] = useState(0);
   const [detectTotal, setDetectTotal] = useState(0);
-  const [detectNormal, setDetectNormal] = useState<any[]>([]);
-  const [detectAbnormal, setDetectAbnormal] = useState<any[]>([]);
   const [detectError, setDetectError] = useState('');
-  const [detectSelected, setDetectSelected] = useState<Set<string>>(new Set());
-  const [detectView, setDetectView] = useState<'abnormal' | 'normal'>('abnormal');
-  const checkGroupHealth = trpc.tgAccounts.checkGroupHealth.useMutation();
+  // groupId -> 检测结果 map
+  const [detectResultMap, setDetectResultMap] = useState<Map<string, { status: 'normal' | 'abnormal'; reason?: string }>>(new Map());
+  const checkGroupHealthBatch = trpc.tgAccounts.checkGroupHealthBatch.useMutation();
   const deleteAbnormalGroups = trpc.tgAccounts.deleteAbnormalPublicGroups.useMutation();
   // 实时从 TG 账号引擎获取已加入群组
   const getAccountChats = trpc.tgAccounts.getAccountChats.useMutation();
@@ -1222,6 +1220,10 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
   const [chatsLoading, setChatsLoading] = useState(false);
   const [chatsError, setChatsError] = useState('');
   const [chatsFetched, setChatsFetched] = useState(false);
+  // 类型筛选
+  const [typeFilter, setTypeFilter] = useState<'all' | 'group' | 'channel' | 'supergroup'>('all');
+  // 全选 + 批量删除
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const fetchChats = async () => {
     setChatsLoading(true);
@@ -1230,6 +1232,10 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
       const res = await getAccountChats.mutateAsync({ id: accountId });
       setChatsData(res);
       setChatsFetched(true);
+      // 重置检测状态
+      setDetectMode('idle');
+      setDetectResultMap(new Map());
+      setSelected(new Set());
     } catch (e: any) {
       setChatsError(e.message ?? '获取失败');
       setChatsFetched(true);
@@ -1241,7 +1247,7 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
   const data = chatsData ? { total: chatsData.total, groups: chatsData.chats.map((c: any) => ({
     id: c.chatId,
     publicGroupId: 0,
-    groupId: c.username || c.chatId,
+    groupId: String(c.username || c.chatId),
     groupTitle: c.title || c.username || c.chatId,
     groupType: c.type || 'supergroup',
     realId: c.chatId,
@@ -1253,19 +1259,55 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
   const isLoading = chatsLoading;
   const [search, setSearch] = useState("");
 
+  // 筛选逻辑（搜索 + 类型）
   const filtered = (data?.groups ?? []).filter(g => {
     const kw = search.toLowerCase();
-    return !kw || g.groupTitle.toLowerCase().includes(kw) || g.groupId.toLowerCase().includes(kw);
+    const matchSearch = !kw || g.groupTitle.toLowerCase().includes(kw) || g.groupId.toLowerCase().includes(kw);
+    const matchType = typeFilter === 'all' ||
+      (typeFilter === 'channel' && g.groupType === 'channel') ||
+      (typeFilter === 'supergroup' && g.groupType === 'supergroup') ||
+      (typeFilter === 'group' && g.groupType !== 'channel' && g.groupType !== 'supergroup');
+    return matchSearch && matchType;
   });
+
+  // 全选逻辑
+  const allFilteredIds = filtered.map(g => g.groupId);
+  const isAllSelected = allFilteredIds.length > 0 && allFilteredIds.every(id => selected.has(id));
+  const isPartialSelected = allFilteredIds.some(id => selected.has(id)) && !isAllSelected;
+  const toggleAll = () => {
+    if (isAllSelected) {
+      setSelected(prev => { const s = new Set(prev); allFilteredIds.forEach(id => s.delete(id)); return s; });
+    } else {
+      setSelected(prev => { const s = new Set(prev); allFilteredIds.forEach(id => s.add(id)); return s; });
+    }
+  };
+  const toggleOne = (id: string) => {
+    setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  };
+
+  // 批量删除（从公共群组池删除）
+  const handleBatchDelete = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`确认从公共群组池删除已选的 ${selected.size} 个群组？`)) return;
+    try {
+      await deleteAbnormalGroups.mutateAsync({ groupIds: Array.from(selected) });
+      toast.success(`已删除 ${selected.size} 个群组`);
+      setSelected(new Set());
+    } catch (e: any) {
+      toast.error(e.message ?? '删除失败');
+    }
+  };
 
   // 导出为 CSV
   const handleExport = () => {
     if (!data?.groups?.length) return;
-    const header = "群组ID,群组名称,类型,TG链接,加入时间";
-    const rows = data.groups.map(g =>
-      [g.groupId, g.groupTitle, g.groupType, g.link, g.joinedAt ? new Date(g.joinedAt).toLocaleString("zh-CN") : ""].join(",")
-    );
-    const csv = "\uFEFF" + [header, ...rows].join("\n"); // BOM for Excel
+    const header = "群组ID,群组名称,类型,TG链接,加入时间,检测状态";
+    const rows = data.groups.map(g => {
+      const dr = detectResultMap.get(g.groupId);
+      const detectStatus = dr ? (dr.status === 'normal' ? '正常' : `异常: ${dr.reason ?? ''}`) : '未检测';
+      return [g.groupId, g.groupTitle, g.groupType, g.link, g.joinedAt ? new Date(g.joinedAt).toLocaleString("zh-CN") : "", detectStatus].join(",");
+    });
+    const csv = "\uFEFF" + [header, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1275,40 +1317,44 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
     URL.revokeObjectURL(url);
   };
 
-  // 开始频道检测
+  // 分批频道检测（每批 50 个，实时更新进度和结果 map）
   const handleStartDetect = async () => {
     if (!data?.groups?.length) return;
+    const allGroups = data.groups;
+    const BATCH_SIZE = 50;
     setDetectMode('detecting');
     setDetectProgress(0);
-    setDetectNormal([]);
-    setDetectAbnormal([]);
+    setDetectTotal(allGroups.length);
     setDetectError('');
-    const groupIds = data.groups.map((g: any) => g.groupId);
-    setDetectTotal(groupIds.length);
+    setDetectResultMap(new Map());
+    let progress = 0;
     try {
-      const res = await checkGroupHealth.mutateAsync({ accountId, groupIds });
-      setDetectNormal(res.normalGroups ?? []);
-      setDetectAbnormal(res.abnormalGroups ?? []);
-      setDetectSelected(new Set((res.abnormalGroups ?? []).map((g: any) => g.groupId)));
-      setDetectProgress(groupIds.length);
+      for (let i = 0; i < allGroups.length; i += BATCH_SIZE) {
+        const batch = allGroups.slice(i, i + BATCH_SIZE);
+        const batchIds = batch.map((g: any) => g.groupId);
+        try {
+          const res = await checkGroupHealthBatch.mutateAsync({ accountId, groupIds: batchIds });
+          const normalIds: string[] = (res.normal ?? res.normalGroups ?? []).map((g: any) => String(g.groupId));
+          const abnormalList: any[] = res.abnormal ?? res.abnormalGroups ?? [];
+          setDetectResultMap(prev => {
+            const m = new Map(prev);
+            normalIds.forEach(id => m.set(id, { status: 'normal' }));
+            abnormalList.forEach((g: any) => m.set(String(g.groupId), { status: 'abnormal', reason: g.reason }));
+            return m;
+          });
+        } catch (batchErr: any) {
+          // 单批失败不中断，标记该批为检测失败
+          batchIds.forEach((id: string) => {
+            setDetectResultMap(prev => { const m = new Map(prev); m.set(id, { status: 'abnormal', reason: `检测失败: ${batchErr.message?.slice(0, 50) ?? '未知错误'}` }); return m; });
+          });
+        }
+        progress += batch.length;
+        setDetectProgress(progress);
+      }
       setDetectMode('done');
     } catch (e: any) {
       setDetectError(e.message ?? '检测失败');
       setDetectMode('error');
-    }
-  };
-
-  // 删除异常群组
-  const handleDeleteAbnormal = async () => {
-    const toDelete = Array.from(detectSelected);
-    if (!toDelete.length) return;
-    try {
-      await deleteAbnormalGroups.mutateAsync({ groupIds: toDelete });
-      toast.success(`已删除 ${toDelete.length} 个异常群组`);
-      setDetectAbnormal(prev => prev.filter(g => !detectSelected.has(g.groupId)));
-      setDetectSelected(new Set());
-    } catch (e: any) {
-      toast.error(e.message ?? '删除失败');
     }
   };
 
@@ -1321,132 +1367,12 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
     );
   }
 
-  // 检测结果视图
-  if (detectMode === 'done' || detectMode === 'detecting' || detectMode === 'error') {
-    return (
-      <div className="flex flex-col gap-3 py-2 h-full">
-        <div className="flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-orange-500" />
-            <span className="text-sm font-medium text-slate-700">频道健康检测</span>
-            {detectMode === 'detecting' && <Loader2 className="w-4 h-4 animate-spin text-orange-400" />}
-            {detectMode === 'done' && <CheckCircle className="w-4 h-4 text-green-500" />}
-          </div>
-          <Button size="sm" variant="outline" className="border-slate-300 text-slate-600 h-7 text-xs" onClick={() => setDetectMode('idle')}>
-            返回列表
-          </Button>
-        </div>
-        {detectMode === 'detecting' && (
-          <div className="shrink-0">
-            <div className="flex justify-between text-xs text-slate-500 mb-1">
-              <span>正在检测...</span>
-              <span>{detectProgress} / {detectTotal}</span>
-            </div>
-            <div className="w-full bg-slate-200 rounded-full h-2">
-              <div className="bg-orange-500 h-2 rounded-full transition-all" style={{ width: `${detectTotal > 0 ? (detectProgress / detectTotal) * 100 : 0}%` }} />
-            </div>
-          </div>
-        )}
-        {detectMode === 'error' && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 shrink-0">
-            <AlertTriangle className="w-4 h-4 inline mr-1" /> {detectError}
-            <Button size="sm" className="ml-3 h-6 text-xs bg-red-600 hover:bg-red-700" onClick={handleStartDetect}>重新检测</Button>
-          </div>
-        )}
-        {detectMode === 'done' && (
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg">
-              <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-              <span className="text-xs text-slate-600">正常</span>
-              <span className="font-bold text-green-600">{detectNormal.length}</span>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
-              <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
-              <span className="text-xs text-slate-600">异常</span>
-              <span className="font-bold text-red-600">{detectAbnormal.length}</span>
-            </div>
-            <div className="flex gap-1 ml-auto">
-              <Button size="sm" variant={detectView === 'abnormal' ? 'default' : 'outline'} className={`h-6 text-xs ${detectView === 'abnormal' ? 'bg-red-600 hover:bg-red-700' : 'border-slate-300'}`} onClick={() => setDetectView('abnormal')}>
-                异常群组
-              </Button>
-              <Button size="sm" variant={detectView === 'normal' ? 'default' : 'outline'} className={`h-6 text-xs ${detectView === 'normal' ? 'bg-green-600 hover:bg-green-700' : 'border-slate-300'}`} onClick={() => setDetectView('normal')}>
-                正常群组
-              </Button>
-            </div>
-          </div>
-        )}
-        {detectMode === 'done' && (
-          <div className="flex-1 overflow-y-auto min-h-0 rounded border border-slate-200">
-            {detectView === 'abnormal' ? (
-              detectAbnormal.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-slate-500">
-                  <CheckCircle className="w-10 h-10 text-green-400 mb-2" />
-                  <p className="text-sm">太棒了！没有发现异常群组</p>
-                </div>
-              ) : (
-                <div className="space-y-1 p-2">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs text-slate-500">选中 {detectSelected.size} 个，将从公共群组池删除</p>
-                    <div className="flex gap-1">
-                      <Button size="sm" variant="outline" className="h-6 text-xs border-slate-300" onClick={() => setDetectSelected(new Set(detectAbnormal.map(g => g.groupId)))}>全选</Button>
-                      <Button size="sm" variant="outline" className="h-6 text-xs border-slate-300" onClick={() => setDetectSelected(new Set())}>取消</Button>
-                    </div>
-                  </div>
-                  {detectAbnormal.map((g) => (
-                    <div key={g.groupId} className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${detectSelected.has(g.groupId) ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200 opacity-60'}`}
-                      onClick={() => setDetectSelected(prev => { const s = new Set(prev); s.has(g.groupId) ? s.delete(g.groupId) : s.add(g.groupId); return s; })}>
-                      <input type="checkbox" checked={detectSelected.has(g.groupId)} onChange={() => {}} className="w-4 h-4 accent-red-500" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-slate-800 text-sm truncate">{g.title || g.groupId}</span>
-                          {g.username && <span className="text-slate-400 text-xs">@{g.username}</span>}
-                          {g.memberCount > 0 && <span className="text-slate-400 text-xs">{g.memberCount.toLocaleString()} 人</span>}
-                        </div>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0" />
-                          <span className="text-red-500 text-xs">{g.reason}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )
-            ) : (
-              <div className="space-y-1 p-2">
-                {detectNormal.map((g) => (
-                  <div key={g.groupId} className="flex items-center gap-3 p-2 rounded-lg border bg-slate-50 border-slate-200">
-                    <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-slate-800 text-sm truncate">{g.title || g.groupId}</span>
-                        {g.username && <span className="text-slate-400 text-xs">@{g.username}</span>}
-                        {g.memberCount > 0 && <span className="text-slate-400 text-xs">{g.memberCount.toLocaleString()} 人</span>}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {detectMode === 'done' && detectAbnormal.length > 0 && detectView === 'abnormal' && (
-          <div className="shrink-0">
-            <Button
-              className="w-full bg-red-600 hover:bg-red-700"
-              disabled={detectSelected.size === 0 || deleteAbnormalGroups.isPending}
-              onClick={handleDeleteAbnormal}
-            >
-              {deleteAbnormalGroups.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1" />}
-              删除选中的 {detectSelected.size} 个异常群组
-            </Button>
-          </div>
-        )}
-      </div>
-    );
-  }
+  // 检测统计
+  const normalCount = Array.from(detectResultMap.values()).filter(v => v.status === 'normal').length;
+  const abnormalCount = Array.from(detectResultMap.values()).filter(v => v.status === 'abnormal').length;
 
   return (
-    <div className="flex flex-col gap-3 py-2 h-full">
+    <div className="flex flex-col gap-2 py-2 h-full">
       {/* 顶部统计 + 操作栏 */}
       <div className="flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-3">
@@ -1459,18 +1385,23 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
           </Button>
         </div>
         <div className="flex items-center gap-2">
+          {selected.size > 0 && (
+            <Button size="sm" variant="destructive" className="gap-1 h-7 text-xs" onClick={handleBatchDelete} disabled={deleteAbnormalGroups.isPending}>
+              {deleteAbnormalGroups.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+              删除已选 ({selected.size})
+            </Button>
+          )}
           <Button
-            size="sm"
-            variant="outline"
+            size="sm" variant="outline"
             className="border-orange-300 text-orange-600 hover:text-orange-700 hover:bg-orange-50 gap-1"
             onClick={handleStartDetect}
-            disabled={!data?.groups?.length || checkGroupHealth.isPending}
+            disabled={!data?.groups?.length || detectMode === 'detecting'}
           >
-            <Activity className="w-3.5 h-3.5" /> 频道检测
+            {detectMode === 'detecting' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
+            {detectMode === 'detecting' ? '检测中...' : '频道检测'}
           </Button>
           <Button
-            size="sm"
-            variant="outline"
+            size="sm" variant="outline"
             className="border-slate-300 text-slate-600 hover:text-slate-800 hover:bg-slate-200 gap-1"
             onClick={handleExport}
             disabled={!data?.groups?.length}
@@ -1480,13 +1411,62 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
         </div>
       </div>
 
-      {/* 搜索框 */}
-      <Input
-        placeholder="搜索群组名称或 ID..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 h-8 text-sm shrink-0"
-      />
+      {/* 频道检测进度条（检测中或完成时显示在表格上方）*/}
+      {(detectMode === 'detecting' || detectMode === 'done' || detectMode === 'error') && (
+        <div className="shrink-0 px-1">
+          {detectMode === 'detecting' && (
+            <div>
+              <div className="flex justify-between text-xs text-slate-500 mb-1">
+                <span className="flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin text-orange-400" /> 正在分批检测（每批50个）...</span>
+                <span className="text-orange-600 font-medium">{detectProgress} / {detectTotal}</span>
+              </div>
+              <div className="w-full bg-slate-200 rounded-full h-1.5">
+                <div className="bg-orange-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${detectTotal > 0 ? (detectProgress / detectTotal) * 100 : 0}%` }} />
+              </div>
+            </div>
+          )}
+          {detectMode === 'done' && (
+            <div className="flex items-center gap-3 py-1">
+              <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+              <span className="text-xs text-slate-600">检测完成：</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-green-50 border border-green-200 text-green-700">正常 {normalCount}</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-red-50 border border-red-200 text-red-600">异常 {abnormalCount}</span>
+              <button className="text-xs text-slate-400 hover:text-slate-600 ml-auto" onClick={() => { setDetectMode('idle'); setDetectResultMap(new Map()); }}>清除结果</button>
+            </div>
+          )}
+          {detectMode === 'error' && (
+            <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> {detectError}
+              <Button size="sm" className="ml-auto h-5 text-xs bg-red-600 hover:bg-red-700 px-2" onClick={handleStartDetect}>重新检测</Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 搜索 + 类型筛选 */}
+      <div className="flex items-center gap-2 shrink-0">
+        <Input
+          placeholder="搜索群组名称或 ID..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 h-8 text-sm flex-1"
+        />
+        <div className="flex gap-1">
+          {(['all', 'group', 'channel', 'supergroup'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setTypeFilter(t)}
+              className={`text-xs px-2 py-1 rounded border transition-colors ${
+                typeFilter === t
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
+              }`}
+            >
+              {t === 'all' ? '全部' : t === 'group' ? '群组' : t === 'channel' ? '频道' : '超级群'}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* 群组列表 */}
       <div className="flex-1 overflow-y-auto min-h-0 rounded border border-slate-200">
@@ -1512,36 +1492,74 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-slate-100 text-slate-500 text-xs">
               <tr>
-                <th className="text-left px-3 py-2">群组</th>
-                <th className="text-left px-3 py-2 w-24">类型</th>
-                <th className="text-left px-3 py-2 w-32">加入时间</th>
-                <th className="text-center px-3 py-2 w-16">链接</th>
+                <th className="px-2 py-1.5 w-8">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    ref={el => { if (el) el.indeterminate = isPartialSelected; }}
+                    onChange={toggleAll}
+                    className="w-3.5 h-3.5 cursor-pointer accent-blue-500"
+                  />
+                </th>
+                <th className="text-left px-2 py-1.5">群组</th>
+                <th className="text-left px-2 py-1.5 w-20">类型</th>
+                <th className="text-left px-2 py-1.5 w-24">检测状态</th>
+                <th className="text-left px-2 py-1.5 w-28">加入时间</th>
+                <th className="text-center px-2 py-1.5 w-12">链接</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((g, i) => (
-                <tr key={g.id} className={`border-t border-slate-200/50 hover:bg-slate-100/70 ${!g.isActive ? "opacity-50" : ""}`}>
-                  <td className="px-3 py-2">
-                    <div className="font-medium text-slate-800 truncate max-w-[200px]" title={g.groupTitle}>{g.groupTitle}</div>
-                    <div className="text-slate-500 text-xs">@{g.groupId}</div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${g.groupType === "channel" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
-                      {g.groupType === "channel" ? "频道" : "群组"}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-slate-500 text-xs">
-                    {g.joinedAt ? new Date(g.joinedAt).toLocaleDateString("zh-CN") : "-"}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    {g.link ? (
-                      <a href={g.link} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
-                        <ChevronRight className="w-4 h-4 inline" />
-                      </a>
-                    ) : "-"}
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((g) => {
+                const dr = detectResultMap.get(g.groupId);
+                return (
+                  <tr key={g.id} className={`border-t border-slate-200/50 hover:bg-slate-100/70 ${selected.has(g.groupId) ? 'bg-blue-50' : ''} ${dr?.status === 'abnormal' ? 'bg-red-50/40' : ''}`}>
+                    <td className="px-2 py-1 w-8">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(g.groupId)}
+                        onChange={() => toggleOne(g.groupId)}
+                        className="w-3.5 h-3.5 cursor-pointer accent-blue-500"
+                      />
+                    </td>
+                    <td className="px-2 py-1">
+                      <div className="font-medium text-slate-800 truncate max-w-[180px] text-xs" title={g.groupTitle}>{g.groupTitle}</div>
+                      <div className="text-slate-400 text-xs">@{g.groupId}</div>
+                    </td>
+                    <td className="px-2 py-1">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        g.groupType === 'channel' ? 'bg-purple-100 text-purple-700' :
+                        g.groupType === 'supergroup' ? 'bg-indigo-100 text-indigo-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {g.groupType === 'channel' ? '频道' : g.groupType === 'supergroup' ? '超级群' : '群组'}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1">
+                      {detectMode === 'idle' ? (
+                        <span className="text-slate-400 text-xs">-</span>
+                      ) : detectMode === 'detecting' && !dr ? (
+                        <span className="text-slate-400 text-xs flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />检测中</span>
+                      ) : dr?.status === 'normal' ? (
+                        <span className="text-xs flex items-center gap-1 text-green-600"><CheckCircle className="w-3 h-3" />正常</span>
+                      ) : dr?.status === 'abnormal' ? (
+                        <span className="text-xs flex items-center gap-1 text-red-500" title={dr.reason}><AlertTriangle className="w-3 h-3 flex-shrink-0" /><span className="truncate max-w-[80px]">{dr.reason ?? '异常'}</span></span>
+                      ) : (
+                        <span className="text-slate-400 text-xs">-</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1 text-slate-500 text-xs">
+                      {g.joinedAt ? new Date(g.joinedAt).toLocaleDateString('zh-CN') : '-'}
+                    </td>
+                    <td className="px-2 py-1 text-center">
+                      {g.link ? (
+                        <a href={g.link} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                          <ChevronRight className="w-4 h-4 inline" />
+                        </a>
+                      ) : '-'}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

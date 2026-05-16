@@ -778,9 +778,60 @@ export const tgAccountsRouter = router({
         req.on("error", (e: any) => {
           reject(new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `无法连接账号引擎（端口${enginePort}）: ${e.message}` }));
         });
-        req.setTimeout(120000, () => {
+        // 按群组数量动态设置超时：每个群组最多 5 秒，最少 60 秒，最多 10 分钟
+        const dynamicTimeout = Math.min(Math.max(groupIds.length * 5000, 60000), 600000);
+        req.setTimeout(dynamicTimeout, () => {
           req.destroy();
-          reject(new TRPCError({ code: "TIMEOUT", message: "群组健康检测超时（2分钟），请减少检测数量后重试" }));
+          // 超时时尝试解析已收到的部分数据
+          reject(new TRPCError({ code: "TIMEOUT", message: `检测超时（${Math.round(dynamicTimeout/1000)}秒），建议分批检测（每批 50 个）` }));
+        });
+        req.write(postData);
+        req.end();
+      });
+    }),
+
+  // ─── 分批检测群组健康状态（每批 50 个，前端逐批调用实现实时进度）────────────────────
+  checkGroupHealthBatch: adminProcedure
+    .input(z.object({
+      accountId: z.number(),
+      groupIds: z.array(z.string()),
+    }))
+    .mutation(async ({ input }) => {
+      const { accountId, groupIds } = input;
+      const enginePort = ENGINE_HTTP_PORT_BASE + accountId;
+      const engineSecret = process.env.ENGINE_SECRET ?? "tg-monitor-engine-secret";
+      return new Promise<any>((resolve, reject) => {
+        const postData = JSON.stringify({ account_id: accountId, group_ids: groupIds });
+        const options = {
+          hostname: "127.0.0.1",
+          port: enginePort,
+          path: "/check-group-health",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(postData),
+            "X-Engine-Secret": engineSecret,
+          },
+        };
+        const req = http.request(options, (res: any) => {
+          let data = "";
+          res.on("data", (chunk: any) => { data += chunk; });
+          res.on("end", () => {
+            try {
+              const parsed = JSON.parse(data);
+              resolve(parsed);
+            } catch (e) {
+              reject(new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "引擎响应解析失败" }));
+            }
+          });
+        });
+        req.on("error", (e: any) => {
+          reject(new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `无法连接账号引擎（端口${enginePort}）: ${e.message}` }));
+        });
+        // 每批 50 个，最多等 90 秒
+        req.setTimeout(90000, () => {
+          req.destroy();
+          reject(new TRPCError({ code: "TIMEOUT", message: `该批检测超时（90秒），请重试` }));
         });
         req.write(postData);
         req.end();
