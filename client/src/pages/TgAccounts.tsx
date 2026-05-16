@@ -1216,7 +1216,42 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
   const [detectView, setDetectView] = useState<'abnormal' | 'normal'>('abnormal');
   const checkGroupHealth = trpc.tgAccounts.checkGroupHealth.useMutation();
   const deleteAbnormalGroups = trpc.tgAccounts.deleteAbnormalPublicGroups.useMutation();
-  const { data, isLoading } = trpc.tgAccounts.getAccountJoinedGroups.useQuery({ accountId });
+  const getAccountChats = trpc.tgAccounts.getAccountChats.useMutation();
+  const [chatsData, setChatsData] = React.useState<{ chats: any[]; total: number } | null>(null);
+  const [chatsLoading, setChatsLoading] = React.useState(false);
+  const [chatsError, setChatsError] = React.useState('');
+
+  // 从引擎实时获取已加入群组
+  const fetchChats = async () => {
+    setChatsLoading(true);
+    setChatsError('');
+    try {
+      const res = await getAccountChats.mutateAsync({ id: accountId });
+      setChatsData(res);
+    } catch (e: any) {
+      setChatsError(e.message ?? '获取失败');
+    } finally {
+      setChatsLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (accountId) fetchChats();
+  }, [accountId]);
+
+  const data = chatsData ? { total: chatsData.total, groups: chatsData.chats.map((c: any) => ({
+    id: c.chatId,
+    publicGroupId: 0,
+    groupId: c.username || c.chatId,
+    groupTitle: c.title || c.username || c.chatId,
+    groupType: c.type || 'supergroup',
+    realId: c.chatId,
+    isActive: true,
+    joinedAt: null,
+    link: c.username ? `https://t.me/${c.username}` : '',
+    memberCount: c.memberCount || 0,
+  })) } : null;
+  const isLoading = chatsLoading;
   const [search, setSearch] = useState("");
 
   const filtered = (data?.groups ?? []).filter(g => {
@@ -1419,9 +1454,7 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
           <span className="text-sm text-slate-500">
             共已加入 <span className="text-slate-800 font-bold">{data?.total ?? 0}</span> 个群组
           </span>
-          <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-            封号后可导出，用新账号补加
-          </span>
+          {chatsError && <span className="text-xs text-red-500">{chatsError}</span>}
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -1681,6 +1714,9 @@ function AccountPendingGroupsTab({ accountId }: { accountId: number }) {
 function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
   const [groupInput, setGroupInput] = useState("");
   const [joining, setJoining] = useState(false);
+  const [batchInput, setBatchInput] = useState('');
+  const [batchJoining, setBatchJoining] = useState(false);
+  const [batchResult, setBatchResult] = useState('');
   const [search, setSearch] = useState("");
   const { data: monitorData, isLoading, refetch: refetchMonitor } = trpc.monitorGroups.list.useQuery();
   const importGroup = trpc.engine.importGroup.useMutation();
@@ -1706,6 +1742,26 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     } finally {
       setJoining(false);
     }
+  };
+
+  const handleBatchJoin = async () => {
+    const lines = batchInput.split('\n').map((l: string) => l.trim()).filter(Boolean);
+    if (!lines.length || batchJoining) return;
+    setBatchJoining(true);
+    setBatchResult('');
+    let success = 0, failed = 0;
+    for (const line of lines) {
+      try {
+        await importGroup.mutateAsync({ tgAccountId: accountId, groupInput: line });
+        success++;
+      } catch {
+        failed++;
+      }
+    }
+    setBatchResult(`完成：成功 ${success} 个，失败 ${failed} 个`);
+    setBatchInput('');
+    setBatchJoining(false);
+    refetchMonitor();
   };
 
   const handleDelete = async (id: number) => {
@@ -1763,6 +1819,30 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
           加群并监控
         </Button>
       </div>
+      {/* 批量导入 */}
+      <details className="shrink-0">
+        <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-700 select-none flex items-center gap-1">
+          <PackagePlus className="w-3 h-3" /> 批量导入群组链接
+        </summary>
+        <div className="mt-2 space-y-2">
+          <Textarea
+            placeholder={"每行一个，支持以下格式：\nhttps://t.me/groupname\n@groupusername\n-1001234567890\n/groupname"}
+            value={batchInput}
+            onChange={(e) => setBatchInput(e.target.value)}
+            className="bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400 text-xs h-24 resize-none"
+          />
+          <Button
+            size="sm"
+            onClick={handleBatchJoin}
+            disabled={batchJoining || !batchInput.trim()}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-xs h-7"
+          >
+            {batchJoining ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <PackagePlus className="w-3 h-3 mr-1" />}
+            批量加群并监控
+          </Button>
+          {batchResult && <p className="text-xs text-green-600">{batchResult}</p>}
+        </div>
+      </details>
       {/* 搜索 + 统计 */}
       <div className="flex items-center gap-2 shrink-0">
         <Input
