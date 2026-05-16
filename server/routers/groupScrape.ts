@@ -1,13 +1,8 @@
 /**
- * 群组采集路由
- * 管理员通过关键词配置采集任务，引擎调用 TDLib searchPublicChats 采集群组，
- * 人工审核后选择导入公共监控群组池
- *
- * v2: 新增指定群组采集模式（target mode），支持：
- *   - 指定群组列表（单个/批量）
- *   - 采集内容分类（群组/频道/用户）
- *   - AI 质量评分（多维度）
- *   - 去重入库（scrape_collected_groups / scrape_collected_users）
+ * 群组采集路由 v3
+ * - Tab1: 关键词采集（任务管理 + 结果审核 + AI评分）
+ * - Tab2: 指定群组采集（批次管理，去任务依赖，全局去重，AI标签）
+ * - Tab3: 消息提取链接（工具，AI过滤）
  */
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
@@ -20,11 +15,12 @@ import {
   tgAccounts,
   scrapeCollectedGroups,
   scrapeCollectedUsers,
+  scrapeBatches,
 } from "../../drizzle/schema";
-import { eq, desc, and, inArray, sql, like, or } from "drizzle-orm";
+import { eq, desc, and, inArray, sql, like, or, isNull, isNotNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
-// ── 管理员鉴权（复用 protectedProcedure，仅管理员可操作）
+// ── 管理员鉴权
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user?.role !== "admin") {
     throw new TRPCError({ code: "FORBIDDEN", message: "仅管理员可操作" });
@@ -32,16 +28,20 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
-// ── AI 质量评分函数（纯计算，不依赖外部 API）─────────────────────────────
-interface GroupScoreInput {
+// ══════════════════════════════════════════════════════════════════
+// AI 标签引擎
+// ══════════════════════════════════════════════════════════════════
+
+// 广告词库（用于识别广告用户）
+const AD_KEYWORDS = ["卖", "出", "代", "收", "USDT", "U", "搬砖", "兼职", "赚钱", "招募", "加群", "拉人", "广告", "推广", "引流"];
+
+function calcGroupAiScore(g: {
   memberCount?: number;
   username?: string;
   title?: string;
   description?: string;
   type?: string;
-}
-
-function calcGroupAiScore(g: GroupScoreInput): { score: number; detail: Record<string, number> } {
+}): { score: number; detail: Record<string, number> } {
   const detail: Record<string, number> = {};
 
   // 1. 成员数量（25分）
@@ -57,10 +57,9 @@ function calcGroupAiScore(g: GroupScoreInput): { score: number; detail: Record<s
   detail.memberCount = memberScore;
 
   // 2. 有 username（20分）
-  const hasUsername = !!(g.username && g.username.trim().length > 0);
-  detail.hasUsername = hasUsername ? 20 : 0;
+  detail.hasUsername = (g.username && g.username.trim().length > 0) ? 20 : 0;
 
-  // 3. 标题质量（20分）：非空、非纯数字、长度合理
+  // 3. 标题质量（20分）
   const title = g.title || "";
   let titleScore = 0;
   if (title.length >= 2) titleScore += 8;
@@ -75,36 +74,127 @@ function calcGroupAiScore(g: GroupScoreInput): { score: number; detail: Record<s
   if (desc.length >= 50) descScore += 10;
   detail.hasDescription = descScore;
 
-  // 5. 类型加成（15分）：频道通常质量更高
+  // 5. 类型加成（15分）
   detail.typeBonus = g.type === "channel" ? 10 : 5;
 
   const total = Object.values(detail).reduce((a, b) => a + b, 0);
   return { score: Math.min(Math.round(total), 100), detail };
 }
 
-interface UserScoreInput {
+function calcGroupTags(g: {
+  memberCount?: number;
+  username?: string;
+  description?: string;
+  type?: string;
+  aiScore?: number;
+  botRatio?: number;
+  activeScore?: number;
+}): string[] {
+  const tags: string[] = [];
+  const mc = g.memberCount ?? 0;
+  const score = g.aiScore ?? 0;
+
+  // 类型
+  if (g.type === "channel") tags.push("频道");
+  else tags.push("群组");
+
+  // 公开/私有
+  if (g.username) tags.push("公开");
+  else tags.push("私有");
+
+  // 规模
+  if (mc >= 10000) tags.push("大群");
+  else if (mc >= 1000) tags.push("中群");
+  else if (mc < 100) tags.push("小群");
+
+  // 活跃度
+  if ((g.activeScore ?? 0) >= 70) tags.push("活跃");
+  else if ((g.activeScore ?? 0) < 20 && mc < 100) tags.push("僵尸群");
+
+  // 机器人占比
+  if ((g.botRatio ?? 0) > 0.3) tags.push("机器人多");
+
+  // 内容类型（基于描述关键词）
+  const desc = (g.description || "").toLowerCase();
+  if (/资源|下载|网盘|分享/.test(desc)) tags.push("资源群");
+  if (/广告|推广|引流/.test(desc)) tags.push("广告群");
+
+  // AI评分
+  if (score >= 80) tags.push("优质");
+  else if (score < 40) tags.push("低质");
+
+  return tags;
+}
+
+function calcUserAiScore(u: {
   username?: string;
   displayName?: string;
   isBot?: boolean;
   isPremium?: boolean;
-}
-
-function calcUserAiScore(u: UserScoreInput): number {
-  let score = 50; // 基础分
+  messageCount?: number;
+}): number {
+  let score = 50;
   if (u.username && u.username.trim().length > 0) score += 25;
   if (u.isPremium) score += 15;
-  if (u.isBot) score -= 30; // 机器人扣分
+  if (u.isBot) score -= 30;
   const name = u.displayName || "";
   if (name.length >= 2 && !/^\d+$/.test(name)) score += 10;
+  if ((u.messageCount ?? 0) > 0) score += 5; // 有发言记录加分
   return Math.max(0, Math.min(score, 100));
 }
 
-// ── 调用引擎接口采集群组成员 ──────────────────────────────────────────────
+function calcUserTags(u: {
+  username?: string;
+  displayName?: string;
+  isBot?: boolean;
+  isPremium?: boolean;
+  messageCount?: number;
+  aiScore?: number;
+}): string[] {
+  const tags: string[] = [];
+  const name = u.displayName || "";
+  const score = u.aiScore ?? 0;
+
+  if (u.isBot) {
+    tags.push("机器人");
+    return tags; // 机器人直接返回
+  }
+
+  if (u.isPremium) tags.push("Premium");
+
+  // 活跃度
+  if ((u.messageCount ?? 0) > 0) tags.push("活跃用户");
+  else tags.push("沉默用户");
+
+  // 用户名
+  if (u.username) tags.push("有用户名");
+
+  // 语言判断（简单启发式）
+  const hasChinese = /[\u4e00-\u9fff]/.test(name);
+  const hasLatin = /[a-zA-Z]/.test(name);
+  if (hasChinese) tags.push("中文用户");
+  else if (hasLatin) tags.push("海外用户");
+
+  // 广告号识别
+  const isAd = AD_KEYWORDS.some(kw => name.includes(kw) || (u.username || "").includes(kw));
+  if (isAd) tags.push("疑似广告");
+
+  // AI评分
+  if (score >= 80) tags.push("高质量");
+  else if (score < 40) tags.push("低质量");
+
+  return tags;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 引擎调用
+// ══════════════════════════════════════════════════════════════════
+
 async function fetchMembersFromEngine(
   accountId: number,
   group: string,
   limit: number
-): Promise<Array<{ tgId: string; username?: string; displayName?: string; isBot?: boolean; isPremium?: boolean }>> {
+): Promise<Array<{ tgId: string; username?: string; displayName?: string; isBot?: boolean; isPremium?: boolean; messageCount?: number }>> {
   const engineSecret = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
   const engineHttpPortBase = parseInt(process.env.ENGINE_HTTP_PORT_BASE || "7100", 10);
   const port = engineHttpPortBase + accountId;
@@ -124,7 +214,6 @@ async function fetchMembersFromEngine(
   }
 }
 
-// ── 调用引擎接口采集群组内链接（群组/频道）────────────────────────────────
 async function fetchLinksFromEngine(
   accountId: number,
   group: string,
@@ -149,7 +238,6 @@ async function fetchLinksFromEngine(
   }
 }
 
-// ── 获取可用的监控账号 ID ─────────────────────────────────────────────────
 async function getAvailableAccountId(): Promise<number | null> {
   const db = await getDb();
   if (!db) return null;
@@ -161,27 +249,26 @@ async function getAvailableAccountId(): Promise<number | null> {
   return accounts[0]?.id ?? null;
 }
 
+// ══════════════════════════════════════════════════════════════════
+// 路由定义
+// ══════════════════════════════════════════════════════════════════
+
 export const groupScrapeRouter = router({
-  // ── 创建采集任务 ─────────────────────────────────────────────
+
+  // ════════════════════════════════════════════════════════════════
+  // Tab1: 关键词采集任务管理
+  // ════════════════════════════════════════════════════════════════
+
   createTask: adminProcedure
-    .input(
-      z.object({
-        name: z.string().min(1).max(128),
-        keywords: z.array(z.string().min(1)).min(1),
-        minMemberCount: z.number().int().min(0).default(1000),
-        maxResults: z.number().int().min(1).max(500).default(50),
-        fissionEnabled: z.boolean().default(false),
-        fissionDepth: z.number().int().min(1).max(3).default(1),
-        fissionMaxPerSeed: z.number().int().min(1).max(50).default(10),
-        // v2 新增字段
-        scrapeMode: z.enum(["keyword", "target"]).default("keyword"),
-        targetGroups: z.array(z.string()).optional(),
-        collectTypes: z.string().default("group,channel,user"),
-        userLimit: z.number().int().min(1).max(5000).default(500),
-        aiScoreEnabled: z.boolean().default(false),
-        aiMinScore: z.number().min(0).max(100).default(60),
-      })
-    )
+    .input(z.object({
+      name: z.string().min(1).max(128),
+      keywords: z.array(z.string().min(1)).min(1),
+      minMemberCount: z.number().int().min(0).default(1000),
+      maxResults: z.number().int().min(1).max(500).default(50),
+      fissionEnabled: z.boolean().default(false),
+      fissionDepth: z.number().int().min(1).max(3).default(1),
+      fissionMaxPerSeed: z.number().int().min(1).max(50).default(10),
+    }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
@@ -194,37 +281,22 @@ export const groupScrapeRouter = router({
         fissionDepth: input.fissionDepth ?? 1,
         fissionMaxPerSeed: input.fissionMaxPerSeed ?? 10,
         status: "idle",
-        scrapeMode: input.scrapeMode,
-        targetGroups: input.targetGroups ? JSON.stringify(input.targetGroups) : null,
-        collectTypes: input.collectTypes,
-        userLimit: input.userLimit,
-        aiScoreEnabled: input.aiScoreEnabled,
-        aiMinScore: input.aiMinScore,
+        scrapeMode: "keyword",
       }).$returningId();
       return { id: task.id };
     }),
 
-  // ── 更新采集任务 ─────────────────────────────────────────────
   updateTask: adminProcedure
-    .input(
-      z.object({
-        id: z.number().int(),
-        name: z.string().min(1).max(128).optional(),
-        keywords: z.array(z.string().min(1)).min(1).optional(),
-        minMemberCount: z.number().int().min(0).optional(),
-        maxResults: z.number().int().min(1).max(500).optional(),
-        fissionEnabled: z.boolean().optional(),
-        fissionDepth: z.number().int().min(1).max(3).optional(),
-        fissionMaxPerSeed: z.number().int().min(1).max(50).optional(),
-        // v2 新增
-        scrapeMode: z.enum(["keyword", "target"]).optional(),
-        targetGroups: z.array(z.string()).optional(),
-        collectTypes: z.string().optional(),
-        userLimit: z.number().int().min(1).max(5000).optional(),
-        aiScoreEnabled: z.boolean().optional(),
-        aiMinScore: z.number().min(0).max(100).optional(),
-      })
-    )
+    .input(z.object({
+      id: z.number().int(),
+      name: z.string().min(1).max(128).optional(),
+      keywords: z.array(z.string().min(1)).min(1).optional(),
+      minMemberCount: z.number().int().min(0).optional(),
+      maxResults: z.number().int().min(1).max(500).optional(),
+      fissionEnabled: z.boolean().optional(),
+      fissionDepth: z.number().int().min(1).max(3).optional(),
+      fissionMaxPerSeed: z.number().int().min(1).max(50).optional(),
+    }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
@@ -236,30 +308,20 @@ export const groupScrapeRouter = router({
       if (input.fissionEnabled !== undefined) updates.fissionEnabled = input.fissionEnabled;
       if (input.fissionDepth !== undefined) updates.fissionDepth = input.fissionDepth;
       if (input.fissionMaxPerSeed !== undefined) updates.fissionMaxPerSeed = input.fissionMaxPerSeed;
-      if (input.scrapeMode !== undefined) updates.scrapeMode = input.scrapeMode;
-      if (input.targetGroups !== undefined) updates.targetGroups = JSON.stringify(input.targetGroups);
-      if (input.collectTypes !== undefined) updates.collectTypes = input.collectTypes;
-      if (input.userLimit !== undefined) updates.userLimit = input.userLimit;
-      if (input.aiScoreEnabled !== undefined) updates.aiScoreEnabled = input.aiScoreEnabled;
-      if (input.aiMinScore !== undefined) updates.aiMinScore = input.aiMinScore;
       await db.update(groupScrapeTasks).set(updates).where(eq(groupScrapeTasks.id, input.id));
       return { success: true };
     }),
 
-  // ── 删除采集任务（同时删除结果）────────────────────────────────
   deleteTask: adminProcedure
     .input(z.object({ id: z.number().int() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
       await db.delete(groupScrapeResults).where(eq(groupScrapeResults.taskId, input.id));
-      await db.delete(scrapeCollectedGroups).where(eq(scrapeCollectedGroups.taskId, input.id));
-      await db.delete(scrapeCollectedUsers).where(eq(scrapeCollectedUsers.taskId, input.id));
       await db.delete(groupScrapeTasks).where(eq(groupScrapeTasks.id, input.id));
       return { success: true };
     }),
 
-  // ── 触发采集任务（将状态设为 pending，引擎轮询后执行）──────────
   triggerTask: adminProcedure
     .input(z.object({ id: z.number().int() }))
     .mutation(async ({ input }) => {
@@ -267,16 +329,11 @@ export const groupScrapeRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
       const [task] = await db.select().from(groupScrapeTasks).where(eq(groupScrapeTasks.id, input.id));
       if (!task) throw new TRPCError({ code: "NOT_FOUND", message: "任务不存在" });
-      if (task.status === "running") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "任务正在运行中" });
-      }
-      await db.update(groupScrapeTasks)
-        .set({ status: "pending" })
-        .where(eq(groupScrapeTasks.id, input.id));
+      if (task.status === "running") throw new TRPCError({ code: "BAD_REQUEST", message: "任务正在运行中" });
+      await db.update(groupScrapeTasks).set({ status: "pending" }).where(eq(groupScrapeTasks.id, input.id));
       return { success: true };
     }),
 
-  // ── 获取所有采集任务列表 ─────────────────────────────────────
   listTasks: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
@@ -284,29 +341,23 @@ export const groupScrapeRouter = router({
     return tasks.map((t) => ({
       ...t,
       keywords: JSON.parse(t.keywords || "[]") as string[],
-      targetGroups: t.targetGroups ? (JSON.parse(t.targetGroups) as string[]) : [],
     }));
   }),
 
-  // ── 获取采集结果列表（支持按任务、状态过滤）──────────────────
   listResults: adminProcedure
-    .input(
-      z.object({
-        taskId: z.number().int().optional(),
-        importStatus: z.enum(["pending", "imported", "ignored", "all"]).default("all"),
-        page: z.number().int().min(1).default(1),
-        pageSize: z.number().int().min(1).max(100).default(20),
-      })
-    )
+    .input(z.object({
+      taskId: z.number().int().optional(),
+      importStatus: z.enum(["pending", "imported", "ignored", "all"]).default("all"),
+      page: z.number().int().min(1).default(1),
+      pageSize: z.number().int().min(1).max(100).default(20),
+    }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       const conditions = [];
       if (input.taskId) conditions.push(eq(groupScrapeResults.taskId, input.taskId));
-      if (input.importStatus !== "all") {
-        conditions.push(eq(groupScrapeResults.importStatus, input.importStatus));
-      }
+      if (input.importStatus !== "all") conditions.push(eq(groupScrapeResults.importStatus, input.importStatus));
 
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
       const offset = (input.page - 1) * input.pageSize;
@@ -321,20 +372,18 @@ export const groupScrapeRouter = router({
       ]);
 
       return {
-        items: results,
+        items: results.map(r => ({
+          ...r,
+          tags: r.tags ? JSON.parse(r.tags as any) : [],
+        })),
         total: Number(countResult[0]?.count || 0),
         page: input.page,
         pageSize: input.pageSize,
       };
     }),
 
-  // ── 批量导入选中结果到公共监控群组池 ─────────────────────────
   importToPublicPool: adminProcedure
-    .input(
-      z.object({
-        resultIds: z.array(z.number().int()).min(1),
-      })
-    )
+    .input(z.object({ resultIds: z.array(z.number().int()).min(1) }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
@@ -359,7 +408,7 @@ export const groupScrapeRouter = router({
               memberCount: r.memberCount || 0,
               isActive: true,
               realId: r.realId || null,
-              note: `采集导入 - 关键词: ${r.keyword}`,
+              note: `关键词采集导入 - ${r.keyword}${r.aiScore ? ` AI:${r.aiScore}` : ""}`,
             });
             importedCount++;
           } else {
@@ -377,7 +426,6 @@ export const groupScrapeRouter = router({
       return { importedCount, skippedCount };
     }),
 
-  // ── 忽略选中结果（标记为 ignored）────────────────────────────
   ignoreResults: adminProcedure
     .input(z.object({ resultIds: z.array(z.number().int()).min(1) }))
     .mutation(async ({ input }) => {
@@ -389,7 +437,6 @@ export const groupScrapeRouter = router({
       return { success: true };
     }),
 
-  // ── 清空某任务的所有结果 ─────────────────────────────────────
   clearResults: adminProcedure
     .input(z.object({ taskId: z.number().int() }))
     .mutation(async ({ input }) => {
@@ -402,334 +449,308 @@ export const groupScrapeRouter = router({
       return { success: true };
     }),
 
-  // ── 从群组历史消息中提取 t.me 群组链接 ───────────────────────
-  extractFromGroup: adminProcedure
-    .input(
-      z.object({
-        accountId: z.number().int(),
-        groupUrl: z.string().min(1),
-        limit: z.number().int().min(50).max(5000).default(500),
-      })
-    )
-    .mutation(async ({ input }) => {
-      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
-      const engineSecret = process.env.ENGINE_SECRET || 'shentanbot-engine-secret-2026';
-      try {
-        const resp = await fetch(`${engineUrl}/extract-group-links`, {
-          method: "POST",
-          headers: { "X-Engine-Secret": engineSecret, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            account_id: input.accountId,
-            group_url: input.groupUrl,
-            limit: input.limit,
-          }),
-          // @ts-ignore
-          signal: AbortSignal.timeout(120000),
-        });
-        const data = (await resp.json()) as any;
-        if (!resp.ok) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: data.error || `引擎响应 ${resp.status}` });
-        }
-        return {
-          success: true,
-          total: data.total ?? 0,
-          scanned: data.scanned ?? 0,
-          links: (data.links ?? []) as Array<{ url: string; slug: string }>,
-        };
-      } catch (err: any) {
-        if (err instanceof TRPCError) throw err;
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `无法连接引擎: ${err.message}` });
-      }
-    }),
-
-  // ── 批量同步公共群组 realId ────────────────────────────────────
-  syncGroupRealIds: adminProcedure
-    .mutation(async () => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-
-      const engineSecret = process.env.ENGINE_SECRET || 'shentanbot-engine-secret-2026';
-      const engineHttpPortBase = parseInt(process.env.ENGINE_HTTP_PORT_BASE || "7100", 10);
-
-      const accounts = await db
-        .select({ id: tgAccounts.id, accountRole: tgAccounts.accountRole })
-        .from(tgAccounts)
-        .where(eq(tgAccounts.isActive, true));
-
-      const monitorAccounts = accounts.filter(
-        (a) => a.accountRole === "monitor" || a.accountRole === "both"
-      );
-
-      if (monitorAccounts.length === 0) {
-        return { success: false, message: "没有活跃的监控账号", updated: 0, total: 0, scanned: 0 };
-      }
-
-      const dialogMap = new Map<string, string>();
-      for (const acc of monitorAccounts) {
-        const port = engineHttpPortBase + acc.id;
-        try {
-          const resp = await fetch(`http://127.0.0.1:${port}/dialogs`, {
-            headers: { "X-Engine-Secret": engineSecret },
-            // @ts-ignore
-            signal: AbortSignal.timeout(30000),
-          });
-          if (!resp.ok) continue;
-          const data = (await resp.json()) as any;
-          const dialogs: Array<{ chatId: string; username?: string; title?: string }> =
-            Array.isArray(data) ? data : (data.dialogs ?? data.groups ?? []);
-          for (const d of dialogs) {
-            if (d.username && d.chatId) {
-              const username = d.username.replace(/^@/, "").toLowerCase();
-              dialogMap.set(username, d.chatId);
-            }
-          }
-        } catch {
-          continue;
-        }
-      }
-
-      if (dialogMap.size === 0) {
-        return { success: false, message: "引擎未返回任何群组数据，请确认监控账号正在运行", updated: 0, total: 0, scanned: 0 };
-      }
-
-      const allGroups = await db
-        .select({ id: publicMonitorGroups.id, groupId: publicMonitorGroups.groupId })
-        .from(publicMonitorGroups);
-
-      let updated = 0;
-      for (const group of allGroups) {
-        const normalizedGroupId = group.groupId.replace(/^@/, "").toLowerCase();
-        const chatId = dialogMap.get(normalizedGroupId);
-        if (chatId) {
-          await db
-            .update(publicMonitorGroups)
-            .set({ realId: chatId })
-            .where(eq(publicMonitorGroups.id, group.id));
-          updated++;
-        }
-      }
-
-      return {
-        success: true,
-        message: `同步完成：共扫描 ${dialogMap.size} 个群组，成功回写 ${updated} / ${allGroups.length} 条记录`,
-        updated,
-        total: allGroups.length,
-        scanned: dialogMap.size,
-      };
-    }),
-
   // ════════════════════════════════════════════════════════════════
-  // v2 新增：指定群组采集模式
+  // Tab2: 指定群组采集（批次管理，无任务依赖）
   // ════════════════════════════════════════════════════════════════
 
-  // ── 执行指定群组采集（直接调用引擎，同步返回结果）─────────────
+  // 执行指定群组采集（创建批次，采集，AI标签，全局去重）
   runTargetScrape: adminProcedure
-    .input(
-      z.object({
-        taskId: z.number().int(),
-        targetGroups: z.array(z.string().min(1)).min(1).max(50),
-        collectTypes: z.string().default("group,channel,user"),
-        userLimit: z.number().int().min(1).max(2000).default(500),
-        aiScoreEnabled: z.boolean().default(true),
-        aiMinScore: z.number().min(0).max(100).default(60),
-        // v2 扩展 AI 评分参数
-        aiMinMembers: z.number().int().min(0).default(0),           // 最低成员数
-        aiRequireUsername: z.boolean().default(false),              // 必须有用户名
-        aiRequireDescription: z.boolean().default(false),           // 必须有简介
-        aiFilterBots: z.boolean().default(true),                    // 过滤机器人
-        aiFilterAds: z.boolean().default(true),                     // 过滤广告用户
-        aiMinActivity: z.number().min(0).max(100).default(0),       // 最低活跃度分
-        accountId: z.number().int().optional(),
-      })
-    )
+    .input(z.object({
+      targetGroups: z.array(z.string().min(1)).min(1).max(50),
+      collectTypes: z.string().default("group,channel,user"),
+      userLimit: z.number().int().min(1).max(2000).default(500),
+      // AI 评分参数
+      aiScoreEnabled: z.boolean().default(true),
+      aiMinScore: z.number().min(0).max(100).default(60),
+      aiMinMembers: z.number().int().min(0).default(0),
+      aiRequireUsername: z.boolean().default(false),
+      aiRequireDescription: z.boolean().default(false),
+      aiFilterBots: z.boolean().default(true),
+      aiFilterAds: z.boolean().default(true),
+      aiMinActivity: z.number().min(0).max(100).default(0),
+      accountId: z.number().int().optional(),
+    }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      // 确定使用的账号
+      // 确定账号
       let accountId = input.accountId;
-      if (!accountId) {
-        accountId = await getAvailableAccountId();
-      }
-      if (!accountId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "没有可用的 TG 账号，请先添加账号" });
-      }
+      if (!accountId) accountId = await getAvailableAccountId();
+      if (!accountId) throw new TRPCError({ code: "BAD_REQUEST", message: "没有可用的 TG 账号" });
 
-      const collectTypes = input.collectTypes.split(",").map((s) => s.trim());
+      const collectTypes = input.collectTypes.split(",").map(s => s.trim());
       const collectGroups = collectTypes.includes("group");
       const collectChannels = collectTypes.includes("channel");
       const collectUsers = collectTypes.includes("user");
 
-      // 更新任务状态为 running
-      await db.update(groupScrapeTasks)
-        .set({ status: "running" })
-        .where(eq(groupScrapeTasks.id, input.taskId));
+      // 生成批次 key
+      const batchKey = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      // 创建批次记录
+      const [batchRow] = await db.insert(scrapeBatches).values({
+        batchKey,
+        scrapeMode: "target",
+        sourceGroups: JSON.stringify(input.targetGroups),
+        collectTypes: input.collectTypes,
+        accountId,
+        totalGroups: 0,
+        totalChannels: 0,
+        totalUsers: 0,
+      }).$returningId();
+      const batchId = batchRow.id;
 
       let totalGroupsSaved = 0;
+      let totalChannelsSaved = 0;
       let totalUsersSaved = 0;
-      let totalGroupsSkipped = 0;
-      let totalUsersSkipped = 0;
+      let totalSkipped = 0;
 
-      try {
-        for (const groupTarget of input.targetGroups) {
-          const normalizedGroup = groupTarget.startsWith("@") ? groupTarget : `@${groupTarget}`;
+      for (const groupTarget of input.targetGroups) {
+        const normalizedGroup = groupTarget.startsWith("@") ? groupTarget : `@${groupTarget}`;
 
-          // 采集群组/频道链接
-          if (collectGroups || collectChannels) {
-            const links = await fetchLinksFromEngine(accountId, normalizedGroup, 200);
-            for (const link of links) {
-              const linkType = link.type || "group";
-              if (linkType === "group" && !collectGroups) continue;
-              if (linkType === "channel" && !collectChannels) continue;
+        // 采集群组/频道链接
+        if (collectGroups || collectChannels) {
+          const links = await fetchLinksFromEngine(accountId, normalizedGroup, 200);
+          for (const link of links) {
+            const linkType = link.type || "group";
+            if (linkType === "group" && !collectGroups) continue;
+            if (linkType === "channel" && !collectChannels) continue;
 
-              // AI 评分
-              const { score, detail } = calcGroupAiScore({
-                memberCount: link.memberCount,
-                username: link.username,
-                title: link.title,
-                description: link.description,
-                type: linkType,
-              });
+            const { score, detail } = calcGroupAiScore({
+              memberCount: link.memberCount,
+              username: link.username,
+              title: link.title,
+              description: link.description,
+              type: linkType,
+            });
 
-              if (input.aiScoreEnabled && score < input.aiMinScore) continue;
-              // 最低成员数过滤
-              if (input.aiMinMembers > 0 && (link.memberCount ?? 0) < input.aiMinMembers) continue;
-              // 必须有用户名
-              if (input.aiRequireUsername && !link.username) continue;
-              // 必须有简介
-              if (input.aiRequireDescription && !link.description) continue;
+            if (input.aiScoreEnabled && score < input.aiMinScore) continue;
+            if (input.aiMinMembers > 0 && (link.memberCount ?? 0) < input.aiMinMembers) continue;
+            if (input.aiRequireUsername && !link.username) continue;
+            if (input.aiRequireDescription && !link.description) continue;
 
-              // 去重入库
-              try {
-                const tgIdStr = link.tgId ? String(link.tgId) : null;
-                if (!tgIdStr) continue;
+            const tags = calcGroupTags({
+              memberCount: link.memberCount,
+              username: link.username,
+              description: link.description,
+              type: linkType,
+              aiScore: score,
+            });
 
-                const existing = await db.select({ id: scrapeCollectedGroups.id })
-                  .from(scrapeCollectedGroups)
-                  .where(eq(scrapeCollectedGroups.tgId, tgIdStr))
-                  .limit(1);
+            const tgIdStr = link.tgId ? String(link.tgId) : null;
+            if (!tgIdStr) continue;
 
-                if (existing.length === 0) {
-                  await db.insert(scrapeCollectedGroups).values({
-                    taskId: input.taskId,
-                    sourceGroupId: normalizedGroup,
-                    type: linkType,
-                    tgId: tgIdStr,
-                    username: link.username || null,
-                    title: link.title || null,
-                    memberCount: link.memberCount || 0,
-                    description: link.description || null,
-                    aiScore: score,
-                    aiScoreDetail: JSON.stringify(detail),
-                    importStatus: "pending",
-                  });
-                  totalGroupsSaved++;
-                } else {
-                  totalGroupsSkipped++;
-                }
-              } catch (e: any) {
-                if (!e?.message?.includes("Duplicate")) {
-                  console.error("[groupScrape] 插入群组失败:", e?.message);
-                }
-                totalGroupsSkipped++;
+            try {
+              // 全局去重：tgId 唯一，存在则更新最新数据
+              const existing = await db.select({ id: scrapeCollectedGroups.id })
+                .from(scrapeCollectedGroups)
+                .where(eq(scrapeCollectedGroups.tgId, tgIdStr))
+                .limit(1);
+
+              if (existing.length === 0) {
+                await db.insert(scrapeCollectedGroups).values({
+                  batchId,
+                  sourceGroupId: normalizedGroup,
+                  type: linkType,
+                  tgId: tgIdStr,
+                  username: link.username || null,
+                  title: link.title || null,
+                  memberCount: link.memberCount || 0,
+                  description: link.description || null,
+                  aiScore: score,
+                  tags: JSON.stringify(tags),
+                  aiScoreDetail: JSON.stringify(detail),
+                  importStatus: "pending",
+                });
+                if (linkType === "channel") totalChannelsSaved++;
+                else totalGroupsSaved++;
+              } else {
+                // 更新最新数据（成员数、标签等）
+                await db.update(scrapeCollectedGroups).set({
+                  batchId,
+                  memberCount: link.memberCount || 0,
+                  aiScore: score,
+                  tags: JSON.stringify(tags),
+                  aiScoreDetail: JSON.stringify(detail),
+                }).where(eq(scrapeCollectedGroups.tgId, tgIdStr));
+                totalSkipped++;
               }
-            }
-          }
-
-          // 采集用户
-          if (collectUsers) {
-            const members = await fetchMembersFromEngine(accountId, normalizedGroup, input.userLimit);
-            for (const member of members) {
-              const userScore = calcUserAiScore({
-                username: member.username,
-                displayName: member.displayName,
-                isBot: member.isBot,
-                isPremium: member.isPremium,
-              });
-
-              if (input.aiScoreEnabled && userScore < input.aiMinScore) continue;
-              // 过滤机器人
-              if (input.aiFilterBots && member.isBot) continue;
-              // 过滤广告用户（无用户名且无显示名称）
-              if (input.aiFilterAds && !member.username && (!member.displayName || member.displayName.trim().length === 0)) continue;
-              // 必须有用户名
-              if (input.aiRequireUsername && !member.username) continue;
-
-              try {
-                const tgIdStr = String(member.tgId);
-                const existing = await db.select({ id: scrapeCollectedUsers.id })
-                  .from(scrapeCollectedUsers)
-                  .where(eq(scrapeCollectedUsers.tgId, tgIdStr))
-                  .limit(1);
-
-                if (existing.length === 0) {
-                  await db.insert(scrapeCollectedUsers).values({
-                    taskId: input.taskId,
-                    sourceGroupId: normalizedGroup,
-                    tgId: tgIdStr,
-                    username: member.username || null,
-                    displayName: member.displayName || null,
-                    isBot: member.isBot ?? false,
-                    isPremium: member.isPremium ?? false,
-                    aiScore: userScore,
-                  });
-                  totalUsersSaved++;
-                } else {
-                  totalUsersSkipped++;
-                }
-              } catch (e: any) {
-                if (!e?.message?.includes("Duplicate")) {
-                  console.error("[groupScrape] 插入用户失败:", e?.message);
-                }
-                totalUsersSkipped++;
+            } catch (e: any) {
+              if (!e?.message?.includes("Duplicate")) {
+                console.error("[groupScrape] 插入群组失败:", e?.message);
               }
+              totalSkipped++;
             }
           }
         }
 
-        // 更新任务状态
-        await db.update(groupScrapeTasks)
-          .set({ status: "done", totalFound: totalGroupsSaved + totalUsersSaved })
-          .where(eq(groupScrapeTasks.id, input.taskId));
+        // 采集用户
+        if (collectUsers) {
+          const members = await fetchMembersFromEngine(accountId, normalizedGroup, input.userLimit);
+          for (const member of members) {
+            if (input.aiFilterBots && member.isBot) continue;
+            if (input.aiFilterAds && !member.username && (!member.displayName || member.displayName.trim().length === 0)) continue;
+            if (input.aiRequireUsername && !member.username) continue;
 
-        return {
-          success: true,
-          groupsSaved: totalGroupsSaved,
-          groupsSkipped: totalGroupsSkipped,
-          usersSaved: totalUsersSaved,
-          usersSkipped: totalUsersSkipped,
-        };
-      } catch (err: any) {
-        await db.update(groupScrapeTasks)
-          .set({ status: "failed" })
-          .where(eq(groupScrapeTasks.id, input.taskId));
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `采集失败: ${err.message}` });
+            const userScore = calcUserAiScore({
+              username: member.username,
+              displayName: member.displayName,
+              isBot: member.isBot,
+              isPremium: member.isPremium,
+              messageCount: member.messageCount,
+            });
+
+            if (input.aiScoreEnabled && userScore < input.aiMinScore) continue;
+
+            const userTags = calcUserTags({
+              username: member.username,
+              displayName: member.displayName,
+              isBot: member.isBot,
+              isPremium: member.isPremium,
+              messageCount: member.messageCount,
+              aiScore: userScore,
+            });
+
+            try {
+              const tgIdStr = String(member.tgId);
+              const existing = await db.select({ id: scrapeCollectedUsers.id })
+                .from(scrapeCollectedUsers)
+                .where(eq(scrapeCollectedUsers.tgId, tgIdStr))
+                .limit(1);
+
+              if (existing.length === 0) {
+                await db.insert(scrapeCollectedUsers).values({
+                  batchId,
+                  sourceGroupId: normalizedGroup,
+                  tgId: tgIdStr,
+                  username: member.username || null,
+                  displayName: member.displayName || null,
+                  isBot: member.isBot ?? false,
+                  isPremium: member.isPremium ?? false,
+                  messageCount: member.messageCount ?? 0,
+                  aiScore: userScore,
+                  tags: JSON.stringify(userTags),
+                  lastSeenGroupId: normalizedGroup,
+                });
+                totalUsersSaved++;
+              } else {
+                // 更新最新数据
+                await db.update(scrapeCollectedUsers).set({
+                  batchId,
+                  aiScore: userScore,
+                  tags: JSON.stringify(userTags),
+                  lastSeenGroupId: normalizedGroup,
+                  messageCount: member.messageCount ?? 0,
+                }).where(eq(scrapeCollectedUsers.tgId, tgIdStr));
+                totalSkipped++;
+              }
+            } catch (e: any) {
+              if (!e?.message?.includes("Duplicate")) {
+                console.error("[groupScrape] 插入用户失败:", e?.message);
+              }
+              totalSkipped++;
+            }
+          }
+        }
       }
+
+      // 更新批次统计
+      await db.update(scrapeBatches).set({
+        totalGroups: totalGroupsSaved,
+        totalChannels: totalChannelsSaved,
+        totalUsers: totalUsersSaved,
+      }).where(eq(scrapeBatches.id, batchId));
+
+      // 清理超过50个批次的旧批次（只删批次记录，保留数据）
+      const allBatches = await db.select({ id: scrapeBatches.id })
+        .from(scrapeBatches)
+        .where(eq(scrapeBatches.scrapeMode, "target"))
+        .orderBy(desc(scrapeBatches.createdAt));
+      if (allBatches.length > 50) {
+        const toDelete = allBatches.slice(50).map(b => b.id);
+        await db.delete(scrapeBatches).where(inArray(scrapeBatches.id, toDelete));
+      }
+
+      return {
+        success: true,
+        batchId,
+        batchKey,
+        groupsSaved: totalGroupsSaved,
+        channelsSaved: totalChannelsSaved,
+        usersSaved: totalUsersSaved,
+        skipped: totalSkipped,
+      };
     }),
 
-  // ── 获取采集到的群组/频道列表 ─────────────────────────────────
+  // 获取批次列表
+  listBatches: adminProcedure
+    .input(z.object({
+      scrapeMode: z.enum(["target", "extract", "all"]).default("target"),
+      page: z.number().int().min(1).default(1),
+      pageSize: z.number().int().min(1).max(50).default(20),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const conditions = [];
+      if (input.scrapeMode !== "all") conditions.push(eq(scrapeBatches.scrapeMode, input.scrapeMode));
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      const offset = (input.page - 1) * input.pageSize;
+
+      const [items, countResult] = await Promise.all([
+        db.select().from(scrapeBatches)
+          .where(whereClause)
+          .orderBy(desc(scrapeBatches.createdAt))
+          .limit(input.pageSize)
+          .offset(offset),
+        db.select({ count: sql<number>`count(*)` }).from(scrapeBatches).where(whereClause),
+      ]);
+
+      return {
+        items: items.map(b => ({
+          ...b,
+          sourceGroups: b.sourceGroups ? JSON.parse(b.sourceGroups as any) : [],
+        })),
+        total: Number(countResult[0]?.count || 0),
+        page: input.page,
+        pageSize: input.pageSize,
+      };
+    }),
+
+  // 删除批次（及其数据）
+  deleteBatch: adminProcedure
+    .input(z.object({ batchId: z.number().int() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      await db.delete(scrapeCollectedGroups).where(eq(scrapeCollectedGroups.batchId, input.batchId));
+      await db.delete(scrapeCollectedUsers).where(eq(scrapeCollectedUsers.batchId, input.batchId));
+      await db.delete(scrapeBatches).where(eq(scrapeBatches.id, input.batchId));
+      return { success: true };
+    }),
+
+  // 获取采集到的群组/频道列表（支持按批次、标签过滤）
   listCollectedGroups: adminProcedure
-    .input(
-      z.object({
-        taskId: z.number().int().optional(),
-        type: z.enum(["group", "channel", "all"]).default("all"),
-        importStatus: z.enum(["pending", "imported", "ignored", "all"]).default("all"),
-        minScore: z.number().min(0).max(100).optional(),
-        page: z.number().int().min(1).default(1),
-        pageSize: z.number().int().min(1).max(100).default(20),
-      })
-    )
+    .input(z.object({
+      batchId: z.number().int().optional(),
+      type: z.enum(["group", "channel", "all"]).default("all"),
+      importStatus: z.enum(["pending", "imported", "ignored", "all"]).default("all"),
+      minScore: z.number().min(0).max(100).optional(),
+      tag: z.string().optional(),
+      page: z.number().int().min(1).default(1),
+      pageSize: z.number().int().min(1).max(100).default(20),
+    }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       const conditions: any[] = [];
-      if (input.taskId) conditions.push(eq(scrapeCollectedGroups.taskId, input.taskId));
+      if (input.batchId) conditions.push(eq(scrapeCollectedGroups.batchId, input.batchId));
       if (input.type !== "all") conditions.push(eq(scrapeCollectedGroups.type, input.type));
       if (input.importStatus !== "all") conditions.push(eq(scrapeCollectedGroups.importStatus, input.importStatus));
-      if (input.minScore !== undefined) {
-        conditions.push(sql`${scrapeCollectedGroups.aiScore} >= ${input.minScore}`);
-      }
+      if (input.minScore !== undefined) conditions.push(sql`${scrapeCollectedGroups.aiScore} >= ${input.minScore}`);
+      if (input.tag) conditions.push(sql`JSON_CONTAINS(${scrapeCollectedGroups.tags}, ${JSON.stringify(input.tag)})`);
 
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
       const offset = (input.page - 1) * input.pageSize;
@@ -744,8 +765,9 @@ export const groupScrapeRouter = router({
       ]);
 
       return {
-        items: items.map((item) => ({
+        items: items.map(item => ({
           ...item,
+          tags: item.tags ? JSON.parse(item.tags as any) : [],
           aiScoreDetail: item.aiScoreDetail ? JSON.parse(item.aiScoreDetail) : null,
         })),
         total: Number(countResult[0]?.count || 0),
@@ -754,29 +776,25 @@ export const groupScrapeRouter = router({
       };
     }),
 
-  // ── 获取采集到的用户列表 ──────────────────────────────────────
+  // 获取采集到的用户列表（支持按批次、标签过滤）
   listCollectedUsers: adminProcedure
-    .input(
-      z.object({
-        taskId: z.number().int().optional(),
-        onlyWithUsername: z.boolean().default(false),
-        minScore: z.number().min(0).max(100).optional(),
-        page: z.number().int().min(1).default(1),
-        pageSize: z.number().int().min(1).max(100).default(20),
-      })
-    )
+    .input(z.object({
+      batchId: z.number().int().optional(),
+      onlyWithUsername: z.boolean().default(false),
+      minScore: z.number().min(0).max(100).optional(),
+      tag: z.string().optional(),
+      page: z.number().int().min(1).default(1),
+      pageSize: z.number().int().min(1).max(100).default(20),
+    }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       const conditions: any[] = [];
-      if (input.taskId) conditions.push(eq(scrapeCollectedUsers.taskId, input.taskId));
-      if (input.onlyWithUsername) {
-        conditions.push(sql`${scrapeCollectedUsers.username} IS NOT NULL AND ${scrapeCollectedUsers.username} != ''`);
-      }
-      if (input.minScore !== undefined) {
-        conditions.push(sql`${scrapeCollectedUsers.aiScore} >= ${input.minScore}`);
-      }
+      if (input.batchId) conditions.push(eq(scrapeCollectedUsers.batchId, input.batchId));
+      if (input.onlyWithUsername) conditions.push(sql`${scrapeCollectedUsers.username} IS NOT NULL AND ${scrapeCollectedUsers.username} != ''`);
+      if (input.minScore !== undefined) conditions.push(sql`${scrapeCollectedUsers.aiScore} >= ${input.minScore}`);
+      if (input.tag) conditions.push(sql`JSON_CONTAINS(${scrapeCollectedUsers.tags}, ${JSON.stringify(input.tag)})`);
 
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
       const offset = (input.page - 1) * input.pageSize;
@@ -791,14 +809,37 @@ export const groupScrapeRouter = router({
       ]);
 
       return {
-        items,
+        items: items.map(u => ({
+          ...u,
+          tags: u.tags ? JSON.parse(u.tags as any) : [],
+        })),
         total: Number(countResult[0]?.count || 0),
         page: input.page,
         pageSize: input.pageSize,
       };
     }),
 
-  // ── 将采集到的群组导入公共监控池 ─────────────────────────────
+  // 获取全局统计（所有批次汇总）
+  getGlobalStats: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+    const [groupCount, channelCount, userCount, batchCount] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(scrapeCollectedGroups).where(eq(scrapeCollectedGroups.type, "group")),
+      db.select({ count: sql<number>`count(*)` }).from(scrapeCollectedGroups).where(eq(scrapeCollectedGroups.type, "channel")),
+      db.select({ count: sql<number>`count(*)` }).from(scrapeCollectedUsers),
+      db.select({ count: sql<number>`count(*)` }).from(scrapeBatches).where(eq(scrapeBatches.scrapeMode, "target")),
+    ]);
+
+    return {
+      groups: Number(groupCount[0]?.count || 0),
+      channels: Number(channelCount[0]?.count || 0),
+      users: Number(userCount[0]?.count || 0),
+      batches: Number(batchCount[0]?.count || 0),
+    };
+  }),
+
+  // 将采集到的群组导入公共监控池
   importCollectedGroupsToPool: adminProcedure
     .input(z.object({ ids: z.array(z.number().int()).min(1) }))
     .mutation(async ({ input }) => {
@@ -822,6 +863,7 @@ export const groupScrapeRouter = router({
             .limit(1);
 
           if (existing.length === 0) {
+            const tagsArr = g.tags ? JSON.parse(g.tags as any) : [];
             await db.insert(publicMonitorGroups).values({
               groupId: groupIdentifier,
               groupTitle: g.title || groupIdentifier,
@@ -829,7 +871,7 @@ export const groupScrapeRouter = router({
               memberCount: g.memberCount || 0,
               isActive: true,
               realId: g.tgId || null,
-              note: `采集导入 - AI评分: ${g.aiScore}`,
+              note: `指定采集导入 AI:${g.aiScore} 标签:${tagsArr.join(",")}`,
             });
             importedCount++;
           } else {
@@ -848,102 +890,251 @@ export const groupScrapeRouter = router({
       return { importedCount, skippedCount };
     }),
 
-  // ── 导出用户列表（返回 @username 列表）───────────────────────
+  // 导出用户列表（支持多种格式）
   exportCollectedUsers: adminProcedure
-    .input(
-      z.object({
-        taskId: z.number().int().optional(),
-        onlyWithUsername: z.boolean().default(true),
-        minScore: z.number().min(0).max(100).optional(),
-      })
-    )
+    .input(z.object({
+      batchId: z.number().int().optional(),
+      onlyWithUsername: z.boolean().default(true),
+      minScore: z.number().min(0).max(100).optional(),
+      tag: z.string().optional(),
+      format: z.enum(["username", "tgid", "csv"]).default("username"),
+    }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       const conditions: any[] = [];
-      if (input.taskId) conditions.push(eq(scrapeCollectedUsers.taskId, input.taskId));
-      if (input.onlyWithUsername) {
-        conditions.push(sql`${scrapeCollectedUsers.username} IS NOT NULL AND ${scrapeCollectedUsers.username} != ''`);
-      }
-      if (input.minScore !== undefined) {
-        conditions.push(sql`${scrapeCollectedUsers.aiScore} >= ${input.minScore}`);
-      }
+      if (input.batchId) conditions.push(eq(scrapeCollectedUsers.batchId, input.batchId));
+      if (input.onlyWithUsername) conditions.push(sql`${scrapeCollectedUsers.username} IS NOT NULL AND ${scrapeCollectedUsers.username} != ''`);
+      if (input.minScore !== undefined) conditions.push(sql`${scrapeCollectedUsers.aiScore} >= ${input.minScore}`);
+      if (input.tag) conditions.push(sql`JSON_CONTAINS(${scrapeCollectedUsers.tags}, ${JSON.stringify(input.tag)})`);
 
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-      const users = await db.select({
-        tgId: scrapeCollectedUsers.tgId,
-        username: scrapeCollectedUsers.username,
-        displayName: scrapeCollectedUsers.displayName,
-        aiScore: scrapeCollectedUsers.aiScore,
-      })
-        .from(scrapeCollectedUsers)
+      const users = await db.select().from(scrapeCollectedUsers)
         .where(whereClause)
         .orderBy(desc(scrapeCollectedUsers.aiScore))
-        .limit(5000);
+        .limit(10000);
 
-      const lines = users.map((u) =>
-        u.username ? `@${u.username}` : `tg://user?id=${u.tgId}`
-      );
+      let content = "";
+      if (input.format === "username") {
+        content = users.map(u => u.username ? `@${u.username}` : `tg://user?id=${u.tgId}`).join("\n");
+      } else if (input.format === "tgid") {
+        content = users.map(u => u.tgId).join("\n");
+      } else if (input.format === "csv") {
+        const header = "tgId,username,displayName,isBot,isPremium,aiScore,tags,messageCount,sourceGroup";
+        const rows = users.map(u => {
+          const tags = u.tags ? JSON.parse(u.tags as any).join("|") : "";
+          return `${u.tgId},${u.username || ""},${(u.displayName || "").replace(/,/g, " ")},${u.isBot ? 1 : 0},${u.isPremium ? 1 : 0},${u.aiScore || 0},"${tags}",${u.messageCount || 0},${u.sourceGroupId || ""}`;
+        });
+        content = [header, ...rows].join("\n");
+      }
 
       return {
         total: users.length,
-        content: lines.join("\n"),
-        users,
+        content,
+        users: users.map(u => ({
+          ...u,
+          tags: u.tags ? JSON.parse(u.tags as any) : [],
+        })),
       };
     }),
 
-  // ── 清空采集到的群组/用户数据 ─────────────────────────────────
+  // 清空全部采集数据（或按批次）
   clearCollectedData: adminProcedure
-    .input(
-      z.object({
-        taskId: z.number().int(),
-        clearGroups: z.boolean().default(true),
-        clearUsers: z.boolean().default(true),
-      })
-    )
+    .input(z.object({
+      batchId: z.number().int().optional(),
+      clearGroups: z.boolean().default(true),
+      clearUsers: z.boolean().default(true),
+    }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      if (input.clearGroups) {
-        await db.delete(scrapeCollectedGroups).where(eq(scrapeCollectedGroups.taskId, input.taskId));
+      if (input.batchId) {
+        if (input.clearGroups) await db.delete(scrapeCollectedGroups).where(eq(scrapeCollectedGroups.batchId, input.batchId));
+        if (input.clearUsers) await db.delete(scrapeCollectedUsers).where(eq(scrapeCollectedUsers.batchId, input.batchId));
+        await db.delete(scrapeBatches).where(eq(scrapeBatches.id, input.batchId));
+      } else {
+        if (input.clearGroups) await db.delete(scrapeCollectedGroups);
+        if (input.clearUsers) await db.delete(scrapeCollectedUsers);
+        await db.delete(scrapeBatches).where(eq(scrapeBatches.scrapeMode, "target"));
       }
-      if (input.clearUsers) {
-        await db.delete(scrapeCollectedUsers).where(eq(scrapeCollectedUsers.taskId, input.taskId));
-      }
-
-      await db.update(groupScrapeTasks)
-        .set({ status: "idle", totalFound: 0 })
-        .where(eq(groupScrapeTasks.id, input.taskId));
 
       return { success: true };
     }),
 
-  // ── 获取采集统计（某任务的群组/用户数量）─────────────────────
-  getCollectedStats: adminProcedure
-    .input(z.object({ taskId: z.number().int() }))
-    .query(async ({ input }) => {
+  // ════════════════════════════════════════════════════════════════
+  // Tab3: 消息提取链接
+  // ════════════════════════════════════════════════════════════════
+
+  extractFromGroup: adminProcedure
+    .input(z.object({
+      accountId: z.number().int(),
+      groupUrl: z.string().min(1),
+      limit: z.number().int().min(50).max(5000).default(500),
+      aiFilter: z.boolean().default(false),
+      aiMinMembers: z.number().int().min(0).default(0),
+    }))
+    .mutation(async ({ input }) => {
+      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
+      const engineSecret = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
+      try {
+        const resp = await fetch(`${engineUrl}/extract-group-links`, {
+          method: "POST",
+          headers: { "X-Engine-Secret": engineSecret, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            account_id: input.accountId,
+            group_url: input.groupUrl,
+            limit: input.limit,
+          }),
+          // @ts-ignore
+          signal: AbortSignal.timeout(120000),
+        });
+        const data = (await resp.json()) as any;
+        if (!resp.ok) throw new TRPCError({ code: "BAD_REQUEST", message: data.error || `引擎响应 ${resp.status}` });
+
+        let links = (data.links ?? []) as Array<{ url: string; slug: string; memberCount?: number; title?: string; type?: string }>;
+
+        // AI 过滤
+        if (input.aiFilter && input.aiMinMembers > 0) {
+          links = links.filter(l => (l.memberCount ?? 0) >= input.aiMinMembers);
+        }
+
+        // 为每个链接计算 AI 评分和标签
+        const enrichedLinks = links.map(l => {
+          const { score } = calcGroupAiScore({
+            memberCount: l.memberCount,
+            username: l.slug,
+            title: l.title,
+            type: l.type,
+          });
+          const tags = calcGroupTags({
+            memberCount: l.memberCount,
+            username: l.slug,
+            type: l.type,
+            aiScore: score,
+          });
+          return { ...l, aiScore: score, tags };
+        });
+
+        return {
+          success: true,
+          total: enrichedLinks.length,
+          scanned: data.scanned ?? 0,
+          links: enrichedLinks,
+        };
+      } catch (err: any) {
+        if (err instanceof TRPCError) throw err;
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `无法连接引擎: ${err.message}` });
+      }
+    }),
+
+  // 批量导入提取的链接到公共群池
+  importExtractedLinks: adminProcedure
+    .input(z.object({
+      urls: z.array(z.string().min(1)).min(1),
+    }))
+    .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      const [groupCount, channelCount, userCount] = await Promise.all([
-        db.select({ count: sql<number>`count(*)` })
-          .from(scrapeCollectedGroups)
-          .where(and(eq(scrapeCollectedGroups.taskId, input.taskId), eq(scrapeCollectedGroups.type, "group"))),
-        db.select({ count: sql<number>`count(*)` })
-          .from(scrapeCollectedGroups)
-          .where(and(eq(scrapeCollectedGroups.taskId, input.taskId), eq(scrapeCollectedGroups.type, "channel"))),
-        db.select({ count: sql<number>`count(*)` })
-          .from(scrapeCollectedUsers)
-          .where(eq(scrapeCollectedUsers.taskId, input.taskId)),
-      ]);
+      let added = 0;
+      let skipped = 0;
+
+      for (const url of input.urls) {
+        try {
+          const slug = url.replace(/^https?:\/\/t\.me\//, "").replace(/^@/, "").split("/")[0];
+          if (!slug) { skipped++; continue; }
+          const groupId = `@${slug}`;
+
+          const existing = await db.select({ id: publicMonitorGroups.id })
+            .from(publicMonitorGroups)
+            .where(eq(publicMonitorGroups.groupId, groupId))
+            .limit(1);
+
+          if (existing.length === 0) {
+            await db.insert(publicMonitorGroups).values({
+              groupId,
+              groupTitle: slug,
+              groupType: "group",
+              memberCount: 0,
+              isActive: true,
+              note: "消息提取导入",
+            });
+            added++;
+          } else {
+            skipped++;
+          }
+        } catch (e) {
+          skipped++;
+        }
+      }
+
+      return { added, skipped };
+    }),
+
+  // 同步群组 realId（保留原有功能）
+  syncGroupRealIds: adminProcedure
+    .mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const engineSecret = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
+      const engineHttpPortBase = parseInt(process.env.ENGINE_HTTP_PORT_BASE || "7100", 10);
+
+      const accounts = await db
+        .select({ id: tgAccounts.id, accountRole: tgAccounts.accountRole })
+        .from(tgAccounts)
+        .where(eq(tgAccounts.isActive, true));
+
+      const monitorAccounts = accounts.filter(a => a.accountRole === "monitor" || a.accountRole === "both");
+      if (monitorAccounts.length === 0) {
+        return { success: false, message: "没有活跃的监控账号", updated: 0, total: 0, scanned: 0 };
+      }
+
+      const dialogMap = new Map<string, string>();
+      for (const acc of monitorAccounts) {
+        const port = engineHttpPortBase + acc.id;
+        try {
+          const resp = await fetch(`http://127.0.0.1:${port}/dialogs`, {
+            headers: { "X-Engine-Secret": engineSecret },
+            // @ts-ignore
+            signal: AbortSignal.timeout(30000),
+          });
+          if (!resp.ok) continue;
+          const data = (await resp.json()) as any;
+          const dialogs: Array<{ chatId: string; username?: string }> =
+            Array.isArray(data) ? data : (data.dialogs ?? data.groups ?? []);
+          for (const d of dialogs) {
+            if (d.username && d.chatId) {
+              dialogMap.set(d.username.replace(/^@/, "").toLowerCase(), d.chatId);
+            }
+          }
+        } catch { continue; }
+      }
+
+      if (dialogMap.size === 0) {
+        return { success: false, message: "引擎未返回任何群组数据", updated: 0, total: 0, scanned: 0 };
+      }
+
+      const allGroups = await db.select({ id: publicMonitorGroups.id, groupId: publicMonitorGroups.groupId }).from(publicMonitorGroups);
+      let updated = 0;
+      for (const group of allGroups) {
+        const normalizedGroupId = group.groupId.replace(/^@/, "").toLowerCase();
+        const chatId = dialogMap.get(normalizedGroupId);
+        if (chatId) {
+          await db.update(publicMonitorGroups).set({ realId: chatId }).where(eq(publicMonitorGroups.id, group.id));
+          updated++;
+        }
+      }
 
       return {
-        groups: Number(groupCount[0]?.count || 0),
-        channels: Number(channelCount[0]?.count || 0),
-        users: Number(userCount[0]?.count || 0),
+        success: true,
+        message: `同步完成：扫描 ${dialogMap.size} 个，成功回写 ${updated} / ${allGroups.length} 条`,
+        updated,
+        total: allGroups.length,
+        scanned: dialogMap.size,
       };
     }),
 });

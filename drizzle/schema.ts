@@ -723,6 +723,8 @@ export const groupScrapeResults = mysqlTable("group_scrape_results", {
   importStatus: varchar("importStatus", { length: 32 }).default("pending").notNull(), // pending / imported / ignored
   importedAt: timestamp("importedAt"),                                // 导入时间
   scrapedAt: timestamp("scrapedAt").defaultNow().notNull(),           // 采集时间
+  aiScore: real("aiScore"),                                           // AI 质量评分 0-100
+  tags: text("tags"),                                                 // JSON: AI标签数组
 }, (t) => [
   index("idx_gsr_taskId").on(t.taskId),
   index("idx_gsr_groupId").on(t.groupId),
@@ -732,10 +734,30 @@ export const groupScrapeResults = mysqlTable("group_scrape_results", {
 export type GroupScrapeResult = typeof groupScrapeResults.$inferSelect;
 export type InsertGroupScrapeResult = typeof groupScrapeResults.$inferInsert;
 
+// ── 采集批次表 ─────────────────────────────────────────────────────────────
+export const scrapeBatches = mysqlTable("scrape_batches", {
+  id: int("id").autoincrement().primaryKey(),
+  batchKey: varchar("batchKey", { length: 64 }).notNull(),            // 批次唯一标识
+  scrapeMode: varchar("scrapeMode", { length: 32 }).default("target").notNull(), // target / extract
+  sourceGroups: text("sourceGroups"),                                 // JSON: 来源群组列表
+  collectTypes: varchar("collectTypes", { length: 64 }).default("group,channel,user"),
+  accountId: int("accountId"),                                        // 使用的账号 ID
+  totalGroups: int("totalGroups").default(0),                         // 采集到的群组数
+  totalChannels: int("totalChannels").default(0),                     // 采集到的频道数
+  totalUsers: int("totalUsers").default(0),                           // 采集到的用户数
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("idx_sb_batchKey").on(t.batchKey),
+  index("idx_sb_scrapeMode").on(t.scrapeMode),
+  index("idx_sb_createdAt").on(t.createdAt),
+]);
+export type ScrapeBatch = typeof scrapeBatches.$inferSelect;
+export type InsertScrapeBatch = typeof scrapeBatches.$inferInsert;
+
 // ── 指定群组采集：采集到的群组/频道入库表 ──────────────────────────────────
 export const scrapeCollectedGroups = mysqlTable("scrape_collected_groups", {
   id: int("id").autoincrement().primaryKey(),
-  taskId: int("taskId").notNull(),
+  batchId: int("batchId"),                                            // 关联批次 ID
   sourceGroupId: varchar("sourceGroupId", { length: 128 }).notNull(), // 来源群组 username/id
   type: varchar("type", { length: 16 }).notNull().default("group"),   // group / channel
   tgId: varchar("tgId", { length: 64 }),                              // TG 数字 ID（去重键）
@@ -743,12 +765,13 @@ export const scrapeCollectedGroups = mysqlTable("scrape_collected_groups", {
   title: varchar("title", { length: 256 }),                           // 群组/频道名称
   memberCount: int("memberCount").default(0),                         // 成员数
   description: text("description"),                                   // 简介
-  aiScore: real("aiScore"),                                          // AI 质量评分 0-100
+  aiScore: real("aiScore"),                                           // AI 质量评分 0-100
   aiScoreDetail: text("aiScoreDetail"),                               // JSON: 各维度评分
+  tags: text("tags"),                                                 // JSON: AI标签数组
   importStatus: varchar("importStatus", { length: 32 }).default("pending").notNull(), // pending/imported/ignored
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => [
-  index("idx_scg_taskId").on(t.taskId),
+  index("idx_scg_batchId").on(t.batchId),
   index("idx_scg_type").on(t.type),
   index("idx_scg_aiScore").on(t.aiScore),
   uniqueIndex("idx_scg_tgId").on(t.tgId),
@@ -759,17 +782,20 @@ export type InsertScrapeCollectedGroup = typeof scrapeCollectedGroups.$inferInse
 // ── 指定群组采集：采集到的用户入库表 ──────────────────────────────────────
 export const scrapeCollectedUsers = mysqlTable("scrape_collected_users", {
   id: int("id").autoincrement().primaryKey(),
-  taskId: int("taskId").notNull(),
+  batchId: int("batchId"),                                            // 关联批次 ID
   sourceGroupId: varchar("sourceGroupId", { length: 128 }).notNull(), // 来源群组
   tgId: varchar("tgId", { length: 64 }).notNull(),                    // TG 用户数字 ID（去重键）
   username: varchar("username", { length: 128 }),                     // TG @用户名（无@，可为空）
   displayName: varchar("displayName", { length: 256 }),               // 显示名称（真实姓名）
   isBot: boolean("isBot").default(false),                             // 是否机器人
   isPremium: boolean("isPremium").default(false),                     // 是否 Premium 用户
-  aiScore: real("aiScore"),                                          // AI 质量评分 0-100
+  messageCount: int("messageCount").default(0),                       // 发言消息数（活跃度）
+  aiScore: real("aiScore"),                                           // AI 质量评分 0-100
+  tags: text("tags"),                                                 // JSON: AI标签数组
+  lastSeenGroupId: varchar("lastSeenGroupId", { length: 128 }),       // 最后出现的群组
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => [
-  index("idx_scu_taskId").on(t.taskId),
+  index("idx_scu_batchId").on(t.batchId),
   index("idx_scu_username").on(t.username),
   uniqueIndex("idx_scu_tgId").on(t.tgId),
 ]);
