@@ -49,7 +49,7 @@ import {
   AlertTriangle,
   CheckCircle,
 } from "lucide-react";
-import { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 type AddMode = "phone" | "session_bulk" | null;
 type PhoneStep = "phone" | "code" | "twofa" | "done";
@@ -1217,9 +1217,9 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
   const checkGroupHealth = trpc.tgAccounts.checkGroupHealth.useMutation();
   const deleteAbnormalGroups = trpc.tgAccounts.deleteAbnormalPublicGroups.useMutation();
   const getAccountChats = trpc.tgAccounts.getAccountChats.useMutation();
-  const [chatsData, setChatsData] = React.useState<{ chats: any[]; total: number } | null>(null);
-  const [chatsLoading, setChatsLoading] = React.useState(false);
-  const [chatsError, setChatsError] = React.useState('');
+  const [chatsData, setChatsData] = useState<{ chats: any[]; total: number } | null>(null);
+  const [chatsLoading, setChatsLoading] = useState(false);
+  const [chatsError, setChatsError] = useState('');
 
   // 从引擎实时获取已加入群组
   const fetchChats = async () => {
@@ -1235,7 +1235,7 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (accountId) fetchChats();
   }, [accountId]);
 
@@ -1912,4 +1912,5 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     </div>
   );
 }
+
 
