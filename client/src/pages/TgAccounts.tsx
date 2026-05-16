@@ -1736,6 +1736,8 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
   const [batchFailures, setBatchFailures] = useState<{ line: string; reason: string }[]>([]);
   const [showFailures, setShowFailures] = useState(false);
   const [search, setSearch] = useState("");
+  // 记录每个群组链接的实时加群状态
+  const [groupStatusMap, setGroupStatusMap] = useState<Record<string, { status: 'joining' | 'success' | 'failed'; reason?: string }>>({});
   const { data: monitorData, isLoading, refetch: refetchMonitor } = trpc.monitorGroups.list.useQuery();
   const importGroup = trpc.engine.importGroup.useMutation();
   const deleteGroup = trpc.monitorGroups.delete.useMutation();
@@ -1749,14 +1751,19 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
 
   const handleJoin = async () => {
     if (!groupInput.trim()) return;
+    const line = groupInput.trim();
     setJoining(true);
+    setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'joining' } }));
     try {
-      const res = await importGroup.mutateAsync({ tgAccountId: accountId, groupInput: groupInput.trim() });
+      const res = await importGroup.mutateAsync({ tgAccountId: accountId, groupInput: line });
       toast.success(res.message);
+      setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'success' } }));
       setGroupInput("");
       refetchMonitor();
     } catch (e: any) {
-      toast.error(e.message ?? "加群失败");
+      const reason = e.message ?? "加群失败";
+      toast.error(reason);
+      setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'failed', reason } }));
     } finally {
       setJoining(false);
     }
@@ -1775,12 +1782,15 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       setBatchProgress({ current: i + 1, total: lines.length, currentLine: line });
+      setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'joining' } }));
       try {
         await importGroup.mutateAsync({ tgAccountId: accountId, groupInput: line });
         success++;
+        setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'success' } }));
       } catch (e: any) {
         const reason = e.message ?? '未知错误';
         failures.push({ line, reason });
+        setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'failed', reason } }));
       }
     }
     setBatchFailures(failures);
@@ -1802,9 +1812,10 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     }
   };
 
-  // 获取该账号的统计数据（已加入/待加入数量）
-  const { data: statsData } = trpc.tgAccounts.getAccounts.useQuery(undefined, { select: (d) => d.accounts?.find((a: any) => a.id === accountId) });
-  const joinedCount = statsData?.joinedGroupCount ?? 0;
+  // 已加入 = 当前账号在 monitorGroups 表中 active 的数量（实时统计）
+  const joinedCount = myGroups.filter((g: any) => g.monitorStatus === 'active').length;
+  // 待加入 = 公共群组池中分配给该账号的 pending 数量
+  const { data: statsData } = trpc.tgAccounts.getAccounts.useQuery(undefined, { select: (d: any) => d.accounts?.find((a: any) => a.id === accountId) });
   const pendingCount = statsData?.pendingGroupCount ?? 0;
 
   return (
@@ -1879,6 +1890,22 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
               {batchProgress.currentLine && (
                 <p className="text-xs text-slate-400 truncate">当前：{batchProgress.currentLine}</p>
               )}
+            </div>
+          )}
+          {/* 实时加群状态列表 */}
+          {Object.keys(groupStatusMap).length > 0 && (
+            <div className="max-h-36 overflow-y-auto border border-slate-200 rounded bg-slate-50 p-2 space-y-0.5">
+              {Object.entries(groupStatusMap).map(([line, s]) => (
+                <div key={line} className="flex items-center gap-1.5 text-xs">
+                  {s.status === 'joining' && <Loader2 className="w-3 h-3 animate-spin text-blue-500 shrink-0" />}
+                  {s.status === 'success' && <CheckCircle className="w-3 h-3 text-green-500 shrink-0" />}
+                  {s.status === 'failed' && <XCircle className="w-3 h-3 text-red-500 shrink-0" />}
+                  <span className="truncate text-slate-700 flex-1" title={line}>{line}</span>
+                  {s.status === 'joining' && <span className="text-blue-500 shrink-0">加入中...</span>}
+                  {s.status === 'success' && <span className="text-green-600 shrink-0">成功</span>}
+                  {s.status === 'failed' && <span className="text-red-500 shrink-0 max-w-[120px] truncate" title={s.reason}>{s.reason}</span>}
+                </div>
+              ))}
             </div>
           )}
           {/* 完成结果 */}
@@ -1981,6 +2008,7 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     </div>
   );
 }
+
 
 
 
