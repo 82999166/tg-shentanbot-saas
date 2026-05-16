@@ -838,6 +838,54 @@ export const tgAccountsRouter = router({
       });
     }),
 
+  // ─── 批量退出群组（调用引擎 /leave-group 接口，账号真正退出） ──────────────────
+  leaveGroups: adminProcedure
+    .input(z.object({
+      accountId: z.number(),
+      chatIds: z.array(z.string()),
+    }))
+    .mutation(async ({ input }) => {
+      const { accountId, chatIds } = input;
+      const enginePort = ENGINE_HTTP_PORT_BASE + accountId;
+      const engineSecret = process.env.ENGINE_SECRET ?? "tg-monitor-engine-secret";
+      const results: { chatId: string; success: boolean; error?: string }[] = [];
+      for (const chatId of chatIds) {
+        try {
+          const result = await new Promise<any>((resolve) => {
+            const numId = parseInt(chatId, 10);
+            const postData = JSON.stringify({ chatId: isNaN(numId) ? chatId : numId });
+            const options = {
+              hostname: "127.0.0.1",
+              port: enginePort,
+              path: "/leave-group",
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(postData),
+                "X-Engine-Secret": engineSecret,
+              },
+            };
+            const req = http.request(options, (res: any) => {
+              let data = "";
+              res.on("data", (chunk: any) => { data += chunk; });
+              res.on("end", () => {
+                try { resolve(JSON.parse(data)); } catch (e) { resolve({ success: false, error: "解析失败" }); }
+              });
+            });
+            req.on("error", (e: any) => resolve({ success: false, error: e.message }));
+            req.setTimeout(15000, () => { req.destroy(); resolve({ success: false, error: "超时" }); });
+            req.write(postData);
+            req.end();
+          });
+          results.push({ chatId, success: result.success, error: result.error });
+        } catch (e: any) {
+          results.push({ chatId, success: false, error: e.message });
+        }
+      }
+      const successCount = results.filter(r => r.success).length;
+      return { success: true, successCount, failCount, results };
+    }),
+
   // ─── 批量从公共群组池删除异常群组 ────────────────────────────────────────
   deleteAbnormalPublicGroups: adminProcedure
     .input(z.object({

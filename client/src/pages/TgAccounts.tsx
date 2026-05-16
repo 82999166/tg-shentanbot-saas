@@ -1213,7 +1213,8 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
   // groupId -> 检测结果 map
   const [detectResultMap, setDetectResultMap] = useState<Map<string, { status: 'normal' | 'abnormal'; reason?: string }>>(new Map());
   const checkGroupHealthBatch = trpc.tgAccounts.checkGroupHealthBatch.useMutation();
-  const deleteAbnormalGroups = trpc.tgAccounts.deleteAbnormalPublicGroups.useMutation();
+  const leaveGroupsMutation = trpc.tgAccounts.leaveGroups.useMutation();
+  const [leavingGroups, setLeavingGroups] = useState(false);
   // 实时从 TG 账号引擎获取已加入群组
   const getAccountChats = trpc.tgAccounts.getAccountChats.useMutation();
   const [chatsData, setChatsData] = useState<{ chats: any[]; total: number } | null>(null);
@@ -1222,6 +1223,8 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
   const [chatsFetched, setChatsFetched] = useState(false);
   // 类型筛选
   const [typeFilter, setTypeFilter] = useState<'all' | 'group' | 'channel' | 'supergroup'>('all');
+  // 检测状态筛选
+  const [detectFilter, setDetectFilter] = useState<'all' | 'normal' | 'abnormal'>('all');
   // 全选 + 批量删除
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -1259,7 +1262,7 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
   const isLoading = chatsLoading;
   const [search, setSearch] = useState("");
 
-  // 筛选逻辑（搜索 + 类型）
+  // 筛选逻辑（搜索 + 类型 + 检测状态）
   const filtered = (data?.groups ?? []).filter(g => {
     const kw = search.toLowerCase();
     const matchSearch = !kw || g.groupTitle.toLowerCase().includes(kw) || g.groupId.toLowerCase().includes(kw);
@@ -1267,7 +1270,11 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
       (typeFilter === 'channel' && g.groupType === 'channel') ||
       (typeFilter === 'supergroup' && g.groupType === 'supergroup') ||
       (typeFilter === 'group' && g.groupType !== 'channel' && g.groupType !== 'supergroup');
-    return matchSearch && matchType;
+    const dr = detectResultMap.get(g.groupId);
+    const matchDetect = detectFilter === 'all' ||
+      (detectFilter === 'normal' && dr?.status === 'normal') ||
+      (detectFilter === 'abnormal' && dr?.status === 'abnormal');
+    return matchSearch && matchType && matchDetect;
   });
 
   // 全选逻辑
@@ -1285,16 +1292,28 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
     setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   };
 
-  // 批量删除（从公共群组池删除）
-  const handleBatchDelete = async () => {
+  // 批量退出群组（调用引擎 leave-group，账号真正退出）
+  const handleBatchLeave = async () => {
     if (selected.size === 0) return;
-    if (!confirm(`确认从公共群组池删除已选的 ${selected.size} 个群组？`)) return;
+    if (!confirm(`确认让该账号退出已选的 ${selected.size} 个群组？退出后账号将不再接收这些群组的消息。`)) return;
+    setLeavingGroups(true);
     try {
-      await deleteAbnormalGroups.mutateAsync({ groupIds: Array.from(selected) });
-      toast.success(`已删除 ${selected.size} 个群组`);
+      // 找到选中群组的真实 TG chat ID（realId）
+      const selectedGroups = (data?.groups ?? []).filter(g => selected.has(g.groupId));
+      const chatIds = selectedGroups.map(g => String(g.realId || g.groupId));
+      const res = await leaveGroupsMutation.mutateAsync({ accountId, chatIds });
+      if (res.failCount > 0) {
+        toast.warning(`退出完成：成功 ${res.successCount} 个，失败 ${res.failCount} 个`);
+      } else {
+        toast.success(`已成功退出 ${res.successCount} 个群组`);
+      }
       setSelected(new Set());
+      // 刷新列表
+      await fetchChats();
     } catch (e: any) {
-      toast.error(e.message ?? '删除失败');
+      toast.error(e.message ?? '退出失败');
+    } finally {
+      setLeavingGroups(false);
     }
   };
 
@@ -1386,9 +1405,9 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
         </div>
         <div className="flex items-center gap-2">
           {selected.size > 0 && (
-            <Button size="sm" variant="destructive" className="gap-1 h-7 text-xs" onClick={handleBatchDelete} disabled={deleteAbnormalGroups.isPending}>
-              {deleteAbnormalGroups.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-              删除已选 ({selected.size})
+            <Button size="sm" variant="destructive" className="gap-1 h-7 text-xs" onClick={handleBatchLeave} disabled={leavingGroups}>
+              {leavingGroups ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+              退出已选 ({selected.size})
             </Button>
           )}
           <Button
@@ -1443,28 +1462,49 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
         </div>
       )}
 
-      {/* 搜索 + 类型筛选 */}
-      <div className="flex items-center gap-2 shrink-0">
+      {/* 搜索 + 类型筛选 + 检测状态筛选 */}
+      <div className="flex flex-col gap-1.5 shrink-0">
         <Input
           placeholder="搜索群组名称或 ID..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 h-8 text-sm flex-1"
+          className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 h-8 text-sm"
         />
-        <div className="flex gap-1">
-          {(['all', 'group', 'channel', 'supergroup'] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
-              className={`text-xs px-2 py-1 rounded border transition-colors ${
-                typeFilter === t
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
-              }`}
-            >
-              {t === 'all' ? '全部' : t === 'group' ? '群组' : t === 'channel' ? '频道' : '超级群'}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
+            {(['all', 'group', 'channel', 'supergroup'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                  typeFilter === t
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
+                }`}
+              >
+                {t === 'all' ? '全部' : t === 'group' ? '群组' : t === 'channel' ? '频道' : '超级群'}
+              </button>
+            ))}
+          </div>
+          {detectMode === 'done' && (
+            <div className="flex gap-1 ml-2 border-l border-slate-200 pl-2">
+              {(['all', 'normal', 'abnormal'] as const).map(d => (
+                <button
+                  key={d}
+                  onClick={() => setDetectFilter(d)}
+                  className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                    detectFilter === d
+                      ? d === 'normal' ? 'bg-green-600 text-white border-green-600'
+                        : d === 'abnormal' ? 'bg-red-500 text-white border-red-500'
+                        : 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
+                  }`}
+                >
+                  {d === 'all' ? '全部' : d === 'normal' ? `✓ 正常 ${normalCount}` : `⚠ 异常 ${abnormalCount}`}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
