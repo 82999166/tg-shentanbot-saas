@@ -1288,12 +1288,12 @@ export default function GroupScrape() {
                     {/* 选择账号 */}
                     <div>
                       <label className="text-sm text-gray-300 block mb-1.5">使用账号（可选）</label>
-                      <Select value={targetAccountId} onValueChange={setTargetAccountId}>
+                      <Select value={targetAccountId || "auto"} onValueChange={(v) => setTargetAccountId(v === "auto" ? "" : v)}>
                         <SelectTrigger className="bg-gray-800 border-gray-700 text-gray-200">
                           <SelectValue placeholder="自动选择" />
                         </SelectTrigger>
                         <SelectContent className="bg-gray-900 border-gray-700">
-                          <SelectItem value="">自动选择</SelectItem>
+                          <SelectItem value="auto">自动选择</SelectItem>
                           {(Array.isArray(accounts) ? accounts : []).map((acc: any) => (
                             <SelectItem key={acc.id} value={String(acc.id)}>
                               {acc.phone || acc.tgUsername || `账号 #${acc.id}`}
