@@ -71,7 +71,7 @@ body {
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+/* @custom-variant dark (&:is(.dark *)); */ /* 已禁用 dark 变体，强制明亮模式 */
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
