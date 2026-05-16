@@ -375,6 +375,13 @@ export default function GroupScrape() {
   const [userLimit, setUserLimit] = useState(500);
   const [aiScoreEnabled, setAiScoreEnabled] = useState(true);
   const [aiMinScore, setAiMinScore] = useState(60);
+  // AI 评分扩展参数
+  const [aiMinMembers, setAiMinMembers] = useState(100);          // 最低成员数
+  const [aiRequireUsername, setAiRequireUsername] = useState(false); // 必须有用户名
+  const [aiRequireDescription, setAiRequireDescription] = useState(false); // 必须有简介
+  const [aiFilterBots, setAiFilterBots] = useState(true);         // 过滤机器人账号
+  const [aiFilterAds, setAiFilterAds] = useState(true);           // 过滤广告用户（无用户名+无头像）
+  const [aiMinActivity, setAiMinActivity] = useState(0);          // 最低活跃度分（0=不限）
   const [targetAccountId, setTargetAccountId] = useState<string>("");
   const [targetSubTab, setTargetSubTab] = useState<"groups" | "channels" | "users">("groups");
   const [collectedGroupPage, setCollectedGroupPage] = useState(1);
@@ -682,6 +689,12 @@ export default function GroupScrape() {
       userLimit,
       aiScoreEnabled,
       aiMinScore,
+      aiMinMembers,
+      aiRequireUsername,
+      aiRequireDescription,
+      aiFilterBots,
+      aiFilterAds,
+      aiMinActivity,
       accountId: targetAccountId ? parseInt(targetAccountId) : undefined,
     });
   }
@@ -1316,20 +1329,114 @@ export default function GroupScrape() {
                         />
                       </div>
                       {aiScoreEnabled && (
-                        <div>
-                          <label className="text-xs text-gray-400 block mb-1">最低评分阈值（低于此分过滤）</label>
-                          <div className="flex items-center gap-2">
-                            <Input
-                              type="number"
-                              value={aiMinScore}
-                              onChange={e => setAiMinScore(Math.min(100, Math.max(0, parseInt(e.target.value) || 60)))}
-                              className="bg-gray-800 border-gray-700 text-white h-8 text-sm"
-                              min={0}
-                              max={100}
-                            />
-                            <span className="text-gray-400 text-sm">/ 100</span>
+                        <div className="space-y-3">
+                          {/* 最低评分阈值 */}
+                          <div>
+                            <label className="text-xs text-gray-400 block mb-1">最低评分阈值（低于此分过滤）</label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                value={aiMinScore}
+                                onChange={e => setAiMinScore(Math.min(100, Math.max(0, parseInt(e.target.value) || 60)))}
+                                className="bg-gray-800 border-gray-700 text-white h-8 text-sm"
+                                min={0}
+                                max={100}
+                              />
+                              <span className="text-gray-400 text-sm">/ 100</span>
+                            </div>
+                            <p className="text-xs text-gray-600 mt-1">评分维度：成员数、有用户名、标题质量、有简介、类型</p>
                           </div>
-                          <p className="text-xs text-gray-600 mt-1">评分维度：成员数、有用户名、标题质量、有简介、类型</p>
+
+                          {/* 最低成员数 */}
+                          <div>
+                            <label className="text-xs text-gray-400 block mb-1">最低成员数（低于此数过滤）</label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                value={aiMinMembers}
+                                onChange={e => setAiMinMembers(Math.max(0, parseInt(e.target.value) || 0))}
+                                className="bg-gray-800 border-gray-700 text-white h-8 text-sm"
+                                min={0}
+                                placeholder="0 = 不限"
+                              />
+                              <span className="text-gray-400 text-sm">人</span>
+                            </div>
+                          </div>
+
+                          {/* 活跃度要求 */}
+                          <div>
+                            <label className="text-xs text-gray-400 block mb-1">最低活跃度分（0 = 不限）</label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                value={aiMinActivity}
+                                onChange={e => setAiMinActivity(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                                className="bg-gray-800 border-gray-700 text-white h-8 text-sm"
+                                min={0}
+                                max={100}
+                                placeholder="0"
+                              />
+                              <span className="text-gray-400 text-sm">/ 100</span>
+                            </div>
+                            <p className="text-xs text-gray-600 mt-1">基于近期消息频率评估群组活跃程度</p>
+                          </div>
+
+                          {/* 过滤选项 */}
+                          <div className="space-y-2 pt-1 border-t border-gray-700">
+                            <p className="text-xs text-gray-400 font-medium">过滤选项</p>
+
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                id="filterBots"
+                                checked={aiFilterBots}
+                                onCheckedChange={v => setAiFilterBots(!!v)}
+                                className="border-gray-600"
+                              />
+                              <label htmlFor="filterBots" className="text-xs text-gray-300 cursor-pointer flex items-center gap-1">
+                                <Bot className="w-3 h-3 text-red-400" />
+                                过滤机器人账号
+                              </label>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                id="filterAds"
+                                checked={aiFilterAds}
+                                onCheckedChange={v => setAiFilterAds(!!v)}
+                                className="border-gray-600"
+                              />
+                              <label htmlFor="filterAds" className="text-xs text-gray-300 cursor-pointer flex items-center gap-1">
+                                <Filter className="w-3 h-3 text-orange-400" />
+                                过滤广告用户（无用户名且无头像）
+                              </label>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                id="requireUsername"
+                                checked={aiRequireUsername}
+                                onCheckedChange={v => setAiRequireUsername(!!v)}
+                                className="border-gray-600"
+                              />
+                              <label htmlFor="requireUsername" className="text-xs text-gray-300 cursor-pointer flex items-center gap-1">
+                                <UserCheck className="w-3 h-3 text-blue-400" />
+                                仅保留有用户名的群组/用户
+                              </label>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                id="requireDescription"
+                                checked={aiRequireDescription}
+                                onCheckedChange={v => setAiRequireDescription(!!v)}
+                                className="border-gray-600"
+                              />
+                              <label htmlFor="requireDescription" className="text-xs text-gray-300 cursor-pointer flex items-center gap-1">
+                                <FileText className="w-3 h-3 text-green-400" />
+                                仅保留有群组简介的群组
+                              </label>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>

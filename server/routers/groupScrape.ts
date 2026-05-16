@@ -532,6 +532,13 @@ export const groupScrapeRouter = router({
         userLimit: z.number().int().min(1).max(2000).default(500),
         aiScoreEnabled: z.boolean().default(true),
         aiMinScore: z.number().min(0).max(100).default(60),
+        // v2 扩展 AI 评分参数
+        aiMinMembers: z.number().int().min(0).default(0),           // 最低成员数
+        aiRequireUsername: z.boolean().default(false),              // 必须有用户名
+        aiRequireDescription: z.boolean().default(false),           // 必须有简介
+        aiFilterBots: z.boolean().default(true),                    // 过滤机器人
+        aiFilterAds: z.boolean().default(true),                     // 过滤广告用户
+        aiMinActivity: z.number().min(0).max(100).default(0),       // 最低活跃度分
         accountId: z.number().int().optional(),
       })
     )
@@ -585,6 +592,12 @@ export const groupScrapeRouter = router({
               });
 
               if (input.aiScoreEnabled && score < input.aiMinScore) continue;
+              // 最低成员数过滤
+              if (input.aiMinMembers > 0 && (link.memberCount ?? 0) < input.aiMinMembers) continue;
+              // 必须有用户名
+              if (input.aiRequireUsername && !link.username) continue;
+              // 必须有简介
+              if (input.aiRequireDescription && !link.description) continue;
 
               // 去重入库
               try {
@@ -635,6 +648,12 @@ export const groupScrapeRouter = router({
               });
 
               if (input.aiScoreEnabled && userScore < input.aiMinScore) continue;
+              // 过滤机器人
+              if (input.aiFilterBots && member.isBot) continue;
+              // 过滤广告用户（无用户名且无显示名称）
+              if (input.aiFilterAds && !member.username && (!member.displayName || member.displayName.trim().length === 0)) continue;
+              // 必须有用户名
+              if (input.aiRequireUsername && !member.username) continue;
 
               try {
                 const tgIdStr = String(member.tgId);
