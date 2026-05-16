@@ -1216,10 +1216,41 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
   const [detectView, setDetectView] = useState<'abnormal' | 'normal'>('abnormal');
   const checkGroupHealth = trpc.tgAccounts.checkGroupHealth.useMutation();
   const deleteAbnormalGroups = trpc.tgAccounts.deleteAbnormalPublicGroups.useMutation();
-  // 直接从数据库查询已加入群组（毫秒级响应）
-  const { data: dbData, isLoading: dbLoading, refetch: refetchDb } = trpc.tgAccounts.getAccountJoinedGroups.useQuery({ accountId });
-  const data = dbData ? { total: dbData.total, groups: dbData.groups } : null;
-  const isLoading = dbLoading;
+  // 实时从 TG 账号引擎获取已加入群组
+  const getAccountChats = trpc.tgAccounts.getAccountChats.useMutation();
+  const [chatsData, setChatsData] = useState<{ chats: any[]; total: number } | null>(null);
+  const [chatsLoading, setChatsLoading] = useState(false);
+  const [chatsError, setChatsError] = useState('');
+  const [chatsFetched, setChatsFetched] = useState(false);
+
+  const fetchChats = async () => {
+    setChatsLoading(true);
+    setChatsError('');
+    try {
+      const res = await getAccountChats.mutateAsync({ id: accountId });
+      setChatsData(res);
+      setChatsFetched(true);
+    } catch (e: any) {
+      setChatsError(e.message ?? '获取失败');
+      setChatsFetched(true);
+    } finally {
+      setChatsLoading(false);
+    }
+  };
+
+  const data = chatsData ? { total: chatsData.total, groups: chatsData.chats.map((c: any) => ({
+    id: c.chatId,
+    publicGroupId: 0,
+    groupId: c.username || c.chatId,
+    groupTitle: c.title || c.username || c.chatId,
+    groupType: c.type || 'supergroup',
+    realId: c.chatId,
+    isActive: true,
+    joinedAt: null,
+    link: c.username ? `https://t.me/${c.username}` : '',
+    memberCount: c.memberCount || 0,
+  })) } : null;
+  const isLoading = chatsLoading;
   const [search, setSearch] = useState("");
 
   const filtered = (data?.groups ?? []).filter(g => {
@@ -1422,8 +1453,9 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
           <span className="text-sm text-slate-500">
             共已加入 <span className="text-slate-800 font-bold">{data?.total ?? 0}</span> 个群组
           </span>
-          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-slate-500 hover:text-slate-700" onClick={() => refetchDb()}>
-            <RefreshCw className="w-3 h-3 mr-1" /> 刷新
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-slate-500 hover:text-slate-700" onClick={fetchChats} disabled={chatsLoading}>
+            {chatsLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+            {chatsLoading ? '获取中...' : '从 TG 获取'}
           </Button>
         </div>
         <div className="flex items-center gap-2">
@@ -1458,7 +1490,20 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
 
       {/* 群组列表 */}
       <div className="flex-1 overflow-y-auto min-h-0 rounded border border-slate-200">
-        {filtered.length === 0 ? (
+        {chatsError ? (
+          <div className="flex flex-col items-center justify-center py-10 text-sm">
+            <AlertTriangle className="w-8 h-8 mb-2 text-red-400 opacity-70" />
+            <span className="text-red-500 text-center px-4">{chatsError}</span>
+            <Button size="sm" className="mt-3 bg-blue-600 hover:bg-blue-700" onClick={fetchChats} disabled={chatsLoading}>
+              <RefreshCw className="w-3 h-3 mr-1" /> 重试
+            </Button>
+          </div>
+        ) : !chatsFetched ? (
+          <div className="flex flex-col items-center justify-center py-10 text-slate-500 text-sm">
+            <Shield className="w-8 h-8 mb-2 opacity-40" />
+            <span>点击「从 TG 获取」按钮加载该账号已加入的群组</span>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-slate-500 text-sm">
             <Shield className="w-8 h-8 mb-2 opacity-40" />
             {search ? "没有匹配的群组" : "该账号暂无已加入的群组记录"}
@@ -1882,6 +1927,7 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     </div>
   );
 }
+
 
 
 

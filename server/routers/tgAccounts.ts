@@ -578,10 +578,8 @@ export const tgAccountsRouter = router({
       const engineHttpUrl = `http://127.0.0.1:${engineHttpPort}/dialogs`;
       let resp: Response;
       try {
-        resp = await fetch(engineHttpUrl, {
-          // @ts-ignore
-          signal: AbortSignal.timeout(5000), // 5秒超时，引擎不在线快速失败
-        });
+        resp = await fetch(engineHttpUrl);
+        // 不设置超时，以引擎返回结果为准（网络慢或TG响应慢时也能正常获取）
       } catch (e: any) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -973,5 +971,6 @@ async function autoSyncChatsToPublic(
     });
   } catch (_) { /* 忽略 */ }
 }
+
 
 
