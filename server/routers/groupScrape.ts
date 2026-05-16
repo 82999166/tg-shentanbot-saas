@@ -977,51 +977,55 @@ export const groupScrapeRouter = router({
       aiMinMembers: z.number().int().min(0).default(0),
     }))
     .mutation(async ({ input }) => {
-      const engineUrl = process.env.ENGINE_URL || "http://127.0.0.1:7001";
-      const engineSecret = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
+      // 使用正确的引擎端口: 7100 + accountId
+      let accountId = input.accountId;
+      if (!accountId) {
+        const fallback = await getAvailableAccountId();
+        if (!fallback) throw new TRPCError({ code: "BAD_REQUEST", message: "没有可用的 TG 账号" });
+        accountId = fallback;
+      }
       try {
-        const resp = await fetch(`${engineUrl}/extract-group-links`, {
-          method: "POST",
-          headers: { "X-Engine-Secret": engineSecret, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            account_id: input.accountId,
-            group_url: input.groupUrl,
-            limit: input.limit,
-          }),
-          // @ts-ignore
-          signal: AbortSignal.timeout(120000),
-        });
-        const data = (await resp.json()) as any;
-        if (!resp.ok) throw new TRPCError({ code: "BAD_REQUEST", message: data.error || `引擎响应 ${resp.status}` });
+        // 规范化群组 URL
+        let normalizedGroup = input.groupUrl.trim();
+        if (normalizedGroup.startsWith("https://t.me/")) {
+          normalizedGroup = "@" + normalizedGroup.replace("https://t.me/", "").split("/")[0];
+        } else if (!normalizedGroup.startsWith("@")) {
+          normalizedGroup = "@" + normalizedGroup;
+        }
 
-        let links = (data.links ?? []) as Array<{ url: string; slug: string; memberCount?: number; title?: string; type?: string }>;
+        // 调用引擎 scrape-links 接口（使用 fetchLinksFromEngine，端口 = 7100 + accountId）
+        const rawLinks = await fetchLinksFromEngine(accountId, normalizedGroup, input.limit);
+        let links = rawLinks as Array<{ tgId?: string; username?: string; title?: string; memberCount?: number; description?: string; type?: string }>;
 
-        // AI 过滤
+        // AI 过滤：按最低成员数
         if (input.aiFilter && input.aiMinMembers > 0) {
           links = links.filter(l => (l.memberCount ?? 0) >= input.aiMinMembers);
         }
 
         // 为每个链接计算 AI 评分和标签
         const enrichedLinks = links.map(l => {
+          const username = l.username || "";
+          const url = username ? `https://t.me/${username.replace(/^@/, "")}` : "";
           const { score } = calcGroupAiScore({
             memberCount: l.memberCount,
-            username: l.slug,
+            username,
             title: l.title,
             type: l.type,
+            description: l.description,
           });
           const tags = calcGroupTags({
             memberCount: l.memberCount,
-            username: l.slug,
+            username,
             type: l.type,
             aiScore: score,
           });
-          return { ...l, aiScore: score, tags };
+          return { url, slug: username.replace(/^@/, ""), memberCount: l.memberCount, title: l.title, type: l.type, description: l.description, aiScore: score, tags };
         });
 
         return {
           success: true,
           total: enrichedLinks.length,
-          scanned: data.scanned ?? 0,
+          scanned: input.limit,
           links: enrichedLinks,
         };
       } catch (err: any) {
