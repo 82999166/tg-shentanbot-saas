@@ -1445,12 +1445,33 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
             </div>
           )}
           {detectMode === 'done' && (
-            <div className="flex items-center gap-3 py-1">
-              <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+            <div className="flex items-center gap-2 py-1">
+              <CheckCircle className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
               <span className="text-xs text-slate-600">检测完成：</span>
-              <span className="text-xs px-2 py-0.5 rounded bg-green-50 border border-green-200 text-green-700">正常 {normalCount}</span>
-              <span className="text-xs px-2 py-0.5 rounded bg-red-50 border border-red-200 text-red-600">异常 {abnormalCount}</span>
-              <button className="text-xs text-slate-400 hover:text-slate-600 ml-auto" onClick={() => { setDetectMode('idle'); setDetectResultMap(new Map()); }}>清除结果</button>
+              <button
+                onClick={() => setDetectFilter(detectFilter === 'normal' ? 'all' : 'normal')}
+                className={`text-xs px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                  detectFilter === 'normal'
+                    ? 'bg-green-600 text-white border-green-600'
+                    : 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                }`}
+              >
+                正常 {normalCount}
+              </button>
+              <button
+                onClick={() => setDetectFilter(detectFilter === 'abnormal' ? 'all' : 'abnormal')}
+                className={`text-xs px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                  detectFilter === 'abnormal'
+                    ? 'bg-red-500 text-white border-red-500'
+                    : 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100'
+                }`}
+              >
+                异常 {abnormalCount}
+              </button>
+              {detectFilter !== 'all' && (
+                <span className="text-xs text-blue-500 cursor-pointer hover:underline" onClick={() => setDetectFilter('all')}>显示全部</span>
+              )}
+              <button className="text-xs text-slate-400 hover:text-slate-600 ml-auto" onClick={() => { setDetectMode('idle'); setDetectResultMap(new Map()); setDetectFilter('all'); }}>清除结果</button>
             </div>
           )}
           {detectMode === 'error' && (
@@ -1486,25 +1507,7 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
               </button>
             ))}
           </div>
-          {detectMode === 'done' && (
-            <div className="flex gap-1 ml-2 border-l border-slate-200 pl-2">
-              {(['all', 'normal', 'abnormal'] as const).map(d => (
-                <button
-                  key={d}
-                  onClick={() => setDetectFilter(d)}
-                  className={`text-xs px-2 py-0.5 rounded border transition-colors ${
-                    detectFilter === d
-                      ? d === 'normal' ? 'bg-green-600 text-white border-green-600'
-                        : d === 'abnormal' ? 'bg-red-500 text-white border-red-500'
-                        : 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
-                  }`}
-                >
-                  {d === 'all' ? '全部' : d === 'normal' ? `✓ 正常 ${normalCount}` : `⚠ 异常 ${abnormalCount}`}
-                </button>
-              ))}
-            </div>
-          )}
+
         </div>
       </div>
 
