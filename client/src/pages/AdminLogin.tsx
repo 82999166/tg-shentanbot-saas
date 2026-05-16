@@ -45,9 +45,9 @@ export default function AdminLogin() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-14 h-14 bg-red-600 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-red-900/40">
-            <ShieldCheck className="w-7 h-7 text-white" />
+            <ShieldCheck className="w-7 h-7 text-slate-800" />
           </div>
-          <h1 className="text-2xl font-bold text-white">TG Monitor</h1>
+          <h1 className="text-2xl font-bold text-slate-800">TG Monitor</h1>
           <p className="text-red-400 text-sm mt-1 font-medium tracking-wide uppercase">管理后台 · Admin Panel</p>
         </div>
 
@@ -64,7 +64,7 @@ export default function AdminLogin() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="username"
-                className="bg-slate-100 border-slate-200 text-white placeholder:text-gray-500 focus:border-red-500 focus:ring-red-500/20 h-11"
+                className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-gray-500 focus:border-red-500 focus:ring-red-500/20 h-11"
               />
             </div>
 
@@ -79,7 +79,7 @@ export default function AdminLogin() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="current-password"
-                  className="bg-slate-100 border-slate-200 text-white placeholder:text-gray-500 focus:border-red-500 focus:ring-red-500/20 h-11 pr-10"
+                  className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-gray-500 focus:border-red-500 focus:ring-red-500/20 h-11 pr-10"
                 />
                 <button
                   type="button"

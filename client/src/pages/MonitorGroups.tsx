@@ -296,7 +296,7 @@ export default function MonitorGroups() {
           <Button
             size="sm"
             variant="ghost"
-            className="ml-auto h-6 px-2 text-xs text-slate-500 hover:text-white"
+            className="ml-auto h-6 px-2 text-xs text-slate-500 hover:text-slate-800"
             onClick={() => refetchHeartbeat()}
             disabled={fetchingHeartbeat}
           >
@@ -408,7 +408,7 @@ export default function MonitorGroups() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-slate-100/80 rounded-lg p-3 border border-slate-200">
                   <div className="text-xs text-slate-500 mb-1">引擎类型</div>
-                  <div className="font-medium text-white text-sm">🐍 {heartbeat.engineType ?? "Pyrogram"}</div>
+                  <div className="font-medium text-slate-800 text-sm">🐍 {heartbeat.engineType ?? "Pyrogram"}</div>
                 </div>
                 <div className="bg-slate-100/80 rounded-lg p-3 border border-slate-200">
                   <div className="text-xs text-slate-500 mb-1">活跃账号数</div>
@@ -438,7 +438,7 @@ export default function MonitorGroups() {
                   {groups.map((g) => (
                     <div key={g.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-100/70 border border-slate-200/50">
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-white truncate">{g.groupTitle ?? `群组 ${g.groupId}`}</div>
+                        <div className="text-sm font-medium text-slate-800 truncate">{g.groupTitle ?? `群组 ${g.groupId}`}</div>
                         <div className="text-xs text-slate-500 font-mono truncate">ID: {g.groupId}</div>
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">

@@ -34,13 +34,13 @@ export default function VerifyEmail() {
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md text-center">
         <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-8">
-          <Shield className="w-6 h-6 text-white" />
+          <Shield className="w-6 h-6 text-slate-800" />
         </div>
 
         {status === "loading" && (
           <>
             <Loader2 className="w-12 h-12 text-blue-400 animate-spin mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-white mb-2">正在验证邮箱...</h2>
+            <h2 className="text-xl font-bold text-slate-800 mb-2">正在验证邮箱...</h2>
             <p className="text-gray-400 text-sm">请稍候</p>
           </>
         )}
@@ -50,7 +50,7 @@ export default function VerifyEmail() {
             <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
               <CheckCircle className="w-8 h-8 text-green-400" />
             </div>
-            <h2 className="text-2xl font-bold text-white mb-3">邮箱验证成功！</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mb-3">邮箱验证成功！</h2>
             <p className="text-gray-400 mb-8">{message}</p>
             <Button
               className="bg-blue-600 hover:bg-blue-700 px-8"
@@ -66,7 +66,7 @@ export default function VerifyEmail() {
             <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
               <XCircle className="w-8 h-8 text-red-400" />
             </div>
-            <h2 className="text-2xl font-bold text-white mb-3">验证失败</h2>
+            <h2 className="text-2xl font-bold text-slate-800 mb-3">验证失败</h2>
             <p className="text-gray-400 mb-8">{message}</p>
             <div className="space-y-3">
               <Button

@@ -54,7 +54,7 @@ export default function ResetPassword() {
       <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
         <div className="text-center">
           <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-white mb-2">链接无效</h2>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">链接无效</h2>
           <p className="text-gray-400 mb-6">重置密码链接缺少必要参数</p>
           <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => navigate("/forgot-password")}>
             重新申请
@@ -69,7 +69,7 @@ export default function ResetPassword() {
       <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
         <div className="text-center">
           <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-white mb-2">链接已失效</h2>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">链接已失效</h2>
           <p className="text-gray-400 mb-6">重置密码链接已过期或已被使用，请重新申请</p>
           <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => navigate("/forgot-password")}>
             重新申请
@@ -86,7 +86,7 @@ export default function ResetPassword() {
           <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-8 h-8 text-green-400" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-3">密码重置成功！</h2>
+          <h2 className="text-2xl font-bold text-slate-800 mb-3">密码重置成功！</h2>
           <p className="text-gray-400 mb-8">您的密码已更新，请使用新密码登录</p>
           <Button className="bg-blue-600 hover:bg-blue-700 px-8" onClick={() => navigate("/login")}>
             立即登录
@@ -101,9 +101,9 @@ export default function ResetPassword() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-6 h-6 text-white" />
+            <Shield className="w-6 h-6 text-slate-800" />
           </div>
-          <h1 className="text-2xl font-bold text-white">重置密码</h1>
+          <h1 className="text-2xl font-bold text-slate-800">重置密码</h1>
           <p className="text-gray-400 text-sm mt-1">请输入您的新密码</p>
         </div>
 
@@ -128,7 +128,7 @@ export default function ResetPassword() {
                   placeholder="至少8位，含大写字母和数字"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500"
+                  className="pl-10 pr-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500"
                   required
                   minLength={8}
                 />
@@ -166,7 +166,7 @@ export default function ResetPassword() {
                   placeholder="再次输入新密码"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className={`pl-10 pr-10 bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500 ${
+                  className={`pl-10 pr-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500 ${
                     confirmPassword && confirmPassword !== password ? "border-red-500" : ""
                   }`}
                   required

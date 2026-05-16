@@ -2,11 +2,11 @@
 /* ─── 亮色主题 CSS 变量（全局覆盖）─── */
 :root {
   --background: 0 0% 98%;
-  --foreground: 222 47% 11%;
+  --foreground: 222.2 47.4% 11.2%;
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card-foreground: 222.2 47.4% 11.2%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
+  --popover-foreground: 222.2 47.4% 11.2%;
   --primary: 217 91% 60%;
   --primary-foreground: 0 0% 100%;
   --secondary: 210 40% 96%;

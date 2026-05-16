@@ -47,7 +47,7 @@ function EngineStatusCard({ heartbeat, platformStats }: { heartbeat: any; platfo
               ? <Wifi className="w-5 h-5 text-green-400" />
               : <WifiOff className="w-5 h-5 text-slate-500" />
             }
-            <span className="font-semibold text-white">引擎状态</span>
+            <span className="font-semibold text-slate-800">引擎状态</span>
           </div>
           <Badge className={isOnline ? "bg-green-700 text-green-100" : "bg-slate-600 text-slate-600"}>
             {isOnline ? "在线" : "心跳未知"}
@@ -56,7 +56,7 @@ function EngineStatusCard({ heartbeat, platformStats }: { heartbeat: any; platfo
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="bg-slate-100/80 rounded-lg p-3">
             <p className="text-slate-500 text-xs mb-1">引擎类型</p>
-            <p className="text-white font-mono font-bold">🐍 Pyrogram</p>
+            <p className="text-slate-800 font-mono font-bold">🐍 Pyrogram</p>
           </div>
           <div className="bg-slate-100/80 rounded-lg p-3">
             <p className="text-slate-500 text-xs mb-1">最后心跳</p>
@@ -161,7 +161,7 @@ function AccountHealthList({ accounts }: { accounts: any[] }) {
                   <div key={acc.id} className="bg-slate-200/60 rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-white text-sm font-medium truncate">
+                        <p className="text-slate-800 text-sm font-medium truncate">
                           {acc.tgFirstName ?? acc.phone ?? `账号 #${acc.id}`}
                         </p>
                         <p className="text-slate-500 text-xs font-mono flex items-center gap-2">
@@ -223,7 +223,7 @@ function EngineFeaturesCard() {
           <div key={i} className="flex items-start gap-2.5 bg-slate-200/40 rounded-lg p-2.5">
             <div className="mt-0.5 shrink-0">{f.icon}</div>
             <div>
-              <p className="text-white text-xs font-medium">{f.title}</p>
+              <p className="text-slate-800 text-xs font-medium">{f.title}</p>
               <p className="text-slate-500 text-xs mt-0.5">{f.desc}</p>
             </div>
           </div>
@@ -249,7 +249,7 @@ function TopKeywordsCard({ topKeywords }: { topKeywords: any[] }) {
           <div key={i} className="flex items-center justify-between bg-slate-200/40 rounded-lg px-3 py-2">
             <div className="flex items-center gap-2">
               <span className="text-slate-500 text-xs w-4">{i + 1}</span>
-              <span className="text-white text-sm font-medium">{kw.matchedKeyword ?? `关键词 #${kw.keywordId}`}</span>
+              <span className="text-slate-800 text-sm font-medium">{kw.matchedKeyword ?? `关键词 #${kw.keywordId}`}</span>
             </div>
             <Badge className="bg-yellow-900/50 text-yellow-300 border border-yellow-800 text-xs">
               {kw.count} 次
@@ -297,7 +297,7 @@ export default function TdlibEngineTab() {
       {/* 顶部操作栏 */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-white font-semibold text-base flex items-center gap-2">
+          <h2 className="text-slate-800 font-semibold text-base flex items-center gap-2">
             <Activity className="w-5 h-5 text-green-400" />
             监控引擎状态
           </h2>

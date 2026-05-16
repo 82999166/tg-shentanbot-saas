@@ -122,7 +122,7 @@ export default function SystemMaintenance() {
       {/* ─── 进程重启 ─── */}
       <Card className="bg-white border-slate-200">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
+          <CardTitle className="text-slate-800 flex items-center gap-2">
             <RefreshCw className="w-5 h-5 text-orange-400" /> 进程重启
           </CardTitle>
           <CardDescription className="text-slate-500">
@@ -159,7 +159,7 @@ export default function SystemMaintenance() {
       {/* ─── 监控引擎同步 ─── */}
       <Card className="bg-white border-slate-200">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
+          <CardTitle className="text-slate-800 flex items-center gap-2">
             <RefreshCw className="w-5 h-5 text-cyan-400" /> 监控引擎同步
           </CardTitle>
           <CardDescription className="text-slate-500">
@@ -204,7 +204,7 @@ export default function SystemMaintenance() {
       {/* ─── 数据库记录统计 ─── */}
       <Card className="bg-white border-slate-200">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
+          <CardTitle className="text-slate-800 flex items-center gap-2">
             <Database className="w-5 h-5 text-purple-400" /> 数据库记录统计
           </CardTitle>
           <CardDescription className="text-slate-500">
@@ -228,7 +228,7 @@ export default function SystemMaintenance() {
                   <p className={`text-2xl font-bold ${item.color}`}>
                     {formatCount((stats as any)?.[item.key] ?? 0)}
                   </p>
-                  <p className="text-sm text-white mt-1">{item.label}</p>
+                  <p className="text-sm text-slate-800 mt-1">{item.label}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{item.desc}</p>
                 </div>
               ))}
@@ -240,7 +240,7 @@ export default function SystemMaintenance() {
       {/* ─── 数据清理 ─── */}
       <Card className="bg-white border-slate-200">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
+          <CardTitle className="text-slate-800 flex items-center gap-2">
             <Trash2 className="w-5 h-5 text-red-400" /> 历史数据清理
           </CardTitle>
           <CardDescription className="text-slate-500">
@@ -264,7 +264,7 @@ export default function SystemMaintenance() {
             ].map((item) => (
               <div key={item.key} className={`bg-slate-100 rounded-lg p-4 border ${item.color}`}>
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-white">{item.label}</p>
+                  <p className="text-sm font-medium text-slate-800">{item.label}</p>
                   <Badge variant="outline" className="border-slate-300 text-slate-500 text-xs">
                     {(cleanupConfig as any)[item.key]} 天前
                   </Badge>
@@ -286,7 +286,7 @@ export default function SystemMaintenance() {
                     max={365}
                     value={(cleanupConfig as any)[item.key]}
                     onChange={(e) => setCleanupConfig(prev => ({ ...prev, [item.key]: Math.max(0, Math.min(365, Number(e.target.value))) }))}
-                    className="w-16 bg-slate-200 border border-slate-300 rounded px-2 py-1 text-sm text-white text-center"
+                    className="w-16 bg-slate-200 border border-slate-300 rounded px-2 py-1 text-sm text-slate-800 text-center"
                   />
                 </div>
               </div>
@@ -329,7 +329,7 @@ export default function SystemMaintenance() {
                   };
                   return (
                     <div key={key} className="text-center">
-                      <p className="text-lg font-bold text-white">{count.toLocaleString()}</p>
+                      <p className="text-lg font-bold text-slate-800">{count.toLocaleString()}</p>
                       <p className="text-xs text-slate-500">{labels[key] ?? key}</p>
                     </div>
                   );

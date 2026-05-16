@@ -94,7 +94,7 @@ export default function PublicGroupExport() {
         {/* 页头 */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
               <Link2 className="w-6 h-6 text-cyan-400" /> 公共群组链接导出
             </h1>
             <p className="text-sm text-slate-500 mt-1">导出系统公共群组池中的所有群组链接，支持复制和下载</p>
@@ -122,7 +122,7 @@ export default function PublicGroupExport() {
               <CardContent className="p-4 flex items-center gap-3">
                 <item.icon className={`w-8 h-8 ${item.color}`} />
                 <div>
-                  <p className="text-2xl font-bold text-white">{item.value}</p>
+                  <p className="text-2xl font-bold text-slate-800">{item.value}</p>
                   <p className="text-xs text-slate-500">{item.label}</p>
                 </div>
               </CardContent>
@@ -151,7 +151,7 @@ export default function PublicGroupExport() {
                     placeholder="搜索群组名称或链接..."
                     value={searchText}
                     onChange={(e) => setSearchText(e.target.value)}
-                    className="pl-9 bg-slate-200 border-slate-300 text-white placeholder:text-slate-500"
+                    className="pl-9 bg-slate-200 border-slate-300 text-slate-800 placeholder:text-slate-500"
                   />
                 </div>
               </div>
@@ -191,7 +191,7 @@ export default function PublicGroupExport() {
         {/* 群组列表 */}
         <Card className="bg-slate-100/80 border-slate-200">
           <CardHeader className="pb-3">
-            <CardTitle className="text-white text-base flex items-center gap-2">
+            <CardTitle className="text-slate-800 text-base flex items-center gap-2">
               <Globe className="w-4 h-4 text-cyan-400" /> 群组列表
               <Badge variant="outline" className="text-slate-500 border-slate-300 ml-2">{groups.length} 个</Badge>
             </CardTitle>
@@ -223,7 +223,7 @@ export default function PublicGroupExport() {
                       <TableRow key={g.id} className="border-slate-200 hover:bg-slate-200/30">
                         <TableCell className="text-slate-500 text-sm">{idx + 1}</TableCell>
                         <TableCell>
-                          <div className="font-medium text-white text-sm">{g.groupTitle}</div>
+                          <div className="font-medium text-slate-800 text-sm">{g.groupTitle}</div>
                           {g.note && <div className="text-xs text-slate-500 mt-0.5">{g.note}</div>}
                         </TableCell>
                         <TableCell>

@@ -92,7 +92,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
         {/* Logo 区域 */}
         <div className="flex items-center gap-2.5 px-3 py-3.5 border-b border-slate-100 shrink-0">
           <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shrink-0 shadow-sm">
-            <ShieldCheck className="w-4 h-4 text-white" />
+            <ShieldCheck className="w-4 h-4 text-slate-800" />
           </div>
           {!collapsed && (
             <div className="min-w-0 flex-1">
@@ -183,7 +183,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2 w-full rounded-lg px-2 py-2 hover:bg-slate-50 transition-colors text-left">
                 <div className="w-7 h-7 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center shrink-0 shadow-sm">
-                  <span className="text-xs font-bold text-white">{user?.name?.charAt(0)?.toUpperCase() ?? "A"}</span>
+                  <span className="text-xs font-bold text-slate-800">{user?.name?.charAt(0)?.toUpperCase() ?? "A"}</span>
                 </div>
                 {!collapsed && (
                   <div className="flex-1 min-w-0">

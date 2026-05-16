@@ -55,7 +55,7 @@ function StatCard({
             {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
           </div>
           <div className={`w-10 h-10 rounded-lg ${color} flex items-center justify-center`}>
-            <Icon className="w-5 h-5 text-white" />
+            <Icon className="w-5 h-5 text-slate-800" />
           </div>
         </div>
       </CardContent>

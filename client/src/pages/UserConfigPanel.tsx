@@ -68,7 +68,7 @@ function UserSelector({ onSelect }: { onSelect: (userId: number, userName: strin
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { setSearch(searchInput); setPage(1); } }}
-          className="bg-slate-800 border-slate-600 text-white text-sm h-9"
+          className="bg-slate-800 border-slate-600 text-slate-800 text-sm h-9"
         />
         <Button size="sm" className="h-9 bg-blue-600 hover:bg-blue-700"
           onClick={() => { setSearch(searchInput); setPage(1); }}>
@@ -88,7 +88,7 @@ function UserSelector({ onSelect }: { onSelect: (userId: number, userName: strin
               onClick={() => onSelect(u.id, u.name ?? u.email ?? `用户 #${u.id}`)}
             >
               <div className="min-w-0">
-                <p className="text-white text-sm font-medium truncate">{u.name ?? u.email}</p>
+                <p className="text-slate-800 text-sm font-medium truncate">{u.name ?? u.email}</p>
                 <p className="text-slate-400 text-xs truncate">{u.email}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0 ml-2">
@@ -152,7 +152,7 @@ function PlanConfigPanel({ userId, userData, onRefresh }: { userId: number; user
             <User className="w-5 h-5 text-blue-400" />
           </div>
           <div>
-            <p className="text-white font-semibold">{user?.name ?? user?.email ?? `用户 #${userId}`}</p>
+            <p className="text-slate-800 font-semibold">{user?.name ?? user?.email ?? `用户 #${userId}`}</p>
             <p className="text-slate-400 text-xs">{user?.email}</p>
           </div>
           <Badge className={`ml-auto border ${PLAN_COLORS[user?.planId ?? "free"]}`}>
@@ -193,7 +193,7 @@ function PlanConfigPanel({ userId, userData, onRefresh }: { userId: number; user
             <div>
               <Label className="text-slate-400 text-xs mb-1.5 block">套餐类型</Label>
               <Select value={editPlan} onValueChange={setEditPlan}>
-                <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
+                <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-800 h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-600">
@@ -209,7 +209,7 @@ function PlanConfigPanel({ userId, userData, onRefresh }: { userId: number; user
                 type="date"
                 value={editExpiry}
                 onChange={(e) => setEditExpiry(e.target.value)}
-                className="bg-slate-700 border-slate-600 text-white h-9"
+                className="bg-slate-700 border-slate-600 text-slate-800 h-9"
               />
             </div>
             <div className="flex gap-2">
@@ -227,11 +227,11 @@ function PlanConfigPanel({ userId, userData, onRefresh }: { userId: number; user
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div className="bg-slate-700/50 rounded-lg p-2.5">
               <p className="text-slate-400 text-xs mb-0.5">当前套餐</p>
-              <p className="text-white font-medium">{PLAN_LABELS[user?.planId ?? "free"]}</p>
+              <p className="text-slate-800 font-medium">{PLAN_LABELS[user?.planId ?? "free"]}</p>
             </div>
             <div className="bg-slate-700/50 rounded-lg p-2.5">
               <p className="text-slate-400 text-xs mb-0.5">到期时间</p>
-              <p className="text-white font-medium">
+              <p className="text-slate-800 font-medium">
                 {user?.planExpiresAt
                   ? new Date(user.planExpiresAt).toLocaleDateString()
                   : "永久"}
@@ -291,7 +291,7 @@ function KeywordsConfigPanel({ userId, userData, onRefresh }: { userId: number; 
                 addMut.mutate({ userId, keyword: newKw.trim(), matchType: newMatchType });
               }
             }}
-            className="bg-slate-700 border-slate-600 text-white text-sm h-9 flex-1"
+            className="bg-slate-700 border-slate-600 text-slate-800 text-sm h-9 flex-1"
           />
           <Select value={newMatchType} onValueChange={(v) => setNewMatchType(v as any)}>
             <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-300 text-xs h-9 w-20">
@@ -322,7 +322,7 @@ function KeywordsConfigPanel({ userId, userData, onRefresh }: { userId: number; 
                     onCheckedChange={(v) => toggleMut.mutate({ keywordId: kw.id, userId, isActive: v })}
                     className="scale-75"
                   />
-                  <span className="text-white font-medium truncate">{kw.keyword}</span>
+                  <span className="text-slate-800 font-medium truncate">{kw.keyword}</span>
                   <Badge className="border border-slate-600 text-slate-400 text-xs shrink-0">
                     {MATCH_TYPE_LABELS[kw.matchType ?? "contains"]}
                   </Badge>
@@ -362,7 +362,7 @@ function GroupsConfigPanel({ userId, userData }: { userId: number; userData: any
             groups.map((g: any) => (
               <div key={g.id} className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-xs ${g.isActive ? "bg-slate-700" : "bg-slate-800/60 opacity-60"}`}>
                 <div className="min-w-0 flex-1">
-                  <p className="text-white font-medium truncate">{g.groupTitle ?? g.groupId}</p>
+                  <p className="text-slate-800 font-medium truncate">{g.groupTitle ?? g.groupId}</p>
                   <p className="text-slate-400 font-mono text-xs">{g.groupId}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-2">
@@ -411,7 +411,7 @@ function AccountsConfigPanel({ userId, userData }: { userId: number; userData: a
                 <div key={a.id} className="bg-slate-700/50 rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="min-w-0 flex-1">
-                      <p className="text-white text-sm font-medium truncate">
+                      <p className="text-slate-800 text-sm font-medium truncate">
                         {a.tgFirstName ?? a.phone ?? `账号 #${a.id}`}
                       </p>
                       <p className="text-slate-400 text-xs font-mono">
@@ -433,11 +433,11 @@ function AccountsConfigPanel({ userId, userData }: { userId: number; userData: a
                   <div className="grid grid-cols-3 gap-1.5 text-xs">
                     <div className="bg-slate-800/60 rounded p-1.5 text-center">
                       <p className="text-slate-400">今日发信</p>
-                      <p className="text-white font-medium">{a.dailyDmSent ?? 0}</p>
+                      <p className="text-slate-800 font-medium">{a.dailyDmSent ?? 0}</p>
                     </div>
                     <div className="bg-slate-800/60 rounded p-1.5 text-center">
                       <p className="text-slate-400">引擎类型</p>
-                      <p className="text-white font-medium font-mono text-xs">
+                      <p className="text-slate-800 font-medium font-mono text-xs">
                         {a.engineType ?? "tdlib"}
                       </p>
                     </div>
@@ -480,7 +480,7 @@ export default function UserConfigPanel() {
       {/* 标题栏 */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-white font-semibold text-base flex items-center gap-2">
+          <h2 className="text-slate-800 font-semibold text-base flex items-center gap-2">
             <Settings className="w-5 h-5 text-blue-400" />
             用户参数全量配置
           </h2>
@@ -521,7 +521,7 @@ export default function UserConfigPanel() {
             <span className="text-blue-300 text-sm font-medium">
               正在配置：{selectedUserName}
             </span>
-            <Button size="sm" variant="ghost" className="ml-auto h-6 text-slate-400 hover:text-white"
+            <Button size="sm" variant="ghost" className="ml-auto h-6 text-slate-400 hover:text-slate-800"
               onClick={() => refetch()} disabled={isRefetching}>
               <RefreshCw className={`w-3 h-3 ${isRefetching ? 'animate-spin' : ''}`} />
             </Button>

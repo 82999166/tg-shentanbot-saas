@@ -26,7 +26,7 @@ export default function ForgotPassword() {
           <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-8 h-8 text-blue-400" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-3">邮件已发送</h2>
+          <h2 className="text-2xl font-bold text-slate-800 mb-3">邮件已发送</h2>
           <p className="text-gray-400 mb-2">重置密码链接已发送至</p>
           <p className="text-blue-400 font-medium mb-6">{email}</p>
           <p className="text-gray-500 text-sm mb-8">
@@ -57,9 +57,9 @@ export default function ForgotPassword() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-6 h-6 text-white" />
+            <Shield className="w-6 h-6 text-slate-800" />
           </div>
-          <h1 className="text-2xl font-bold text-white">找回密码</h1>
+          <h1 className="text-2xl font-bold text-slate-800">找回密码</h1>
           <p className="text-gray-400 text-sm mt-1">输入注册邮箱，我们将发送重置链接</p>
         </div>
 
@@ -80,7 +80,7 @@ export default function ForgotPassword() {
                   placeholder="your@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500"
+                  className="pl-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500"
                   required
                 />
               </div>

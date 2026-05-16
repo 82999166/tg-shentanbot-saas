@@ -72,7 +72,7 @@ export default function AdminChangePassword() {
               <KeyRound className="w-5 h-5 text-red-400" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">修改管理员密码</h1>
+              <h1 className="text-xl font-bold text-slate-800">修改管理员密码</h1>
               <p className="text-slate-500 text-sm">定期更换密码有助于保护账号安全</p>
             </div>
           </div>
@@ -93,7 +93,7 @@ export default function AdminChangePassword() {
                   value={oldPassword}
                   onChange={(e) => setOldPassword(e.target.value)}
                   placeholder="请输入当前密码"
-                  className="bg-slate-100 border-slate-200 text-white placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20"
+                  className="bg-slate-100 border-slate-200 text-slate-800 placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20"
                   required
                 />
                 <button
@@ -121,7 +121,7 @@ export default function AdminChangePassword() {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="至少8位，含大写字母和数字"
-                  className="bg-slate-100 border-slate-200 text-white placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20"
+                  className="bg-slate-100 border-slate-200 text-slate-800 placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20"
                   required
                 />
                 <button
@@ -166,7 +166,7 @@ export default function AdminChangePassword() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="再次输入新密码"
-                  className={`bg-slate-100 border-slate-200 text-white placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20 ${
+                  className={`bg-slate-100 border-slate-200 text-slate-800 placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20 ${
                     confirmPassword && confirmPassword !== newPassword ? "border-red-500" : ""
                   }`}
                   required

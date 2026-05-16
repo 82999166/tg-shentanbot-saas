@@ -76,7 +76,7 @@ function GroupKeywordsPanel({ groupId, groupTitle }: { groupId: number; groupTit
           value={newKw}
           onChange={(e) => setNewKw(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && newKw.trim()) addKwMutation.mutate({ publicGroupId: groupId, pattern: newKw.trim(), matchType }); }}
-          className="bg-white border-slate-200 text-white text-xs h-7 flex-1"
+          className="bg-white border-slate-200 text-slate-800 text-xs h-7 flex-1"
         />
         <Select value={matchType} onValueChange={(v) => setMatchType(v as any)}>
           <SelectTrigger className="bg-white border-slate-200 text-slate-600 text-xs h-7 w-24">
@@ -207,7 +207,7 @@ function PublicGroupsTab() {
                   placeholder="例如：-1001234567890 或 @groupname"
                   value={newGroupId}
                   onChange={(e) => setNewGroupId(e.target.value)}
-                  className="bg-white border-slate-300 text-white"
+                  className="bg-white border-slate-300 text-slate-800"
                 />
               </div>
               <div>
@@ -216,7 +216,7 @@ function PublicGroupsTab() {
                   placeholder="为这个群组起一个备注名称"
                   value={newGroupTitle}
                   onChange={(e) => setNewGroupTitle(e.target.value)}
-                  className="bg-white border-slate-300 text-white"
+                  className="bg-white border-slate-300 text-slate-800"
                 />
               </div>
               <div>
@@ -225,7 +225,7 @@ function PublicGroupsTab() {
                   placeholder="例如：某某行业交流群"
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
-                  className="bg-white border-slate-300 text-white"
+                  className="bg-white border-slate-300 text-slate-800"
                 />
               </div>
               <div className="flex gap-2">
@@ -423,7 +423,7 @@ function PaymentSettingsTab(){
                   placeholder={field.placeholder}
                   defaultValue={getValue(field.key)}
                   onChange={(e) => handleChange(field.key, e.target.value)}
-                  className="bg-white border-slate-300 text-white"
+                  className="bg-white border-slate-300 text-slate-800"
                 />
               </div>
             ))}
@@ -546,7 +546,7 @@ function TgApiCredentialsTab() {
               placeholder="例如：12345678"
               value={apiId}
               onChange={(e) => setApiId(e.target.value)}
-              className="bg-white border-slate-300 text-white"
+              className="bg-white border-slate-300 text-slate-800"
             />
           </div>
 
@@ -558,7 +558,7 @@ function TgApiCredentialsTab() {
                 placeholder="例如：0123456789abcdef0123456789abcdef"
                 value={apiHash}
                 onChange={(e) => setApiHash(e.target.value)}
-                className="bg-white border-slate-300 text-white pr-10"
+                className="bg-white border-slate-300 text-slate-800 pr-10"
               />
               <button
                 type="button"
@@ -649,7 +649,7 @@ function RedeemCodesTab() {
             <div>
               <Label className="text-slate-500 text-xs mb-1 block">套餐类型</Label>
               <Select value={genPlan} onValueChange={(v) => setGenPlan(v as any)}>
-                <SelectTrigger className="bg-white border-slate-300 text-white">
+                <SelectTrigger className="bg-white border-slate-300 text-slate-800">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-100 border-slate-300">
@@ -667,7 +667,7 @@ function RedeemCodesTab() {
                 max={12}
                 value={genMonths}
                 onChange={(e) => setGenMonths(Number(e.target.value))}
-                className="bg-white border-slate-300 text-white"
+                className="bg-white border-slate-300 text-slate-800"
               />
             </div>
             <div>
@@ -678,7 +678,7 @@ function RedeemCodesTab() {
                 max={500}
                 value={genCount}
                 onChange={(e) => setGenCount(Number(e.target.value))}
-                className="bg-white border-slate-300 text-white"
+                className="bg-white border-slate-300 text-slate-800"
               />
             </div>
             <div>
@@ -688,7 +688,7 @@ function RedeemCodesTab() {
                 min={1}
                 value={genExpireDays}
                 onChange={(e) => setGenExpireDays(Number(e.target.value))}
-                className="bg-white border-slate-300 text-white"
+                className="bg-white border-slate-300 text-slate-800"
               />
             </div>
           </div>
@@ -865,7 +865,7 @@ function OrdersTab() {
                   <div className="flex items-center gap-2">
                     {statusIcon(order.status)}
                     <div>
-                      <p className="text-white text-sm font-medium">
+                      <p className="text-slate-800 text-sm font-medium">
                         订单 #{order.id} · {order.planId} × {order.durationMonths}月
                       </p>
                       <p className="text-slate-500 text-xs">
@@ -874,7 +874,7 @@ function OrdersTab() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-white font-mono text-sm">{order.usdtAmount} USDT</p>
+                    <p className="text-slate-800 font-mono text-sm">{order.usdtAmount} USDT</p>
                     <Badge
                       className={
                         order.status === "completed"
@@ -1012,7 +1012,7 @@ function BotConfigTab() {
                 placeholder="例如：7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                 value={botToken}
                 onChange={(e) => setBotToken(e.target.value)}
-                className="bg-white border-slate-300 text-white pr-10"
+                className="bg-white border-slate-300 text-slate-800 pr-10"
               />
               <button
                 type="button"
@@ -1031,7 +1031,7 @@ function BotConfigTab() {
               placeholder="例如：-1001234567890（频道/群组的数字 ID）"
               value={channelId}
               onChange={(e) => setChannelId(e.target.value)}
-              className="bg-white border-slate-300 text-white"
+              className="bg-white border-slate-300 text-slate-800"
             />
             <p className="text-slate-500 text-xs mt-1">将关键词命中通知推送到此频道或群组。留空则不推送到频道。</p>
           </div>
@@ -1069,7 +1069,7 @@ function BotConfigTab() {
                 placeholder={alertCfgMap["health_alert_threshold"] || "40"}
                 value={alertThreshold}
                 onChange={(e) => setAlertThreshold(e.target.value)}
-                className="bg-white border-slate-300 text-white"
+                className="bg-white border-slate-300 text-slate-800"
               />
               <p className="text-slate-500 text-xs mt-1">当前设置：{alertCfgMap["health_alert_threshold"] || "40"} 分</p>
             </div>
@@ -1082,7 +1082,7 @@ function BotConfigTab() {
                 placeholder={alertCfgMap["health_alert_cooldown_hours"] || "1"}
                 value={alertCooldown}
                 onChange={(e) => setAlertCooldown(e.target.value)}
-                className="bg-white border-slate-300 text-white"
+                className="bg-white border-slate-300 text-slate-800"
               />
               <p className="text-slate-500 text-xs mt-1">当前设置：{alertCfgMap["health_alert_cooldown_hours"] || "1"} 小时</p>
             </div>
@@ -1166,7 +1166,7 @@ function BuyConfigTab() {
               placeholder="TFaCj2bUdyB8xYmBZCaF8yTUVDcoUMLQ2M"
               value={getValue("buy_usdt_address")}
               onChange={(e) => handleChange("buy_usdt_address", e.target.value)}
-              className="bg-white border-slate-300 text-white font-mono text-xs"
+              className="bg-white border-slate-300 text-slate-800 font-mono text-xs"
             />
             <p className="text-slate-500 text-xs mt-1">用户点击 /buy 后，Bot 会显示此地址供用户付款</p>
           </div>
@@ -1187,7 +1187,7 @@ function BuyConfigTab() {
               placeholder="https://example.com/qrcode.png"
               value={getValue("buy_qr_image_url")}
               onChange={(e) => handleChange("buy_qr_image_url", e.target.value)}
-              className="bg-white border-slate-300 text-white text-xs"
+              className="bg-white border-slate-300 text-slate-800 text-xs"
             />
             <p className="text-slate-500 text-xs mt-1">
               建议尺寸：400×400px，格式：PNG/JPG。填写图片直链 URL，留空则不发送图片。
@@ -1223,7 +1223,7 @@ function BuyConfigTab() {
               placeholder={"1月 = 30U\n3月 = 80U\n6月 = 140U\n1年 = 280U"}
               value={getValue("buy_plans_text")}
               onChange={(e) => handleChange("buy_plans_text", e.target.value)}
-              className="w-full bg-white border border-slate-300 text-white rounded-md p-3 text-sm resize-y font-mono"
+              className="w-full bg-white border border-slate-300 text-slate-800 rounded-md p-3 text-sm resize-y font-mono"
             />
             <p className="text-slate-500 text-xs mt-1">每行一条价格说明，Bot 会逐行展示</p>
           </div>
@@ -1244,7 +1244,7 @@ function BuyConfigTab() {
               placeholder="bailidf2"
               value={getValue("buy_support_username")}
               onChange={(e) => handleChange("buy_support_username", e.target.value)}
-              className="bg-white border-slate-300 text-white"
+              className="bg-white border-slate-300 text-slate-800"
             />
           </div>
           <div>
@@ -1253,7 +1253,7 @@ function BuyConfigTab() {
               placeholder="支付后请将支付信息以及ID发送给客服"
               value={getValue("buy_payment_note")}
               onChange={(e) => handleChange("buy_payment_note", e.target.value)}
-              className="bg-white border-slate-300 text-white"
+              className="bg-white border-slate-300 text-slate-800"
             />
           </div>
         </CardContent>
@@ -1345,7 +1345,7 @@ function SysConfigTab() {
               placeholder="例如：TG Monitor Pro"
               value={getValue("site_name")}
               onChange={(e) => handleChange("site_name", e.target.value)}
-              className="bg-white border-slate-300 text-white"
+              className="bg-white border-slate-300 text-slate-800"
             />
           </div>
 
@@ -1355,7 +1355,7 @@ function SysConfigTab() {
               placeholder="例如：support_admin"
               value={getValue("support_username")}
               onChange={(e) => handleChange("support_username", e.target.value)}
-              className="bg-white border-slate-300 text-white"
+              className="bg-white border-slate-300 text-slate-800"
             />
             <p className="text-slate-500 text-xs mt-1">用户点击「技术支持」按钮时，将跳转到此 TG 账号</p>
           </div>
@@ -1366,7 +1366,7 @@ function SysConfigTab() {
               placeholder="例如：https://t.me/yourchannel"
               value={getValue("official_channel")}
               onChange={(e) => handleChange("official_channel", e.target.value)}
-              className="bg-white border-slate-300 text-white"
+              className="bg-white border-slate-300 text-slate-800"
             />
             <p className="text-slate-500 text-xs mt-1">用户点击「官方频道」按钮时，将跳转到此链接</p>
           </div>
@@ -1384,7 +1384,7 @@ function SysConfigTab() {
             placeholder={`例如：\n📖 **使用教程**\n\n1. 添加监控账号\n2. 设置关键词\n3. 添加监控群组\n4. 开启自动私信`}
             value={getValue("tutorial_text")}
             onChange={(e) => handleChange("tutorial_text", e.target.value)}
-            className="w-full bg-white border border-slate-300 text-white rounded-md p-3 text-sm resize-y font-mono"
+            className="w-full bg-white border border-slate-300 text-slate-800 rounded-md p-3 text-sm resize-y font-mono"
           />
         </CardContent>
       </Card>
@@ -1420,7 +1420,7 @@ function SysConfigTab() {
                 type="number" min={1} max={1000} placeholder="10"
                 value={getValue("anti_spam_daily_limit") || "10"}
                 onChange={(e) => handleChange("anti_spam_daily_limit", e.target.value)}
-                className="bg-white border-slate-300 text-white"
+                className="bg-white border-slate-300 text-slate-800"
               />
               <p className="text-slate-500 text-xs mt-1">同一用户当天命中超过此次数后跳过</p>
             </div>
@@ -1430,7 +1430,7 @@ function SysConfigTab() {
                 type="number" min={10} max={3600} placeholder="60"
                 value={getValue("anti_spam_rate_window") || "60"}
                 onChange={(e) => handleChange("anti_spam_rate_window", e.target.value)}
-                className="bg-white border-slate-300 text-white"
+                className="bg-white border-slate-300 text-slate-800"
               />
               <p className="text-slate-500 text-xs mt-1">短时频率检测的时间窗口</p>
             </div>
@@ -1440,7 +1440,7 @@ function SysConfigTab() {
                 type="number" min={1} max={100} placeholder="3"
                 value={getValue("anti_spam_rate_limit") || "3"}
                 onChange={(e) => handleChange("anti_spam_rate_limit", e.target.value)}
-                className="bg-white border-slate-300 text-white"
+                className="bg-white border-slate-300 text-slate-800"
               />
               <p className="text-slate-500 text-xs mt-1">窗口内超过此次数则判定为刷词</p>
             </div>
@@ -1450,7 +1450,7 @@ function SysConfigTab() {
                 type="number" min={0} max={100} placeholder="0"
                 value={getValue("anti_spam_min_msg_len") || "0"}
                 onChange={(e) => handleChange("anti_spam_min_msg_len", e.target.value)}
-                className="bg-white border-slate-300 text-white"
+                className="bg-white border-slate-300 text-slate-800"
               />
               <p className="text-slate-500 text-xs mt-1">0 = 不限制；设为 2 可过滤纯单字消息</p>
             </div>
@@ -1460,7 +1460,7 @@ function SysConfigTab() {
                 type="number" min={0} max={10000} placeholder="0"
                 value={getValue("anti_spam_max_msg_len") || "0"}
                 onChange={(e) => handleChange("anti_spam_max_msg_len", e.target.value)}
-                className="bg-white border-slate-300 text-white"
+                className="bg-white border-slate-300 text-slate-800"
               />
               <p className="text-slate-500 text-xs mt-1">0 = 不限制；超过此长度的消息将被过滤</p>
             </div>
@@ -1483,7 +1483,7 @@ function SysConfigTab() {
               placeholder="数字 ID（如 123456789）或 @用户名（如 @yourname）"
               value={getValue("alert_tg_id")}
               onChange={(e) => handleChange("alert_tg_id", e.target.value)}
-              className="bg-white border-slate-300 text-white"
+              className="bg-white border-slate-300 text-slate-800"
             />
             <p className="text-slate-500 text-xs mt-1">支持填写数字 ID 或 @用户名两种格式。用户名需先向该 Bot 发送一条消息才能收到通知。留空则不发送通知。</p>
           </div>
@@ -1550,7 +1550,7 @@ function SmtpSettingsTab() {
                 placeholder={field.placeholder}
                 defaultValue={getValue(field.key)}
                 onChange={(e) => handleChange(field.key, e.target.value)}
-                className="bg-white border-slate-300 text-white"
+                className="bg-white border-slate-300 text-slate-800"
               />
             </div>
           ))}

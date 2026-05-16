@@ -196,7 +196,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
               </Avatar>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-foreground truncate">{user?.name ?? "用户"}</div>
-                <Badge className={cn("text-xs px-1.5 py-0 h-4 text-white", planColors[planData?.planId ?? "free"])}>
+                <Badge className={cn("text-xs px-1.5 py-0 h-4 text-slate-800", planColors[planData?.planId ?? "free"])}>
                   {planNames[planData?.planId ?? "free"]}
                 </Badge>
               </div>

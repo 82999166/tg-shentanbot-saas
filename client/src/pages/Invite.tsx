@@ -60,7 +60,7 @@ export default function Invite() {
       {/* 页面标题 */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-500 to-orange-500 flex items-center justify-center">
-          <Gift className="w-5 h-5 text-white" />
+          <Gift className="w-5 h-5 text-slate-800" />
         </div>
         <div>
           <h1 className="text-2xl font-bold text-foreground">邀请裂变</h1>
@@ -247,7 +247,7 @@ export default function Invite() {
                       index === 0
                         ? "bg-yellow-500 text-white"
                         : index === 1
-                        ? "bg-gray-400 text-white"
+                        ? "bg-gray-400 text-slate-800"
                         : index === 2
                         ? "bg-orange-600 text-white"
                         : "bg-muted text-muted-foreground"

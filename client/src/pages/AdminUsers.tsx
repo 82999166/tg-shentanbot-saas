@@ -71,7 +71,7 @@ function UserDetailDialog({ userId, onClose, planColors }: {
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="bg-white border-slate-200 text-white max-w-2xl h-[85vh] overflow-y-auto">
+      <DialogContent className="bg-white border-slate-200 text-slate-800 max-w-2xl h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Eye className="w-5 h-5 text-blue-400" /> 用户详情
@@ -90,27 +90,27 @@ function UserDetailDialog({ userId, onClose, planColors }: {
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex justify-between col-span-2 sm:col-span-1">
                   <span className="text-slate-500">用户名</span>
-                  <span className="text-white font-medium">{data.user.name ?? "—"}</span>
+                  <span className="text-slate-800 font-medium">{data.user.name ?? "—"}</span>
                 </div>
                 <div className="flex justify-between col-span-2 sm:col-span-1">
                   <span className="text-slate-500">邮箱</span>
-                  <span className="text-white">{data.user.email ?? "—"}</span>
+                  <span className="text-slate-800">{data.user.email ?? "—"}</span>
                 </div>
                 <div className="flex justify-between col-span-2 sm:col-span-1">
                   <span className="text-slate-500">TG ID</span>
-                  <span className="text-white font-mono text-xs">{data.user.tgUserId ?? "未绑定"}</span>
+                  <span className="text-slate-800 font-mono text-xs">{data.user.tgUserId ?? "未绑定"}</span>
                 </div>
                 <div className="flex justify-between col-span-2 sm:col-span-1">
                   <span className="text-slate-500">角色</span>
-                  <span className="text-white capitalize">{data.user.role}</span>
+                  <span className="text-slate-800 capitalize">{data.user.role}</span>
                 </div>
                 <div className="flex justify-between col-span-2 sm:col-span-1">
                   <span className="text-slate-500">注册时间</span>
-                  <span className="text-white">{new Date(data.user.createdAt).toLocaleString()}</span>
+                  <span className="text-slate-800">{new Date(data.user.createdAt).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between col-span-2 sm:col-span-1">
                   <span className="text-slate-500">最后登录</span>
-                  <span className="text-white">{new Date(data.user.lastSignedIn).toLocaleString()}</span>
+                  <span className="text-slate-800">{new Date(data.user.lastSignedIn).toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -154,7 +154,7 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">到期日期</span>
-                    <span className="text-white flex items-center gap-1">
+                    <span className="text-slate-800 flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-slate-500" />
                       {data.user.planExpiresAt ? new Date(data.user.planExpiresAt).toLocaleDateString() : "永久 / 未设置"}
                     </span>
@@ -166,7 +166,7 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                     <div>
                       <label className="text-xs text-slate-500 mb-1 block">套餐类型</label>
                       <Select value={editPlan} onValueChange={(v) => setEditPlan(v as any)}>
-                        <SelectTrigger className="h-8 text-xs bg-slate-200 border-slate-300 text-white">
+                        <SelectTrigger className="h-8 text-xs bg-slate-200 border-slate-300 text-slate-800">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-slate-100 border-slate-300">
@@ -179,7 +179,7 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                     <div>
                       <label className="text-xs text-slate-500 mb-1 block">到期日期（留空=永久）</label>
                       <Input type="date" value={editExpiry} onChange={(e) => setEditExpiry(e.target.value)}
-                        className="h-8 text-xs bg-slate-200 border-slate-300 text-white" />
+                        className="h-8 text-xs bg-slate-200 border-slate-300 text-slate-800" />
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -217,9 +217,9 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                 <>
                   <div className="flex gap-2 mb-3">
                     <Input placeholder="新关键词" value={newKeyword} onChange={(e) => setNewKeyword(e.target.value)}
-                      className="h-7 text-xs bg-slate-200 border-slate-300 text-white flex-1" />
+                      className="h-7 text-xs bg-slate-200 border-slate-300 text-slate-800 flex-1" />
                     <Select value={newMatchType} onValueChange={(v) => setNewMatchType(v as any)}>
-                      <SelectTrigger className="h-7 text-xs bg-slate-200 border-slate-300 text-white w-20">
+                      <SelectTrigger className="h-7 text-xs bg-slate-200 border-slate-300 text-slate-800 w-20">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-slate-100 border-slate-300">
@@ -244,7 +244,7 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                             <Badge className="text-xs border-0 bg-purple-900/50 text-purple-300 shrink-0">
                               {matchTypeLabels[kw.matchType] ?? kw.matchType}
                             </Badge>
-                            <span className="text-white truncate">{kw.keyword}</span>
+                            <span className="text-slate-800 truncate">{kw.keyword}</span>
                           </div>
                           <div className="flex items-center gap-1 shrink-0 ml-2">
                             <button className={`text-xs px-1.5 py-0.5 rounded ${kw.isActive ? "text-green-400 hover:text-slate-500" : "text-slate-500 hover:text-green-400"}`}
@@ -283,7 +283,7 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                     {data.monitorGroups.map((g: any) => (
                       <div key={g.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs ${g.isActive ? "bg-slate-200" : "bg-slate-100/70 opacity-60"}`}>
                         <div className="min-w-0">
-                          <span className="text-white font-medium truncate block">{g.groupTitle ?? g.groupId}</span>
+                          <span className="text-slate-800 font-medium truncate block">{g.groupTitle ?? g.groupId}</span>
                           <span className="text-slate-500 font-mono">{g.groupId}</span>
                         </div>
                         <Badge className={`text-xs border shrink-0 ml-2 ${g.isActive ? "border-green-700 text-green-300" : "border-slate-300 text-slate-500"}`}>
@@ -305,7 +305,7 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                 <div className="space-y-1.5">
                   {data.tgAccounts.map((a: any) => (
                     <div key={a.id} className="flex items-center justify-between bg-slate-200 rounded-lg px-3 py-2 text-xs">
-                      <span className="text-white">{a.tgFirstName ?? a.phone ?? `账号 #${a.id}`}</span>
+                      <span className="text-slate-800">{a.tgFirstName ?? a.phone ?? `账号 #${a.id}`}</span>
                       <Badge className={`border text-xs ${a.sessionStatus === "active" ? "border-green-700 text-green-300" : "border-slate-300 text-slate-500"}`}>
                         {a.sessionStatus ?? "pending"}
                       </Badge>
@@ -380,7 +380,7 @@ export default function AdminUsers() {
         {/* 页头 */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
               <Users className="w-6 h-6 text-blue-400" /> 客户管理
             </h1>
             <p className="text-sm text-slate-500 mt-1">管理所有注册用户的套餐、关键词和监控配置</p>
@@ -419,7 +419,7 @@ export default function AdminUsers() {
                   setUserPage(1);
                 }
               }}
-              className="bg-slate-100 border-slate-300 text-white pl-9 placeholder-slate-500"
+              className="bg-slate-100 border-slate-300 text-slate-800 pl-9 placeholder-slate-500"
             />
           </div>
           <Button size="sm" variant="outline" className="border-slate-300 text-slate-600 hover:bg-slate-200"
@@ -427,7 +427,7 @@ export default function AdminUsers() {
             搜索
           </Button>
           {userSearch && (
-            <Button size="sm" variant="ghost" className="text-slate-500 hover:text-white"
+            <Button size="sm" variant="ghost" className="text-slate-500 hover:text-slate-800"
               onClick={() => { setUserSearch(""); setUserSearchInput(""); setUserPage(1); }}>
               清除
             </Button>
@@ -469,7 +469,7 @@ export default function AdminUsers() {
                             </div>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1">
-                                <span className="font-medium text-white truncate max-w-[120px]">{u.name ?? `用户 #${u.id}`}</span>
+                                <span className="font-medium text-slate-800 truncate max-w-[120px]">{u.name ?? `用户 #${u.id}`}</span>
                                 {u.role === "admin" && <Badge className="text-xs bg-amber-900/50 text-amber-300 border border-amber-700 px-1 py-0">管理员</Badge>}
                               </div>
                               <span className="text-xs text-slate-500 truncate block max-w-[160px]">{u.email}</span>
@@ -480,7 +480,7 @@ export default function AdminUsers() {
                         <td className="px-4 py-3">
                           <Select value={u.planId ?? "free"}
                             onValueChange={(v) => updatePlanMut.mutate({ userId: u.id, planId: v as any })}>
-                            <SelectTrigger className="w-24 h-7 text-xs bg-slate-200 border-slate-300 text-white">
+                            <SelectTrigger className="w-24 h-7 text-xs bg-slate-200 border-slate-300 text-slate-800">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="bg-slate-100 border-slate-300">
@@ -610,7 +610,7 @@ export default function AdminUsers() {
 
       {/* 删除确认弹窗 */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent className="bg-white border-slate-200 text-white max-w-md">
+        <DialogContent className="bg-white border-slate-200 text-slate-800 max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-400">
               <AlertTriangle className="w-5 h-5" /> 确认删除用户
@@ -620,7 +620,7 @@ export default function AdminUsers() {
             </DialogDescription>
           </DialogHeader>
           <div className="py-3">
-            <p className="text-sm text-slate-600">即将删除用户：<span className="font-bold text-white">{deleteTarget?.name}</span></p>
+            <p className="text-sm text-slate-600">即将删除用户：<span className="font-bold text-slate-800">{deleteTarget?.name}</span></p>
             <div className="mt-3 bg-red-900/20 border border-red-800 rounded-lg p-3 text-xs text-red-300 space-y-1">
               <p className="font-semibold">以下数据将被永久删除：</p>
               <p>关键词、监控群组、命中记录、私信队列、TG账号、消息模板、黑名单、支付订单、推送设置等所有关联数据</p>
@@ -640,7 +640,7 @@ export default function AdminUsers() {
 
       {/* 禁用/启用确认弹窗 */}
       <Dialog open={!!toggleTarget} onOpenChange={(open) => !open && setToggleTarget(null)}>
-        <DialogContent className="bg-white border-slate-200 text-white max-w-md">
+        <DialogContent className="bg-white border-slate-200 text-slate-800 max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {toggleTarget?.currentStatus === 'disabled'
@@ -654,7 +654,7 @@ export default function AdminUsers() {
             </DialogDescription>
           </DialogHeader>
           <div className="py-3">
-            <p className="text-sm text-slate-600">操作用户：<span className="font-bold text-white">{toggleTarget?.name}</span></p>
+            <p className="text-sm text-slate-600">操作用户：<span className="font-bold text-slate-800">{toggleTarget?.name}</span></p>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="ghost" onClick={() => setToggleTarget(null)} className="text-slate-500">取消</Button>

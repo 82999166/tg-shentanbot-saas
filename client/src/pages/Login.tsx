@@ -47,9 +47,9 @@ export default function Login() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-6 h-6 text-white" />
+            <Shield className="w-6 h-6 text-slate-800" />
           </div>
-          <h1 className="text-2xl font-bold text-white">TG Monitor Pro</h1>
+          <h1 className="text-2xl font-bold text-slate-800">TG Monitor Pro</h1>
           <p className="text-gray-400 text-sm mt-1">登录您的账号</p>
         </div>
 
@@ -84,7 +84,7 @@ export default function Login() {
                   placeholder="your@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500"
+                  className="pl-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500"
                   required
                   autoComplete="email"
                 />
@@ -106,7 +106,7 @@ export default function Login() {
                   placeholder="输入密码"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500"
+                  className="pl-10 pr-10 bg-gray-800 border-gray-700 text-slate-800 placeholder:text-gray-500 focus:border-blue-500"
                   required
                   autoComplete="current-password"
                 />

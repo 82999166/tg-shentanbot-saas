@@ -131,7 +131,7 @@ function PaymentDialog({
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-white flex items-center gap-2">
+          <DialogTitle className="text-slate-800 flex items-center gap-2">
             <Clock className="w-5 h-5 text-amber-400" />
             等待 USDT 到账
           </DialogTitle>
@@ -177,7 +177,7 @@ function PaymentDialog({
               <Label className="text-gray-400 text-xs mb-1 block">转账金额（精确到小数）</Label>
               <div className="flex items-center gap-2">
                 <div className="flex-1 bg-gray-900 rounded px-3 py-1.5 flex items-center justify-between">
-                  <span className="text-2xl font-bold text-white font-mono">{order.usdtAmount}</span>
+                  <span className="text-2xl font-bold text-slate-800 font-mono">{order.usdtAmount}</span>
                   <span className="text-gray-400 text-sm">USDT</span>
                 </div>
                 <Button size="icon" variant="ghost" className="shrink-0 h-7 w-7" onClick={copyAmount}>
@@ -244,7 +244,7 @@ function RedeemDialog({ code: initialCode, onClose }: { code?: string; onClose: 
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="bg-gray-900 border-gray-700 max-w-sm">
         <DialogHeader>
-          <DialogTitle className="text-white flex items-center gap-2">
+          <DialogTitle className="text-slate-800 flex items-center gap-2">
             <Key className="w-5 h-5 text-green-400" />
             激活卡密
           </DialogTitle>
@@ -262,7 +262,7 @@ function RedeemDialog({ code: initialCode, onClose }: { code?: string; onClose: 
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               placeholder="TGPRO-XXXX-XXXX-XXXX"
-              className="bg-gray-800 border-gray-600 text-white font-mono tracking-wider"
+              className="bg-gray-800 border-gray-600 text-slate-800 font-mono tracking-wider"
             />
           </div>
           <Button
@@ -328,7 +328,7 @@ export default function Payment() {
     <div className="p-6 max-w-5xl mx-auto space-y-8">
       {/* 标题 */}
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold text-white">升级套餐</h1>
+        <h1 className="text-3xl font-bold text-slate-800">升级套餐</h1>
         <p className="text-gray-400">选择适合您业务规模的套餐，USDT 支付，自动发卡激活</p>
       </div>
 
@@ -370,7 +370,7 @@ export default function Payment() {
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Icon className={`w-5 h-5 ${meta.color}`} />
-                  <CardTitle className="text-white text-lg">{meta.name}</CardTitle>
+                  <CardTitle className="text-slate-800 text-lg">{meta.name}</CardTitle>
                   {isCurrentPlan && (
                     <Badge className="ml-auto bg-green-500/20 text-green-300 text-xs">当前套餐</Badge>
                   )}
@@ -396,7 +396,7 @@ export default function Payment() {
                       : planId === "enterprise"
                       ? "bg-amber-600 hover:bg-amber-700"
                       : "bg-blue-600 hover:bg-blue-700"
-                  } text-white`}
+                  } text-slate-800`}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleBuy(planId);
@@ -424,7 +424,7 @@ export default function Payment() {
                 <Key className="w-5 h-5 text-green-400" />
               </div>
               <div>
-                <h3 className="text-white font-medium">已有卡密？</h3>
+                <h3 className="text-slate-800 font-medium">已有卡密？</h3>
                 <p className="text-gray-400 text-sm">直接输入卡密激活套餐</p>
               </div>
             </div>
@@ -450,7 +450,7 @@ export default function Payment() {
           <div key={title} className="bg-gray-800/50 rounded-lg p-4 flex items-start gap-3">
             <Icon className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-white text-sm font-medium">{title}</p>
+              <p className="text-slate-800 text-sm font-medium">{title}</p>
               <p className="text-gray-400 text-xs mt-0.5">{desc}</p>
             </div>
           </div>
@@ -461,7 +461,7 @@ export default function Payment() {
       {myOrders && myOrders.length > 0 && (
         <Card className="bg-gray-900 border-gray-700">
           <CardHeader>
-            <CardTitle className="text-white text-base">最近订单</CardTitle>
+            <CardTitle className="text-slate-800 text-base">最近订单</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -487,7 +487,7 @@ export default function Payment() {
                     </span>
                   </div>
                   <div className="text-right">
-                    <p className="text-white text-sm font-mono">{order.usdtAmount} USDT</p>
+                    <p className="text-slate-800 text-sm font-mono">{order.usdtAmount} USDT</p>
                     <p className="text-gray-500 text-xs">{new Date(order.createdAt).toLocaleDateString()}</p>
                   </div>
                 </div>

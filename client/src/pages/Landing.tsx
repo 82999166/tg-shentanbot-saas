@@ -49,7 +49,7 @@ export default function Landing() {
           ) : (
             <div className="flex items-center gap-2">
               <Link href="/login">
-                <Button variant="ghost" size="sm" className="text-gray-300 hover:text-white">
+                <Button variant="ghost" size="sm" className="text-gray-300 hover:text-slate-800">
                   登录
                 </Button>
               </Link>

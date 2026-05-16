@@ -263,7 +263,7 @@ export default function TgAccounts() {
         {/* 页头 */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white">TG 账号管理</h1>
+            <h1 className="text-2xl font-bold text-slate-800">TG 账号管理</h1>
             <p className="text-sm text-slate-500 mt-1">管理用于监控和发信的 Telegram 账号</p>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -294,7 +294,7 @@ export default function TgAccounts() {
               <CardContent className="p-4 flex items-center gap-3">
                 <item.icon className={`w-8 h-8 ${item.color}`} />
                 <div>
-                  <p className="text-2xl font-bold text-white">{item.value}</p>
+                  <p className="text-2xl font-bold text-slate-800">{item.value}</p>
                   <p className="text-xs text-slate-500">{item.label}</p>
                 </div>
               </CardContent>
@@ -307,10 +307,10 @@ export default function TgAccounts() {
             placeholder="搜索账号名/手机号/@用户名..."
             value={filterKeyword}
             onChange={(e) => setFilterKeyword(e.target.value)}
-            className="bg-slate-100 border-slate-300 text-white placeholder-slate-500 w-56 h-8 text-sm"
+            className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 w-56 h-8 text-sm"
           />
           <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="bg-slate-100 border-slate-300 text-white h-8 text-sm w-32"><SelectValue placeholder="状态" /></SelectTrigger>
+            <SelectTrigger className="bg-slate-100 border-slate-300 text-slate-800 h-8 text-sm w-32"><SelectValue placeholder="状态" /></SelectTrigger>
             <SelectContent className="bg-slate-100 border-slate-300">
               <SelectItem value="all">全部状态</SelectItem>
               <SelectItem value="active">运行中</SelectItem>
@@ -320,7 +320,7 @@ export default function TgAccounts() {
             </SelectContent>
           </Select>
           <Select value={filterRole} onValueChange={setFilterRole}>
-            <SelectTrigger className="bg-slate-100 border-slate-300 text-white h-8 text-sm w-36"><SelectValue placeholder="账号角色" /></SelectTrigger>
+            <SelectTrigger className="bg-slate-100 border-slate-300 text-slate-800 h-8 text-sm w-36"><SelectValue placeholder="账号角色" /></SelectTrigger>
             <SelectContent className="bg-slate-100 border-slate-300">
               <SelectItem value="all">全部角色</SelectItem>
               <SelectItem value="monitor">仅监控</SelectItem>
@@ -330,7 +330,7 @@ export default function TgAccounts() {
           </Select>
           {user?.role === "admin" && (
             <Select value={filterOwner} onValueChange={setFilterOwner}>
-              <SelectTrigger className="bg-slate-100 border-slate-300 text-white h-8 text-sm w-36"><SelectValue placeholder="归属用户" /></SelectTrigger>
+              <SelectTrigger className="bg-slate-100 border-slate-300 text-slate-800 h-8 text-sm w-36"><SelectValue placeholder="归属用户" /></SelectTrigger>
               <SelectContent className="bg-slate-100 border-slate-300">
                 <SelectItem value="all">全部用户</SelectItem>
                 {Array.from(new Set(accounts.map((a) => (a as any).ownerEmail).filter(Boolean))).map((email) => (
@@ -341,7 +341,7 @@ export default function TgAccounts() {
           )}
           <span className="text-xs text-slate-500 ml-auto">共 {filteredAccounts.length} 条</span>
           {(filterKeyword || filterStatus !== "all" || filterRole !== "all" || filterOwner !== "all") && (
-            <Button variant="ghost" size="sm" className="text-slate-500 hover:text-white h-8 text-xs"
+            <Button variant="ghost" size="sm" className="text-slate-500 hover:text-slate-800 h-8 text-xs"
               onClick={() => { setFilterKeyword(""); setFilterStatus("all"); setFilterRole("all"); setFilterOwner("all"); }}>
               清除筛选
             </Button>
@@ -433,7 +433,7 @@ export default function TgAccounts() {
                               {(account.tgFirstName ?? account.phone ?? "?")[0]?.toUpperCase()}
                             </div>
                             <div>
-                              <p className="font-medium text-white">
+                              <p className="font-medium text-slate-800">
                                 {account.tgFirstName ? `${account.tgFirstName} ${account.tgLastName ?? ""}`.trim() : `账号 #${account.id}`}
                               </p>
                               <p className="text-xs text-slate-500">
@@ -540,7 +540,7 @@ export default function TgAccounts() {
       </div>
             {/* ─── 手机号登录 Dialog ─────────────────────────────────────────────── */}
       <Dialog open={addMode === "phone"} onOpenChange={(o) => { if (!o) closeDialog(); }}>
-        <DialogContent className="bg-white border-slate-200 text-white max-w-md">
+        <DialogContent className="bg-white border-slate-200 text-slate-800 max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Phone className="w-5 h-5 text-blue-400" /> 手机号登录 Telegram
@@ -560,7 +560,7 @@ export default function TgAccounts() {
                     ${isDone ? "bg-green-500 text-white" : isActive ? "bg-blue-500 text-white" : "bg-slate-200 text-slate-500"}`}>
                     {isDone ? "✓" : i + 1}
                   </div>
-                  <span className={isActive ? "text-white" : "text-slate-500"}>{STEP_LABELS[i]}</span>
+                  <span className={isActive ? "text-slate-800" : "text-slate-500"}>{STEP_LABELS[i]}</span>
                   {i < 3 && <ChevronRight className="w-3 h-3 text-slate-600" />}
                 </div>
               );
@@ -573,14 +573,14 @@ export default function TgAccounts() {
                 <Label className="text-slate-600">手机号（含国际区号）</Label>
                 <Input placeholder="+8613800000000" value={phoneForm.phone}
                   onChange={(e) => setPhoneForm((f) => ({ ...f, phone: e.target.value }))}
-                  className="bg-slate-100 border-slate-300 text-white placeholder-slate-500"
+                  className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500"
                   onKeyDown={(e) => e.key === "Enter" && handleSendCode()} />
                 <p className="text-xs text-slate-500">示例：+8613800000000（中国）、+6591234567（新加坡）</p>
               </div>
               <div className="space-y-2">
                 <Label className="text-slate-600">账号角色</Label>
                 <Select value={phoneForm.role} onValueChange={(v) => setPhoneForm((f) => ({ ...f, role: v as any }))}>
-                  <SelectTrigger className="bg-slate-100 border-slate-300 text-white"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="bg-slate-100 border-slate-300 text-slate-800"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-slate-100 border-slate-300">
                     <SelectItem value="both">监控 + 发信（推荐）</SelectItem>
                     <SelectItem value="monitor">仅监控</SelectItem>
@@ -601,13 +601,13 @@ export default function TgAccounts() {
             <div className="space-y-4">
               <div className="bg-slate-100 rounded-lg p-3 text-sm text-slate-600 flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-blue-400 shrink-0" />
-                验证码已发送至 <span className="text-white font-medium">{phoneForm.phone}</span> 的 Telegram
+                验证码已发送至 <span className="text-slate-800 font-medium">{phoneForm.phone}</span> 的 Telegram
               </div>
               <div className="space-y-2">
                 <Label className="text-slate-600">验证码</Label>
                 <Input placeholder="请输入验证码" value={phoneForm.code}
                   onChange={(e) => setPhoneForm((f) => ({ ...f, code: e.target.value.replace(/\D/g, "").slice(0, 8) }))}
-                  className="bg-slate-100 border-slate-300 text-white text-center text-xl tracking-widest"
+                  className="bg-slate-100 border-slate-300 text-slate-800 text-center text-xl tracking-widest"
                   maxLength={8} onKeyDown={(e) => e.key === "Enter" && handleVerifyCode()} />
               </div>
               <div className="flex justify-between text-xs text-slate-500">
@@ -628,9 +628,9 @@ export default function TgAccounts() {
                   <Input type={show2faPassword ? "text" : "password"} placeholder="请输入二步验证密码"
                     value={phoneForm.password}
                     onChange={(e) => setPhoneForm((f) => ({ ...f, password: e.target.value }))}
-                    className="bg-slate-100 border-slate-300 text-white pr-10"
+                    className="bg-slate-100 border-slate-300 text-slate-800 pr-10"
                     onKeyDown={(e) => e.key === "Enter" && handleVerify2FA()} />
-                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800"
                     onClick={() => setShow2faPassword((v) => !v)}>
                     {show2faPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -642,13 +642,13 @@ export default function TgAccounts() {
           {phoneStep === "done" && (
             <div className="text-center py-6 space-y-3">
               <CheckCircle2 className="w-16 h-16 text-green-400 mx-auto" />
-              <p className="text-lg font-semibold text-white">账号添加成功！</p>
+              <p className="text-lg font-semibold text-slate-800">账号添加成功！</p>
               <p className="text-sm text-slate-500">账号已成功登录并添加到账号列表</p>
             </div>
           )}
 
           <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={closeDialog} className="text-slate-500 hover:text-white">
+            <Button variant="ghost" onClick={closeDialog} className="text-slate-500 hover:text-slate-800">
               {phoneStep === "done" ? "关闭" : "取消"}
             </Button>
             {phoneStep === "phone" && (
@@ -672,7 +672,7 @@ export default function TgAccounts() {
 
       {/* ─── 批量导入 Session Dialog ────────────────────────────────────────── */}
       <Dialog open={addMode === "session_bulk"} onOpenChange={(o) => { if (!o) closeDialog(); }}>
-        <DialogContent className="bg-white border-slate-200 text-white max-w-2xl h-[85vh] flex flex-col">
+        <DialogContent className="bg-white border-slate-200 text-slate-800 max-w-2xl h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-5 h-5 text-cyan-400" /> 批量导入 Session
@@ -694,7 +694,7 @@ export default function TgAccounts() {
                   <div className="flex items-center gap-3">
                     <Label className="text-slate-600 shrink-0">解析格式</Label>
                     <Select value={bulkFormat} onValueChange={(v) => setBulkFormat(v as any)}>
-                      <SelectTrigger className="bg-slate-100 border-slate-300 text-white w-44"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="bg-slate-100 border-slate-300 text-slate-800 w-44"><SelectValue /></SelectTrigger>
                       <SelectContent className="bg-slate-100 border-slate-300">
                         <SelectItem value="auto">自动识别</SelectItem>
                         <SelectItem value="one_per_line">每行一个 Session</SelectItem>
@@ -705,7 +705,7 @@ export default function TgAccounts() {
                   <Textarea
                     placeholder={"每行一个 Session 字符串，或 JSON 数组格式\n\n示例（每行）：\n1BVtsOK8Buxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n示例（带手机号）：\n+8613800000000|1BVtsOK8Buxxxxxxxx..."}
                     value={bulkText} onChange={(e) => setBulkText(e.target.value)}
-                    className="bg-slate-100 border-slate-300 text-white placeholder-slate-600 font-mono text-xs min-h-[160px]" />
+                    className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-600 font-mono text-xs min-h-[160px]" />
                 </TabsContent>
 
                 <TabsContent value="file" className="mt-3">
@@ -756,12 +756,12 @@ export default function TgAccounts() {
                 {parsedSessions.map((s, i) => (
                   <div key={i} className="bg-slate-100 rounded-lg p-3 flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-white text-sm font-medium">{s.phone ?? `Session #${i + 1}`}</p>
+                      <p className="text-slate-800 text-sm font-medium">{s.phone ?? `Session #${i + 1}`}</p>
                       <p className="text-slate-500 text-xs font-mono truncate">{s.sessionString.slice(0, 40)}...</p>
                     </div>
                     <Select value={s.accountRole}
                       onValueChange={(v) => { const u = [...parsedSessions]; u[i] = { ...s, accountRole: v as any }; setParsedSessions(u); }}>
-                      <SelectTrigger className="bg-slate-200 border-slate-300 text-white w-28 h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="bg-slate-200 border-slate-300 text-slate-800 w-28 h-7 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent className="bg-slate-100 border-slate-300">
                         <SelectItem value="both">监控+发信</SelectItem>
                         <SelectItem value="monitor">仅监控</SelectItem>
@@ -777,7 +777,7 @@ export default function TgAccounts() {
           {importStep === "done" && importResult && (
             <div className="text-center py-6 space-y-4">
               <CheckCircle2 className="w-16 h-16 text-green-400 mx-auto" />
-              <p className="text-lg font-semibold text-white">导入完成</p>
+              <p className="text-lg font-semibold text-slate-800">导入完成</p>
               <div className="grid grid-cols-3 gap-4">
                 <div className="bg-green-950/40 border border-green-800/40 rounded-lg p-3">
                   <p className="text-2xl font-bold text-green-400">{importResult.imported}</p>
@@ -797,7 +797,7 @@ export default function TgAccounts() {
 
           </div>
           <DialogFooter className="gap-2 shrink-0">
-            <Button variant="ghost" onClick={closeDialog} className="text-slate-500 hover:text-white">
+            <Button variant="ghost" onClick={closeDialog} className="text-slate-500 hover:text-slate-800">
               {importStep === "done" ? "关闭" : "取消"}
             </Button>
             {importStep === "input" && (
@@ -819,7 +819,7 @@ export default function TgAccounts() {
 
         {/* ─── 编辑账号 Dialog ────────────────────────────────────────────────── */}
       <Dialog open={editAccount !== null} onOpenChange={(o) => { if (!o) setEditAccount(null); }}>
-        <DialogContent className="bg-white border-slate-200 text-white max-w-2xl h-[85vh] flex flex-col">
+        <DialogContent className="bg-white border-slate-200 text-slate-800 max-w-2xl h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2"><Edit2 className="w-5 h-5 text-blue-400" /> 编辑账号</DialogTitle>
             <DialogDescription className="text-slate-500">修改账号信息，或查看该账号已加入的群组</DialogDescription>
@@ -849,7 +849,7 @@ export default function TgAccounts() {
                   <div className="space-y-2">
                     <Label className="text-slate-600">账号角色</Label>
                     <Select value={editAccount.accountRole} onValueChange={(v) => setEditAccount((a) => a ? { ...a, accountRole: v } : a)}>
-                      <SelectTrigger className="bg-slate-100 border-slate-300 text-white"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="bg-slate-100 border-slate-300 text-slate-800"><SelectValue /></SelectTrigger>
                       <SelectContent className="bg-slate-100 border-slate-300">
                         <SelectItem value="both">监控 + 发信（推荐）</SelectItem>
                         <SelectItem value="monitor">仅监控</SelectItem>
@@ -869,7 +869,7 @@ export default function TgAccounts() {
                       }}
                       min={1}
                       max={10000}
-                      className="bg-slate-100 border-slate-300 text-white placeholder-slate-500"
+                      className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500"
                     />
                     <p className="text-xs text-slate-500">设置后此账号最多加入该数量的群组，覆盖全局上限</p>
                   </div>
@@ -879,12 +879,12 @@ export default function TgAccounts() {
                       placeholder="输入备注信息..."
                       value={editAccount.notes}
                       onChange={(e) => setEditAccount((a) => a ? { ...a, notes: e.target.value } : a)}
-                      className="bg-slate-100 border-slate-300 text-white placeholder-slate-500"
+                      className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500"
                     />
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button variant="ghost" onClick={() => setEditAccount(null)} className="text-slate-500 hover:text-white">取消</Button>
+                  <Button variant="ghost" onClick={() => setEditAccount(null)} className="text-slate-500 hover:text-slate-800">取消</Button>
                   <Button
                     onClick={async () => {
                       if (!editAccount) return;
@@ -931,7 +931,7 @@ export default function TgAccounts() {
                   {/* 启用自动加群 */}
                   <div className="flex items-center justify-between p-3 bg-slate-100/70 rounded-lg border border-slate-200/50">
                     <div>
-                      <p className="text-sm font-medium text-white">启用自动加群</p>
+                      <p className="text-sm font-medium text-slate-800">启用自动加群</p>
                       <p className="text-xs text-slate-500">引擎启动时自动让监控账号加入所有公共群组</p>
                     </div>
                     <button
@@ -956,7 +956,7 @@ export default function TgAccounts() {
                           type="number" min={5} max={3600}
                           value={joinCfgLoaded ? joinCfgMin : (joinConfig?.joinIntervalMin ?? 30)}
                           onChange={(e) => { setJoinCfgLoaded(true); setJoinCfgMin(Number(e.target.value)); }}
-                          className="bg-slate-100 border-slate-300 text-white"
+                          className="bg-slate-100 border-slate-300 text-slate-800"
                         />
                       </div>
                       <div className="space-y-1">
@@ -965,7 +965,7 @@ export default function TgAccounts() {
                           type="number" min={5} max={3600}
                           value={joinCfgLoaded ? joinCfgMax : (joinConfig?.joinIntervalMax ?? 60)}
                           onChange={(e) => { setJoinCfgLoaded(true); setJoinCfgMax(Number(e.target.value)); }}
-                          className="bg-slate-100 border-slate-300 text-white"
+                          className="bg-slate-100 border-slate-300 text-slate-800"
                         />
                       </div>
                     </div>
@@ -978,7 +978,7 @@ export default function TgAccounts() {
                       type="number" min={1} max={2000}
                       value={joinCfgLoaded ? joinCfgMax2 : (joinConfig?.maxGroupsPerAccount ?? 300)}
                       onChange={(e) => { setJoinCfgLoaded(true); setJoinCfgMax2(Number(e.target.value)); }}
-                      className="bg-slate-100 border-slate-300 text-white"
+                      className="bg-slate-100 border-slate-300 text-slate-800"
                     />
                   </div>
                   {/* 每次分配数量 */}
@@ -989,7 +989,7 @@ export default function TgAccounts() {
                       type="number" min={0} max={10000}
                       value={joinCfgLoaded ? joinCfgDistributeCount : (joinConfig?.distributeCount ?? 0)}
                       onChange={(e) => { setJoinCfgLoaded(true); setJoinCfgDistributeCount(Number(e.target.value)); }}
-                      className="bg-slate-100 border-slate-300 text-white"
+                      className="bg-slate-100 border-slate-300 text-slate-800"
                     />
                   </div>
                   <Button
@@ -1015,7 +1015,7 @@ export default function TgAccounts() {
 
        {/* ─── 导入群组到公共群组池 Dialog ─────────────────────────────────── */}
       <Dialog open={importChatsAccountId !== null} onOpenChange={(o) => { if (!o) { setImportChatsAccountId(null); setImportChatsList([]); setImportChatsSelected(new Set()); setImportChatsStep('loading'); setImportChatsError(''); } }}>
-        <DialogContent className="bg-white border-slate-200 text-white max-w-2xl h-[85vh] flex flex-col">
+        <DialogContent className="bg-white border-slate-200 text-slate-800 max-w-2xl h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FolderInput className="w-5 h-5 text-purple-400" /> 从TG账号导入群组到公共群组池
@@ -1035,10 +1035,10 @@ export default function TgAccounts() {
           {importChatsStep === 'select' && (
             <>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-slate-500">共找到 <span className="text-white font-bold">{importChatsList.length}</span> 个群组，已选 <span className="text-purple-400 font-bold">{importChatsSelected.size}</span> 个</span>
+                <span className="text-sm text-slate-500">共找到 <span className="text-slate-800 font-bold">{importChatsList.length}</span> 个群组，已选 <span className="text-purple-400 font-bold">{importChatsSelected.size}</span> 个</span>
                 <div className="flex gap-2">
-                  <button className="text-xs text-slate-500 hover:text-white underline" onClick={() => setImportChatsSelected(new Set(importChatsList.map(c => c.chatId)))}>全选</button>
-                  <button className="text-xs text-slate-500 hover:text-white underline" onClick={() => setImportChatsSelected(new Set())}>全不选</button>
+                  <button className="text-xs text-slate-500 hover:text-slate-800 underline" onClick={() => setImportChatsSelected(new Set(importChatsList.map(c => c.chatId)))}>全选</button>
+                  <button className="text-xs text-slate-500 hover:text-slate-800 underline" onClick={() => setImportChatsSelected(new Set())}>全不选</button>
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto space-y-1 max-h-96 pr-1">
@@ -1058,14 +1058,14 @@ export default function TgAccounts() {
                         setImportChatsSelected(next);
                       }} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-white truncate">{chat.title || chat.chatId}</p>
+                      <p className="text-sm text-slate-800 truncate">{chat.title || chat.chatId}</p>
                       <p className="text-xs text-slate-500">{chat.username ? `@${chat.username}` : `ID: ${chat.chatId}`} &middot; {chat.type === 'supergroup' ? '超级群组' : '普通群组'}</p>
                     </div>
                   </label>
                 ))}
               </div>
               <DialogFooter className="gap-2 pt-2">
-                <Button variant="ghost" onClick={() => setImportChatsAccountId(null)} className="text-slate-500 hover:text-white">取消</Button>
+                <Button variant="ghost" onClick={() => setImportChatsAccountId(null)} className="text-slate-500 hover:text-slate-800">取消</Button>
                 <Button
                   onClick={handleImportChats}
                   disabled={importChatsToPublic.isPending || importChatsSelected.size === 0}
@@ -1080,7 +1080,7 @@ export default function TgAccounts() {
           {importChatsStep === 'done' && (
             <div className="flex flex-col items-center justify-center py-10 gap-3">
               <CheckCircle2 className="w-12 h-12 text-green-400" />
-              <p className="text-white font-medium">导入完成！</p>
+              <p className="text-slate-800 font-medium">导入完成！</p>
               <p className="text-slate-500 text-sm">公共群组池已更新，引擎将在下次轮询时自动订阅监控这些群组的消息</p>
               <Button onClick={() => setImportChatsAccountId(null)} className="bg-slate-200 hover:bg-slate-600">关闭</Button>
             </div>
@@ -1091,7 +1091,7 @@ export default function TgAccounts() {
               <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
                 <span className="text-red-400 text-2xl">⚠</span>
               </div>
-              <p className="text-white font-medium">获取群组列表失败</p>
+              <p className="text-slate-800 font-medium">获取群组列表失败</p>
               <p className="text-slate-500 text-sm text-center max-w-sm">{importChatsError}</p>
               <div className="text-xs text-slate-500 bg-slate-100 rounded-lg p-3 max-w-sm w-full">
                 <p className="font-medium text-slate-500 mb-1">常见原因：</p>
@@ -1100,7 +1100,7 @@ export default function TgAccounts() {
                 <p>• 引擎初始化中，请等待 30 秒后重试</p>
               </div>
               <div className="flex gap-2">
-                <Button variant="ghost" onClick={() => setImportChatsAccountId(null)} className="text-slate-500 hover:text-white">关闭</Button>
+                <Button variant="ghost" onClick={() => setImportChatsAccountId(null)} className="text-slate-500 hover:text-slate-800">关闭</Button>
                 <Button onClick={() => importChatsAccountId && openImportChats(importChatsAccountId)} className="bg-purple-600 hover:bg-purple-700">
                   <RefreshCw className="w-4 h-4 mr-2" />重试
                 </Button>
@@ -1112,7 +1112,7 @@ export default function TgAccounts() {
 
       {/* ─── 删除确认 ─────────────────────────────────────────────────── */}
       <Dialog open={deleteId !== null} onOpenChange={(o) => { if (!o) setDeleteId(null); }}>
-        <DialogContent className="bg-white border-slate-200 text-white max-w-sm">
+        <DialogContent className="bg-white border-slate-200 text-slate-800 max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-400"><Trash2 className="w-5 h-5" /> 确认删除</DialogTitle>
             <DialogDescription className="text-slate-500">删除后该账号的 Session 将被清除，监控任务将停止。此操作不可撤销。</DialogDescription>
@@ -1176,7 +1176,7 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
       <div className="flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-3">
           <span className="text-sm text-slate-500">
-            共已加入 <span className="text-white font-bold">{data?.total ?? 0}</span> 个群组
+            共已加入 <span className="text-slate-800 font-bold">{data?.total ?? 0}</span> 个群组
           </span>
           <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
             封号后可导出，用新账号补加
@@ -1185,7 +1185,7 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
         <Button
           size="sm"
           variant="outline"
-          className="border-slate-300 text-slate-600 hover:text-white hover:bg-slate-200 gap-1"
+          className="border-slate-300 text-slate-600 hover:text-slate-800 hover:bg-slate-200 gap-1"
           onClick={handleExport}
           disabled={!data?.groups?.length}
         >
@@ -1198,7 +1198,7 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
         placeholder="搜索群组名称或 ID..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="bg-slate-100 border-slate-300 text-white placeholder-slate-500 h-8 text-sm shrink-0"
+        className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 h-8 text-sm shrink-0"
       />
 
       {/* 群组列表 */}
@@ -1222,7 +1222,7 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
               {filtered.map((g, i) => (
                 <tr key={g.id} className={`border-t border-slate-200/50 hover:bg-slate-100/70 ${!g.isActive ? "opacity-50" : ""}`}>
                   <td className="px-3 py-2">
-                    <div className="font-medium text-white truncate max-w-[200px]" title={g.groupTitle}>{g.groupTitle}</div>
+                    <div className="font-medium text-slate-800 truncate max-w-[200px]" title={g.groupTitle}>{g.groupTitle}</div>
                     <div className="text-slate-500 text-xs">@{g.groupId}</div>
                   </td>
                   <td className="px-3 py-2">
@@ -1338,7 +1338,7 @@ function AccountPendingGroupsTab({ accountId }: { accountId: number }) {
           <Button
             size="sm"
             variant="outline"
-            className="border-slate-300 text-slate-600 hover:text-white hover:bg-slate-200 gap-1"
+            className="border-slate-300 text-slate-600 hover:text-slate-800 hover:bg-slate-200 gap-1"
             onClick={() => refetch()}
           >
             <RefreshCw className="w-3.5 h-3.5" /> 刷新
@@ -1351,7 +1351,7 @@ function AccountPendingGroupsTab({ accountId }: { accountId: number }) {
         placeholder="搜索群组名称或 ID..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="bg-slate-100 border-slate-300 text-white placeholder-slate-500 h-8 text-sm shrink-0"
+        className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 h-8 text-sm shrink-0"
       />
 
       {/* 群组列表 */}
@@ -1395,7 +1395,7 @@ function AccountPendingGroupsTab({ accountId }: { accountId: number }) {
                       />
                     </td>
                     <td className="px-3 py-2">
-                      <div className="font-medium text-white truncate max-w-[180px]" title={g.groupTitle}>{g.groupTitle || g.groupId}</div>
+                      <div className="font-medium text-slate-800 truncate max-w-[180px]" title={g.groupTitle}>{g.groupTitle || g.groupId}</div>
                       <div className="text-slate-500 text-xs">@{g.groupId}</div>
                     </td>
                     <td className="px-3 py-2">
@@ -1480,7 +1480,7 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
           value={groupInput}
           onChange={(e) => setGroupInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !joining && handleJoin()}
-          className="bg-slate-100 border-slate-300 text-white placeholder-slate-500 flex-1"
+          className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 flex-1"
         />
         <Button
           onClick={handleJoin}
@@ -1497,10 +1497,10 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
           placeholder="搜索已监控群组..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="bg-slate-100 border-slate-300 text-white placeholder-slate-500 h-8 text-sm flex-1"
+          className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 h-8 text-sm flex-1"
         />
         <span className="text-xs text-slate-500 shrink-0">
-          共 <span className="text-white font-bold">{myGroups.length}</span> 个
+          共 <span className="text-slate-800 font-bold">{myGroups.length}</span> 个
         </span>
       </div>
       {/* 列表 */}
@@ -1528,7 +1528,7 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
               {filtered.map((g: any) => (
                 <tr key={g.id} className="border-t border-slate-200/50 hover:bg-slate-100/70">
                   <td className="px-3 py-2">
-                    <div className="font-medium text-white truncate max-w-[220px]" title={g.groupTitle}>{g.groupTitle || g.groupId}</div>
+                    <div className="font-medium text-slate-800 truncate max-w-[220px]" title={g.groupTitle}>{g.groupTitle || g.groupId}</div>
                     <div className="text-slate-500 text-xs">{g.groupId}</div>
                   </td>
                   <td className="px-3 py-2">

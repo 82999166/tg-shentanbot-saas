@@ -351,7 +351,7 @@ export default function AdminDashboard() {
         {/* ── 页头 ── */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+            <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
               <BarChart2 className="w-5 h-5 text-red-400" />
               系统仪表盘
             </h1>
