@@ -1122,21 +1122,47 @@ export const groupScrapeRouter = router({
         return { success: false, message: "引擎未返回任何群组数据", updated: 0, total: 0, scanned: 0 };
       }
 
-      const allGroups = await db.select({ id: publicMonitorGroups.id, groupId: publicMonitorGroups.groupId }).from(publicMonitorGroups);
+      const allGroups = await db.select({
+        id: publicMonitorGroups.id,
+        groupId: publicMonitorGroups.groupId,
+        realId: publicMonitorGroups.realId,
+      }).from(publicMonitorGroups);
+
       let updated = 0;
+      let directUpdated = 0;
+
       for (const group of allGroups) {
-        const normalizedGroupId = group.groupId.replace(/^@/, "").toLowerCase();
+        const raw = (group.groupId ?? '').trim();
+
+        // 情况1：用户名本身就是 TG chat ID（格式为 @-数字 或 -数字）
+        // 示例： @-1003725609778 或 -1003725609778
+        const idMatch = raw.match(/^@?(-\d+)$/);
+        if (idMatch) {
+          const extractedId = idMatch[1];
+          if (group.realId !== extractedId) {
+            await db.update(publicMonitorGroups)
+              .set({ realId: extractedId })
+              .where(eq(publicMonitorGroups.id, group.id));
+            directUpdated++;
+          }
+          continue; // 已处理，跳过引擎匹配
+        }
+
+        // 情况2：用户名匹配引擎返回的 chatId
+        const normalizedGroupId = raw.replace(/^@/, '').toLowerCase();
         const chatId = dialogMap.get(normalizedGroupId);
         if (chatId) {
-          await db.update(publicMonitorGroups).set({ realId: chatId }).where(eq(publicMonitorGroups.id, group.id));
+          await db.update(publicMonitorGroups)
+            .set({ realId: chatId })
+            .where(eq(publicMonitorGroups.id, group.id));
           updated++;
         }
       }
 
       return {
         success: true,
-        message: `同步完成：扫描 ${dialogMap.size} 个，成功回写 ${updated} / ${allGroups.length} 条`,
-        updated,
+        message: `同步完成：直接提取ID ${directUpdated} 条，引擎匹配 ${updated} 条，共 ${allGroups.length} 条`,
+        updated: updated + directUpdated,
         total: allGroups.length,
         scanned: dialogMap.size,
       };
