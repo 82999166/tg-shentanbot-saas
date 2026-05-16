@@ -1769,12 +1769,16 @@ export const engineRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库不可用" });
 
-      // 读取加群配置（join_enabled 开关 + max_groups_per_account 上限）
+      // 读取加群配置（join_enabled 开关 + max_groups_per_account 上限 + join_interval 间隔）
       const cfgRows = await db.select().from(systemConfig)
-        .where(sql`${systemConfig.configKey} IN ('join_enabled', 'max_groups_per_account')`);
+        .where(sql`${systemConfig.configKey} IN ('join_enabled', 'max_groups_per_account', 'join_interval_min', 'join_interval_max')`);
       const cfgMap: Record<string, string> = {};
       for (const row of cfgRows) cfgMap[row.configKey] = row.configValue ?? "";
       const joinEnabled = cfgMap["join_enabled"] !== "false"; // 默认开启
+      // 加群间隔（秒），用于批量加群时前端等待，防止请求过于频繁
+      const joinIntervalMin = parseInt(cfgMap["join_interval_min"] || "120", 10);
+      const joinIntervalMax = Math.max(joinIntervalMin, parseInt(cfgMap["join_interval_max"] || "600", 10));
+      const nextDelay = Math.floor(Math.random() * (joinIntervalMax - joinIntervalMin + 1)) + joinIntervalMin;
       if (!joinEnabled) {
         throw new TRPCError({ code: "FORBIDDEN", message: "加群功能已被管理员关闭，请在加群配置中开启" });
       }
@@ -1859,6 +1863,7 @@ export const engineRouter = router({
           alreadyJoined: false,
           error: errMsg,
           message: `加群失败：${errMsg}`,
+          nextDelay, // 建议前端等待秒数（即使失败也遵守间隔）
         };
       }
 
@@ -1907,6 +1912,7 @@ export const engineRouter = router({
         chatUsername,
         memberCount,
         message: joinResult.alreadyJoined ? "账号已在该群组中，已添加到监控列表" : "加群成功，已开始实时监控",
+        nextDelay, // 建议前端等待秒数（遵守 join_interval 配置）
       };
     }),
 

@@ -1732,12 +1732,16 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
   const [batchInput, setBatchInput] = useState('');
   const [batchJoining, setBatchJoining] = useState(false);
   const [batchResult, setBatchResult] = useState('');
-  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; currentLine: string }>({ current: 0, total: 0, currentLine: '' });
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; currentLine: string; waitSec?: number }>({ current: 0, total: 0, currentLine: '' });
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'error'>('all');
   // 加群进行中的实时状态（批量时显示）
   const [groupStatusMap, setGroupStatusMap] = useState<Record<string, { status: 'joining' | 'success' | 'failed'; reason?: string }>>({});
   // 重试中的记录 ID
   const [retryingIds, setRetryingIds] = useState<Set<number>>(new Set());
+  // 选中的记录 ID（批量操作）
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [batchOpRunning, setBatchOpRunning] = useState(false);
 
   const { data: monitorData, isLoading, refetch: refetchMonitor } = trpc.monitorGroups.list.useQuery();
   const importGroup = trpc.engine.importGroup.useMutation();
@@ -1748,8 +1752,24 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
   const myGroups = (monitorData ?? []).filter((g: any) => g.tgAccountId === accountId);
   const filtered = myGroups.filter((g: any) => {
     const kw = search.toLowerCase();
-    return !kw || (g.groupTitle || "").toLowerCase().includes(kw) || (g.groupId || "").toLowerCase().includes(kw);
+    const matchKw = !kw || (g.groupTitle || "").toLowerCase().includes(kw) || (g.groupId || "").toLowerCase().includes(kw);
+    const matchStatus = statusFilter === 'all' || g.monitorStatus === statusFilter;
+    return matchKw && matchStatus;
   });
+
+  // 全选逻辑
+  const allFilteredIds = filtered.map((g: any) => g.id);
+  const isAllSelected = allFilteredIds.length > 0 && allFilteredIds.every((id: number) => selectedIds.has(id));
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds(prev => { const s = new Set(prev); allFilteredIds.forEach((id: number) => s.delete(id)); return s; });
+    } else {
+      setSelectedIds(prev => { const s = new Set(prev); allFilteredIds.forEach((id: number) => s.add(id)); return s; });
+    }
+  };
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  };
 
   const handleJoin = async () => {
     if (!groupInput.trim()) return;
@@ -1789,8 +1809,10 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
       const line = lines[i];
       setBatchProgress({ current: i + 1, total: lines.length, currentLine: line });
       setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'joining' } }));
+      let nextDelay = 0;
       try {
         const res = await importGroup.mutateAsync({ tgAccountId: accountId, groupInput: line });
+        nextDelay = (res as any).nextDelay ?? 0;
         if (res.success) {
           success++;
           setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'success' } }));
@@ -1803,8 +1825,16 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
         const reason = e.message ?? '未知错误';
         setGroupStatusMap(prev => ({ ...prev, [line]: { status: 'failed', reason } }));
       }
+      // 遵守 join_interval 配置：非最后一个时等待
+      if (i < lines.length - 1 && nextDelay > 0) {
+        for (let w = nextDelay; w > 0; w--) {
+          setBatchProgress(prev => ({ ...prev, waitSec: w }));
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        setBatchProgress(prev => ({ ...prev, waitSec: 0 }));
+      }
     }
-    setBatchResult(`完成：成功 ${success} 个，失败 ${failed} 个（失败记录已保存，可在下表重试）`);
+    setBatchResult(`完成：成功 ${success} 个，失败 ${failed} 个${failed > 0 ? '（失败记录已保存，可在下表重试）' : ''}`);
     setBatchProgress({ current: lines.length, total: lines.length, currentLine: '' });
     setBatchInput('');
     setBatchJoining(false);
@@ -1832,10 +1862,47 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     try {
       await deleteGroup.mutateAsync({ id });
       toast.success("已移除记录");
+      setSelectedIds(prev => { const s = new Set(prev); s.delete(id); return s; });
       refetchMonitor();
     } catch (e: any) {
       toast.error(e.message ?? "删除失败");
     }
+  };
+
+  // 批量删除
+  const handleBatchDelete = async () => {
+    if (!selectedIds.size || batchOpRunning) return;
+    setBatchOpRunning(true);
+    let done = 0;
+    for (const id of selectedIds) {
+      try { await deleteGroup.mutateAsync({ id }); done++; } catch (_) {}
+    }
+    toast.success(`已删除 ${done} 条记录`);
+    setSelectedIds(new Set());
+    setBatchOpRunning(false);
+    refetchMonitor();
+  };
+
+  // 批量重试（仅对失败记录）
+  const handleBatchRetry = async () => {
+    if (!selectedIds.size || batchOpRunning) return;
+    const failedSelected = filtered.filter((g: any) => selectedIds.has(g.id) && g.monitorStatus === 'error');
+    if (!failedSelected.length) { toast.info('所选记录中没有失败记录'); return; }
+    setBatchOpRunning(true);
+    let done = 0;
+    let failCnt = 0;
+    for (const g of failedSelected) {
+      setRetryingIds(prev => new Set(prev).add(g.id));
+      try {
+        const res = await retryImportGroup.mutateAsync({ monitorGroupId: g.id, tgAccountId: accountId });
+        if (res.success) done++; else failCnt++;
+      } catch (_) { failCnt++; }
+      setRetryingIds(prev => { const s = new Set(prev); s.delete(g.id); return s; });
+    }
+    toast.success(`批量重试完成：成功 ${done} 个，失败 ${failCnt} 个`);
+    setSelectedIds(new Set());
+    setBatchOpRunning(false);
+    refetchMonitor();
   };
 
   // 统计各状态数量
@@ -1845,32 +1912,10 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
   const pendingCount = statsData?.pendingGroupCount ?? 0;
 
   return (
-    <div className="flex flex-col gap-3 py-2 h-full">
-      {/* 统计徽章 */}
-      <div className="flex items-center gap-3 shrink-0 flex-wrap">
-        <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-          <CheckCircle className="w-4 h-4 text-blue-500" />
-          <span className="text-sm text-slate-600">监控中</span>
-          <span className="text-lg font-bold text-blue-600">{joinedCount}</span>
-        </div>
-        {failedCount > 0 && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
-            <XCircle className="w-4 h-4 text-red-500" />
-            <span className="text-sm text-slate-600">加群失败</span>
-            <span className="text-lg font-bold text-red-600">{failedCount}</span>
-          </div>
-        )}
-        {pendingCount > 0 && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <Loader2 className="w-4 h-4 text-yellow-500" />
-            <span className="text-sm text-slate-600">待加入</span>
-            <span className="text-lg font-bold text-yellow-600">{pendingCount}</span>
-          </div>
-        )}
-      </div>
+    <div className="flex flex-col gap-2 py-2 h-full">
       {/* 说明 */}
-      <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700 shrink-0">
-        <strong>添加群组</strong>：输入群组链接或用户名，账号将自动加入并开始实时监控。失败记录保存到数据库，可点击“重试”再次尝试加群。
+      <div className="p-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700 shrink-0">
+        <strong>添加群组</strong>：输入群组链接或用户名，账号将自动加入并开始监控。失败记录保存到数据库，可点击"重试"再次尝试。加群间隔遵守"加群配置"中设置的时间。
         支持：<code>@groupname</code>、<code>https://t.me/groupname</code>、<code>https://t.me/+invitelink</code>
       </div>
       {/* 输入框 + 按鈕 */}
@@ -1880,14 +1925,15 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
           value={groupInput}
           onChange={(e) => setGroupInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !joining && handleJoin()}
-          className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 flex-1"
+          className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 flex-1 h-8 text-sm"
         />
         <Button
           onClick={handleJoin}
           disabled={joining || !groupInput.trim()}
+          size="sm"
           className="bg-green-600 hover:bg-green-700 shrink-0"
         >
-          {joining ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <PackagePlus className="w-4 h-4 mr-1" />}
+          {joining ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <PackagePlus className="w-3.5 h-3.5 mr-1" />}
           加群并监控
         </Button>
       </div>
@@ -1898,10 +1944,10 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
         </summary>
         <div className="mt-2 space-y-2">
           <Textarea
-            placeholder={"每行一个，支持以下格式：\nhttps://t.me/groupname\n@groupusername\n-1001234567890\n/groupname"}
+            placeholder={"每行一个，支持以下格式：\nhttps://t.me/groupname\n@groupusername\n-1001234567890"}
             value={batchInput}
             onChange={(e) => setBatchInput(e.target.value)}
-            className="bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400 text-xs h-24 resize-none"
+            className="bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400 text-xs h-20 resize-none"
           />
           <Button
             size="sm"
@@ -1916,18 +1962,22 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
           {batchJoining && batchProgress.total > 0 && (
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-slate-500">
-                <span>正在加群... {batchProgress.current} / {batchProgress.total}</span>
+                <span>
+                  {batchProgress.waitSec && batchProgress.waitSec > 0
+                    ? `等待 ${batchProgress.waitSec}s（遵守加群间隔配置）...`
+                    : `正在加群... ${batchProgress.current} / ${batchProgress.total}`}
+                </span>
                 <span>{Math.round((batchProgress.current / batchProgress.total) * 100)}%</span>
               </div>
-              <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-2" />
-              {batchProgress.currentLine && (
+              <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-1.5" />
+              {batchProgress.currentLine && !batchProgress.waitSec && (
                 <p className="text-xs text-slate-400 truncate">当前：{batchProgress.currentLine}</p>
               )}
             </div>
           )}
           {/* 实时加群状态列表 */}
           {Object.keys(groupStatusMap).length > 0 && (
-            <div className="max-h-36 overflow-y-auto border border-slate-200 rounded bg-slate-50 p-2 space-y-0.5">
+            <div className="max-h-28 overflow-y-auto border border-slate-200 rounded bg-slate-50 p-1.5 space-y-0.5">
               {Object.entries(groupStatusMap).map(([line, s]) => (
                 <div key={line} className="flex items-center gap-1.5 text-xs">
                   {s.status === 'joining' && <Loader2 className="w-3 h-3 animate-spin text-blue-500 shrink-0" />}
@@ -1949,56 +1999,131 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
           )}
         </div>
       </details>
-      {/* 搜索 + 统计 */}
-      <div className="flex items-center gap-2 shrink-0">
+
+      {/* 搜索 + 状态筛选 + 统计徽章 */}
+      <div className="flex items-center gap-2 shrink-0 flex-wrap">
         <Input
           placeholder="搜索群组..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 h-8 text-sm flex-1"
+          className="bg-slate-100 border-slate-300 text-slate-800 placeholder-slate-500 h-7 text-xs w-32 flex-1 min-w-0"
         />
-        <span className="text-xs text-slate-500 shrink-0">
-          共 <span className="text-slate-800 font-bold">{myGroups.length}</span> 条记录
-        </span>
+        {/* 状态筛选按钮 */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+              statusFilter === 'all' ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+            }`}
+          >全部 {myGroups.length}</button>
+          <button
+            onClick={() => setStatusFilter('active')}
+            className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+              statusFilter === 'active' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-green-700 border-green-300 hover:bg-green-50'
+            }`}
+          >监控中 {joinedCount}</button>
+          {failedCount > 0 && (
+            <button
+              onClick={() => setStatusFilter('error')}
+              className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                statusFilter === 'error' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-red-600 border-red-300 hover:bg-red-50'
+              }`}
+            >失败 {failedCount}</button>
+          )}
+        </div>
+        {pendingCount > 0 && (
+          <span className="text-xs text-yellow-600 shrink-0">待加入 {pendingCount}</span>
+        )}
       </div>
+
+      {/* 批量操作工具栏（有选中时显示）*/}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 shrink-0 px-2 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+          <span className="text-xs text-blue-700 font-medium">已选 {selectedIds.size} 条</span>
+          <div className="flex-1" />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-xs text-blue-600 border-blue-300 hover:bg-blue-100"
+            disabled={batchOpRunning}
+            onClick={handleBatchRetry}
+          >
+            {batchOpRunning ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+            批量重试
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
+            disabled={batchOpRunning}
+            onClick={handleBatchDelete}
+          >
+            {batchOpRunning ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Trash2 className="w-3 h-3 mr-1" />}
+            批量删除
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs text-slate-500"
+            onClick={() => setSelectedIds(new Set())}
+          >取消</Button>
+        </div>
+      )}
+
       {/* 详细表格 */}
       <div className="flex-1 overflow-y-auto min-h-0 rounded border border-slate-200">
         {isLoading ? (
-          <div className="flex items-center justify-center py-10">
-            <Loader2 className="w-5 h-5 animate-spin text-blue-400 mr-2" />
-            <span className="text-slate-500 text-sm">加载中...</span>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-4 h-4 animate-spin text-blue-400 mr-2" />
+            <span className="text-slate-500 text-xs">加载中...</span>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-slate-500 text-sm">
-            <Shield className="w-8 h-8 mb-2 opacity-40" />
-            {search ? "没有匹配的群组" : "暂无记录，请在上方输入群组链接添加"}
+          <div className="flex flex-col items-center justify-center py-8 text-slate-500 text-xs">
+            <Shield className="w-6 h-6 mb-1 opacity-40" />
+            {search || statusFilter !== 'all' ? "没有匹配的记录" : "暂无记录，请在上方输入群组链接添加"}
           </div>
         ) : (
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-slate-100 text-slate-500">
+            <thead className="sticky top-0 bg-slate-100 text-slate-500 text-xs">
               <tr>
-                <th className="text-left px-3 py-2">群组名称</th>
-                <th className="text-left px-3 py-2 hidden sm:table-cell">群组 ID</th>
-                <th className="text-center px-3 py-2 w-16">状态</th>
-                <th className="text-left px-3 py-2">失败原因</th>
-                <th className="text-center px-3 py-2 w-20">操作</th>
+                <th className="px-2 py-1.5 w-7">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    onChange={toggleSelectAll}
+                    className="w-3 h-3 cursor-pointer"
+                  />
+                </th>
+                <th className="text-left px-2 py-1.5">群组名称</th>
+                <th className="text-left px-2 py-1.5 hidden sm:table-cell w-28">群组 ID</th>
+                <th className="text-center px-2 py-1.5 w-16">状态</th>
+                <th className="text-left px-2 py-1.5">失败原因</th>
+                <th className="text-center px-2 py-1.5 w-16">操作</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((g: any) => (
-                <tr key={g.id} className={`border-t border-slate-200/50 hover:bg-slate-100/70 ${
-                  g.monitorStatus === 'error' ? 'bg-red-50/30' : ''
+                <tr key={g.id} className={`border-t border-slate-100 hover:bg-slate-50 ${
+                  selectedIds.has(g.id) ? 'bg-blue-50/60' : g.monitorStatus === 'error' ? 'bg-red-50/20' : ''
                 }`}>
-                  <td className="px-3 py-2">
-                    <div className="font-medium text-slate-800 truncate max-w-[160px]" title={g.groupTitle}>
+                  <td className="px-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(g.id)}
+                      onChange={() => toggleSelect(g.id)}
+                      className="w-3 h-3 cursor-pointer"
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <span className="font-medium text-slate-800 truncate block max-w-[150px]" title={g.groupTitle}>
                       {g.groupTitle || g.groupId}
-                    </div>
+                    </span>
                   </td>
-                  <td className="px-3 py-2 hidden sm:table-cell">
-                    <div className="text-slate-500 truncate max-w-[120px]" title={g.groupId}>{g.groupId}</div>
+                  <td className="px-2 py-1 hidden sm:table-cell">
+                    <span className="text-slate-400 truncate block max-w-[110px]" title={g.groupId}>{g.groupId}</span>
                   </td>
-                  <td className="px-3 py-2 text-center">
-                    <span className={`inline-block px-1.5 py-0.5 rounded text-xs ${
+                  <td className="px-2 py-1 text-center">
+                    <span className={`inline-block px-1 py-0.5 rounded text-xs leading-tight ${
                       g.monitorStatus === "active" ? "bg-green-100 text-green-700" :
                       g.monitorStatus === "paused" ? "bg-yellow-100 text-yellow-700" :
                       "bg-red-100 text-red-700"
@@ -2006,22 +2131,22 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
                       {g.monitorStatus === "active" ? "监控中" : g.monitorStatus === "paused" ? "已暂停" : "加群失败"}
                     </span>
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-1">
                     {g.monitorStatus === 'error' && g.errorMessage ? (
-                      <span className="text-red-500 text-xs truncate max-w-[180px] block" title={g.errorMessage}>
+                      <span className="text-red-500 truncate block max-w-[160px]" title={g.errorMessage}>
                         {g.errorMessage}
                       </span>
                     ) : (
-                      <span className="text-slate-300 text-xs">—</span>
+                      <span className="text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center justify-center gap-1">
+                  <td className="px-2 py-1">
+                    <div className="flex items-center justify-center gap-0.5">
                       {g.monitorStatus === 'error' && (
                         <Button
                           size="sm"
-                          variant="outline"
-                          className="h-6 px-2 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
+                          variant="ghost"
+                          className="h-5 w-5 p-0 text-blue-500 hover:text-blue-700 hover:bg-blue-50"
                           title="重试加群"
                           disabled={retryingIds.has(g.id)}
                           onClick={() => handleRetry(g)}
@@ -2032,7 +2157,7 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="w-6 h-6 text-slate-500 hover:text-red-400"
+                        className="h-5 w-5 p-0 text-slate-400 hover:text-red-500"
                         title="删除记录"
                         onClick={() => handleDelete(g.id)}
                       >
