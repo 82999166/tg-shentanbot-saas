@@ -97,14 +97,14 @@ export default function PublicGroupExport() {
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
               <Link2 className="w-6 h-6 text-cyan-400" /> 公共群组链接导出
             </h1>
-            <p className="text-sm text-slate-400 mt-1">导出系统公共群组池中的所有群组链接，支持复制和下载</p>
+            <p className="text-sm text-slate-500 mt-1">导出系统公共群组池中的所有群组链接，支持复制和下载</p>
           </div>
           <Button
             variant="outline"
             size="sm"
             onClick={() => refetch()}
             disabled={isRefetching}
-            className="border-slate-600 text-slate-300 hover:bg-slate-700"
+            className="border-slate-300 text-slate-600 hover:bg-slate-200"
           >
             <RefreshCw className={`w-4 h-4 mr-1 ${isRefetching ? 'animate-spin' : ''}`} /> 刷新
           </Button>
@@ -118,12 +118,12 @@ export default function PublicGroupExport() {
             { label: "群组类型", value: Array.from(new Set(groups.map(g => g.groupType))).length, icon: FileText, color: "text-purple-400" },
             { label: "总成员数", value: groups.reduce((s, g) => s + (g.memberCount ?? 0), 0).toLocaleString(), icon: Users, color: "text-green-400" },
           ].map((item) => (
-            <Card key={item.label} className="bg-slate-800/60 border-slate-700">
+            <Card key={item.label} className="bg-slate-100/80 border-slate-200">
               <CardContent className="p-4 flex items-center gap-3">
                 <item.icon className={`w-8 h-8 ${item.color}`} />
                 <div>
                   <p className="text-2xl font-bold text-white">{item.value}</p>
-                  <p className="text-xs text-slate-400">{item.label}</p>
+                  <p className="text-xs text-slate-500">{item.label}</p>
                 </div>
               </CardContent>
             </Card>
@@ -131,7 +131,7 @@ export default function PublicGroupExport() {
         </div>
 
         {/* 操作栏 */}
-        <Card className="bg-slate-800/60 border-slate-700">
+        <Card className="bg-slate-100/80 border-slate-200">
           <CardContent className="p-4">
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
@@ -140,18 +140,18 @@ export default function PublicGroupExport() {
                   checked={onlyActive}
                   onCheckedChange={setOnlyActive}
                 />
-                <Label htmlFor="only-active" className="text-slate-300 text-sm cursor-pointer">
+                <Label htmlFor="only-active" className="text-slate-600 text-sm cursor-pointer">
                   仅显示已启用群组
                 </Label>
               </div>
               <div className="flex-1 min-w-48">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                   <Input
                     placeholder="搜索群组名称或链接..."
                     value={searchText}
                     onChange={(e) => setSearchText(e.target.value)}
-                    className="pl-9 bg-slate-700 border-slate-600 text-white placeholder:text-slate-500"
+                    className="pl-9 bg-slate-200 border-slate-300 text-white placeholder:text-slate-500"
                   />
                 </div>
               </div>
@@ -161,7 +161,7 @@ export default function PublicGroupExport() {
                   variant="outline"
                   onClick={copyLinks}
                   disabled={groups.length === 0}
-                  className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                  className="border-slate-300 text-slate-600 hover:bg-slate-200"
                 >
                   {copied ? <CheckCircle2 className="w-4 h-4 mr-1 text-green-400" /> : <Copy className="w-4 h-4 mr-1" />}
                   复制链接 ({groups.length})
@@ -171,7 +171,7 @@ export default function PublicGroupExport() {
                   variant="outline"
                   onClick={downloadTxt}
                   disabled={groups.length === 0}
-                  className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                  className="border-slate-300 text-slate-600 hover:bg-slate-200"
                 >
                   <Download className="w-4 h-4 mr-1" /> 下载 TXT
                 </Button>
@@ -189,38 +189,38 @@ export default function PublicGroupExport() {
         </Card>
 
         {/* 群组列表 */}
-        <Card className="bg-slate-800/60 border-slate-700">
+        <Card className="bg-slate-100/80 border-slate-200">
           <CardHeader className="pb-3">
             <CardTitle className="text-white text-base flex items-center gap-2">
               <Globe className="w-4 h-4 text-cyan-400" /> 群组列表
-              <Badge variant="outline" className="text-slate-400 border-slate-600 ml-2">{groups.length} 个</Badge>
+              <Badge variant="outline" className="text-slate-500 border-slate-300 ml-2">{groups.length} 个</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             {isLoading ? (
-              <div className="py-16 text-center text-slate-400">加载中...</div>
+              <div className="py-16 text-center text-slate-500">加载中...</div>
             ) : groups.length === 0 ? (
               <div className="py-16 text-center">
                 <Globe className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-                <p className="text-slate-400">暂无群组数据</p>
+                <p className="text-slate-500">暂无群组数据</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-slate-700 hover:bg-transparent">
-                      <TableHead className="text-slate-400">#</TableHead>
-                      <TableHead className="text-slate-400">群组名称</TableHead>
-                      <TableHead className="text-slate-400">链接</TableHead>
-                      <TableHead className="text-slate-400">类型</TableHead>
-                      <TableHead className="text-slate-400">成员数</TableHead>
-                      <TableHead className="text-slate-400">状态</TableHead>
-                      <TableHead className="text-slate-400">操作</TableHead>
+                    <TableRow className="border-slate-200 hover:bg-transparent">
+                      <TableHead className="text-slate-500">#</TableHead>
+                      <TableHead className="text-slate-500">群组名称</TableHead>
+                      <TableHead className="text-slate-500">链接</TableHead>
+                      <TableHead className="text-slate-500">类型</TableHead>
+                      <TableHead className="text-slate-500">成员数</TableHead>
+                      <TableHead className="text-slate-500">状态</TableHead>
+                      <TableHead className="text-slate-500">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {groups.map((g, idx) => (
-                      <TableRow key={g.id} className="border-slate-700 hover:bg-slate-700/30">
+                      <TableRow key={g.id} className="border-slate-200 hover:bg-slate-200/30">
                         <TableCell className="text-slate-500 text-sm">{idx + 1}</TableCell>
                         <TableCell>
                           <div className="font-medium text-white text-sm">{g.groupTitle}</div>
@@ -237,7 +237,7 @@ export default function PublicGroupExport() {
                               {g.link}
                             </a>
                           ) : (
-                            <span className="text-slate-400 text-sm font-mono">{g.link}</span>
+                            <span className="text-slate-500 text-sm font-mono">{g.link}</span>
                           )}
                         </TableCell>
                         <TableCell>
@@ -248,7 +248,7 @@ export default function PublicGroupExport() {
                             {g.groupType === "channel" ? "频道" : "群组"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-slate-300 text-sm">
+                        <TableCell className="text-slate-600 text-sm">
                           {g.memberCount > 0 ? g.memberCount.toLocaleString() : "—"}
                         </TableCell>
                         <TableCell>
@@ -266,7 +266,7 @@ export default function PublicGroupExport() {
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="w-7 h-7 text-slate-400 hover:text-cyan-400"
+                            className="w-7 h-7 text-slate-500 hover:text-cyan-400"
                             title="复制链接"
                             onClick={async () => {
                               await navigator.clipboard.writeText(g.link);

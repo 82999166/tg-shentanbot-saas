@@ -40,7 +40,7 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -52,10 +52,10 @@ export default function AdminLogin() {
         </div>
 
         {/* 登录表单 */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl">
+        <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-2xl">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-gray-300 text-sm">管理员邮箱</Label>
+              <Label htmlFor="email" className="text-slate-600 text-sm">管理员邮箱</Label>
               <Input
                 id="email"
                 type="email"
@@ -64,12 +64,12 @@ export default function AdminLogin() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="username"
-                className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 focus:border-red-500 focus:ring-red-500/20 h-11"
+                className="bg-slate-100 border-slate-200 text-white placeholder:text-gray-500 focus:border-red-500 focus:ring-red-500/20 h-11"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-gray-300 text-sm">密码</Label>
+              <Label htmlFor="password" className="text-slate-600 text-sm">密码</Label>
               <div className="relative">
                 <Input
                   id="password"
@@ -79,12 +79,12 @@ export default function AdminLogin() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="current-password"
-                  className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 focus:border-red-500 focus:ring-red-500/20 h-11 pr-10"
+                  className="bg-slate-100 border-slate-200 text-white placeholder:text-gray-500 focus:border-red-500 focus:ring-red-500/20 h-11 pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -110,13 +110,13 @@ export default function AdminLogin() {
             </Button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-gray-800 text-center">
+          <div className="mt-6 pt-5 border-t border-slate-200 text-center">
             <p className="text-gray-500 text-xs">
               此页面仅限系统管理员访问
             </p>
             <a
               href="/login"
-              className="text-gray-400 hover:text-gray-200 text-xs mt-1 inline-block transition-colors"
+              className="text-slate-500 hover:text-slate-700 text-xs mt-1 inline-block transition-colors"
             >
               返回会员登录 →
             </a>

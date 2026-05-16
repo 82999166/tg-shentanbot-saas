@@ -43,15 +43,15 @@ function StatCard({
         <Icon className={`w-6 h-6 ${color}`} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs text-slate-400 mb-0.5">{label}</p>
+        <p className="text-xs text-slate-500 mb-0.5">{label}</p>
         {loading ? (
           <div className="h-7 w-16 bg-slate-100 animate-pulse rounded" />
         ) : (
           <p className={`text-2xl font-bold ${color}`}>{value}</p>
         )}
-        {subValue && <p className="text-xs text-slate-400 mt-0.5">{subValue}</p>}
+        {subValue && <p className="text-xs text-slate-500 mt-0.5">{subValue}</p>}
       </div>
-      {onClick && <ArrowUpRight className="w-4 h-4 text-slate-400 shrink-0" />}
+      {onClick && <ArrowUpRight className="w-4 h-4 text-slate-500 shrink-0" />}
     </div>
   );
 }
@@ -78,7 +78,7 @@ function EngineStatusCard({
         </div>
         <button
           onClick={onNavigate}
-          className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors"
+          className="text-xs text-slate-500 hover:text-slate-600 flex items-center gap-1 transition-colors"
         >
           管理 <ArrowUpRight className="w-3 h-3" />
         </button>
@@ -92,7 +92,7 @@ function EngineStatusCard({
       ) : (
         <div className="space-y-2">
           {accounts.length === 0 ? (
-            <p className="text-xs text-slate-400 text-center py-3">暂无监控账号</p>
+            <p className="text-xs text-slate-500 text-center py-3">暂无监控账号</p>
           ) : (
             accounts.map((acc: any) => (
               <div key={acc.id} className="flex items-center justify-between bg-slate-100 rounded-lg px-3 py-2">
@@ -107,7 +107,7 @@ function EngineStatusCard({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">{acc.joinedGroupsCount ?? 0} 群</span>
+                  <span className="text-xs text-slate-500">{acc.joinedGroupsCount ?? 0} 群</span>
                   <span className={[
                     "text-xs px-2 py-0.5 rounded-full font-medium",
                     acc.sessionStatus === "active"
@@ -123,7 +123,7 @@ function EngineStatusCard({
             ))
           )}
           <div className="flex items-center justify-between pt-1 border-t border-slate-200 mt-2">
-            <span className="text-xs text-slate-400">在线账号</span>
+            <span className="text-xs text-slate-500">在线账号</span>
             <span className={`text-sm font-bold ${online === total && total > 0 ? "text-green-400" : online > 0 ? "text-yellow-400" : "text-red-400"}`}>
               {online} / {total}
             </span>
@@ -169,14 +169,14 @@ function WeeklyTrendCard({
             const dayLabel = new Date(date + "T00:00:00").toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
             return (
               <div key={date} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-xs text-slate-400 font-medium">{count > 0 ? count : ""}</span>
+                <span className="text-xs text-slate-500 font-medium">{count > 0 ? count : ""}</span>
                 <div className="w-full flex flex-col justify-end" style={{ height: 80 }}>
                   <div
                     className="w-full rounded-t-sm bg-blue-600 transition-all duration-500"
                     style={{ height: `${Math.max(pct, count > 0 ? 8 : 2)}%`, minHeight: count > 0 ? 4 : 2, opacity: count > 0 ? 1 : 0.2 }}
                   />
                 </div>
-                <span className="text-xs text-slate-400">{dayLabel}</span>
+                <span className="text-xs text-slate-500">{dayLabel}</span>
               </div>
             );
           })}
@@ -207,7 +207,7 @@ function TopKeywordsCard({
         </div>
         <button
           onClick={onNavigate}
-          className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors"
+          className="text-xs text-slate-500 hover:text-slate-600 flex items-center gap-1 transition-colors"
         >
           统计 <ArrowUpRight className="w-3 h-3" />
         </button>
@@ -217,7 +217,7 @@ function TopKeywordsCard({
           {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-8 bg-slate-100 animate-pulse rounded" />)}
         </div>
       ) : topKeywords.length === 0 ? (
-        <p className="text-xs text-slate-400 text-center py-4">暂无数据</p>
+        <p className="text-xs text-slate-500 text-center py-4">暂无数据</p>
       ) : (
         <div className="space-y-2">
           {topKeywords.map((kw, idx) => {
@@ -226,7 +226,7 @@ function TopKeywordsCard({
               <div key={idx} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-600 font-medium truncate max-w-[120px]">{kw.matchedKeyword || "—"}</span>
-                  <span className="text-slate-400 shrink-0 ml-2">{kw.count} 次</span>
+                  <span className="text-slate-500 shrink-0 ml-2">{kw.count} 次</span>
                 </div>
                 <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                   <div
@@ -273,7 +273,7 @@ function RecentHitsCard({
         </div>
         <button
           onClick={onNavigate}
-          className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors"
+          className="text-xs text-slate-500 hover:text-slate-600 flex items-center gap-1 transition-colors"
         >
           全部 <ArrowUpRight className="w-3 h-3" />
         </button>
@@ -283,19 +283,19 @@ function RecentHitsCard({
           {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-12 bg-slate-100 animate-pulse rounded" />)}
         </div>
       ) : recentHits.length === 0 ? (
-        <p className="text-xs text-slate-400 text-center py-4">暂无命中记录</p>
+        <p className="text-xs text-slate-500 text-center py-4">暂无命中记录</p>
       ) : (
         <div className="space-y-1.5">
           {recentHits.slice(0, 8).map((hit: any) => (
             <div key={hit.id} className="flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2">
-              <Target className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <Target className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               <span className="text-xs text-slate-600 font-medium truncate flex-1">
                 {hit.matchedKeyword || "—"}
               </span>
-              <span className="text-xs text-slate-400 shrink-0">
+              <span className="text-xs text-slate-500 shrink-0">
                 {new Date(hit.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
               </span>
-              <span className={`text-xs shrink-0 ${statusColor[hit.dmStatus] || "text-slate-400"}`}>
+              <span className={`text-xs shrink-0 ${statusColor[hit.dmStatus] || "text-slate-500"}`}>
                 {statusLabel[hit.dmStatus] || hit.dmStatus}
               </span>
             </div>
@@ -355,9 +355,9 @@ export default function AdminDashboard() {
               <BarChart2 className="w-5 h-5 text-red-400" />
               系统仪表盘
             </h1>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               平台运行概览 · 每 30 秒自动刷新
-              <span className="ml-2 text-slate-400">
+              <span className="ml-2 text-slate-500">
                 上次刷新: {lastRefresh.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </span>
             </p>

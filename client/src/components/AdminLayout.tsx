@@ -102,7 +102,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
           )}
           <button
             onClick={() => setCollapsed(c => !c)}
-            className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md p-0.5 transition-colors shrink-0"
+            className="text-slate-500 hover:text-slate-600 hover:bg-slate-100 rounded-md p-0.5 transition-colors shrink-0"
           >
             <PanelLeft className="w-4 h-4" />
           </button>
@@ -116,7 +116,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
                 {!collapsed && (
                   <div style={{ padding: "6px 14px 2px" }}>
                     <span
-                      className="font-semibold text-slate-400 uppercase tracking-wider"
+                      className="font-semibold text-slate-500 uppercase tracking-wider"
                       style={{ fontSize: 10 }}
                     >
                       {group}

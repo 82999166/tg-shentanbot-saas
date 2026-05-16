@@ -25,10 +25,10 @@ function EngineStatusCard({ heartbeat, platformStats }: { heartbeat: any; platfo
 
   if (!heartbeat && !platformStats) {
     return (
-      <Card className="bg-slate-800 border-slate-700">
+      <Card className="bg-slate-100 border-slate-200">
         <CardContent className="p-6 flex flex-col items-center justify-center gap-3 text-center">
           <WifiOff className="w-10 h-10 text-slate-500" />
-          <p className="text-slate-400 text-sm">引擎未连接</p>
+          <p className="text-slate-500 text-sm">引擎未连接</p>
           <p className="text-slate-600 text-xs">尚未收到心跳，请确认监控引擎已启动</p>
         </CardContent>
       </Card>
@@ -39,28 +39,28 @@ function EngineStatusCard({ heartbeat, platformStats }: { heartbeat: any; platfo
   const totalGroups = heartbeat?.totalGroups ?? platformStats?.activeGroups ?? 0;
 
   return (
-    <Card className={`border ${isOnline ? "bg-green-950/30 border-green-800" : "bg-slate-800 border-slate-700"}`}>
+    <Card className={`border ${isOnline ? "bg-green-950/30 border-green-800" : "bg-slate-100 border-slate-200"}`}>
       <CardContent className="p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             {isOnline
               ? <Wifi className="w-5 h-5 text-green-400" />
-              : <WifiOff className="w-5 h-5 text-slate-400" />
+              : <WifiOff className="w-5 h-5 text-slate-500" />
             }
             <span className="font-semibold text-white">引擎状态</span>
           </div>
-          <Badge className={isOnline ? "bg-green-700 text-green-100" : "bg-slate-600 text-slate-300"}>
+          <Badge className={isOnline ? "bg-green-700 text-green-100" : "bg-slate-600 text-slate-600"}>
             {isOnline ? "在线" : "心跳未知"}
           </Badge>
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="bg-slate-800/60 rounded-lg p-3">
-            <p className="text-slate-400 text-xs mb-1">引擎类型</p>
+          <div className="bg-slate-100/80 rounded-lg p-3">
+            <p className="text-slate-500 text-xs mb-1">引擎类型</p>
             <p className="text-white font-mono font-bold">🐍 Pyrogram</p>
           </div>
-          <div className="bg-slate-800/60 rounded-lg p-3">
-            <p className="text-slate-400 text-xs mb-1">最后心跳</p>
-            <p className="text-slate-300 text-xs font-medium">
+          <div className="bg-slate-100/80 rounded-lg p-3">
+            <p className="text-slate-500 text-xs mb-1">最后心跳</p>
+            <p className="text-slate-600 text-xs font-medium">
               {lastSeen && secondsAgo !== null
                 ? secondsAgo < 60
                   ? `${secondsAgo}秒前`
@@ -70,20 +70,20 @@ function EngineStatusCard({ heartbeat, platformStats }: { heartbeat: any; platfo
                 : "—"}
             </p>
           </div>
-          <div className="bg-slate-800/60 rounded-lg p-3">
-            <p className="text-slate-400 text-xs mb-1">活跃账号</p>
+          <div className="bg-slate-100/80 rounded-lg p-3">
+            <p className="text-slate-500 text-xs mb-1">活跃账号</p>
             <p className="text-green-400 font-bold text-lg">{activeAccounts}</p>
           </div>
-          <div className="bg-slate-800/60 rounded-lg p-3">
-            <p className="text-slate-400 text-xs mb-1">监控群组</p>
+          <div className="bg-slate-100/80 rounded-lg p-3">
+            <p className="text-slate-500 text-xs mb-1">监控群组</p>
             <p className="text-blue-400 font-bold text-lg">{totalGroups}</p>
           </div>
-          <div className="bg-slate-800/60 rounded-lg p-3">
-            <p className="text-slate-400 text-xs mb-1">今日命中</p>
+          <div className="bg-slate-100/80 rounded-lg p-3">
+            <p className="text-slate-500 text-xs mb-1">今日命中</p>
             <p className="text-yellow-400 font-bold text-lg">{platformStats?.todayHits ?? 0}</p>
           </div>
-          <div className="bg-slate-800/60 rounded-lg p-3">
-            <p className="text-slate-400 text-xs mb-1">待处理私信</p>
+          <div className="bg-slate-100/80 rounded-lg p-3">
+            <p className="text-slate-500 text-xs mb-1">待处理私信</p>
             <p className="text-orange-400 font-bold text-lg">{platformStats?.pendingQueue ?? 0}</p>
           </div>
         </div>
@@ -106,7 +106,7 @@ function StatsRow({ platformStats }: { platformStats: any }) {
   return (
     <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
       {cards.map((c, i) => (
-        <Card key={i} className="bg-slate-800 border-slate-700">
+        <Card key={i} className="bg-slate-100 border-slate-200">
           <CardContent className="p-3 text-center">
             <div className="flex justify-center mb-1">{c.icon}</div>
             <p className={`font-bold text-base ${c.color}`}>{c.value}</p>
@@ -135,16 +135,16 @@ function AccountHealthList({ accounts }: { accounts: any[] }) {
   };
 
   return (
-    <Card className="bg-slate-800 border-slate-700">
+    <Card className="bg-slate-100 border-slate-200">
       <CardHeader className="pb-2">
         <button
           className="flex items-center justify-between w-full text-left"
           onClick={() => setExpanded(!expanded)}
         >
-          <CardTitle className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-600 flex items-center gap-2">
             <Shield className="w-4 h-4 text-blue-400" />
             账号健康度监控
-            <Badge className="bg-slate-700 text-slate-300 text-xs ml-1">{accounts.length}</Badge>
+            <Badge className="bg-slate-200 text-slate-600 text-xs ml-1">{accounts.length}</Badge>
           </CardTitle>
           {expanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
         </button>
@@ -158,13 +158,13 @@ function AccountHealthList({ accounts }: { accounts: any[] }) {
               {accounts.map((acc) => {
                 const score = acc.healthScore ?? (acc.sessionStatus === "active" ? 90 : acc.sessionStatus === "banned" ? 10 : 50);
                 return (
-                  <div key={acc.id} className="bg-slate-700/50 rounded-lg p-3">
+                  <div key={acc.id} className="bg-slate-200/60 rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
                       <div className="min-w-0 flex-1">
                         <p className="text-white text-sm font-medium truncate">
                           {acc.tgFirstName ?? acc.phone ?? `账号 #${acc.id}`}
                         </p>
-                        <p className="text-slate-400 text-xs font-mono flex items-center gap-2">
+                        <p className="text-slate-500 text-xs font-mono flex items-center gap-2">
                           {acc.phone ?? (acc.tgUsername ? `@${acc.tgUsername}` : `ID: ${acc.id}`)}
                           {acc.joinedGroupCount !== undefined && (
                             <span className="text-blue-400">已加 {acc.joinedGroupCount} 群</span>
@@ -178,7 +178,7 @@ function AccountHealthList({ accounts }: { accounts: any[] }) {
                             ? "border-green-700 text-green-300"
                             : acc.sessionStatus === "banned"
                             ? "border-red-700 text-red-300"
-                            : "border-slate-600 text-slate-400"
+                            : "border-slate-300 text-slate-500"
                         }`}>
                           {statusLabel[acc.sessionStatus ?? "inactive"] ?? acc.sessionStatus ?? "未知"}
                         </Badge>
@@ -205,9 +205,9 @@ function AccountHealthList({ accounts }: { accounts: any[] }) {
 // ── 引擎特性说明卡片 ──────────────────────────────────────────────
 function EngineFeaturesCard() {
   return (
-    <Card className="bg-slate-800 border-slate-700">
+    <Card className="bg-slate-100 border-slate-200">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+        <CardTitle className="text-sm font-semibold text-slate-600 flex items-center gap-2">
           <Server className="w-4 h-4 text-blue-400" />
           引擎核心能力
         </CardTitle>
@@ -220,11 +220,11 @@ function EngineFeaturesCard() {
           { icon: <Send className="w-3.5 h-3.5 text-purple-400" />, title: "自动私信发送", desc: "命中后自动发送私信，支持模板变量和防封策略" },
           { icon: <Shield className="w-3.5 h-3.5 text-orange-400" />, title: "断线自动重连", desc: "网络中断后自动重连，账号异常自动切换备用账号" },
         ].map((f, i) => (
-          <div key={i} className="flex items-start gap-2.5 bg-slate-700/40 rounded-lg p-2.5">
+          <div key={i} className="flex items-start gap-2.5 bg-slate-200/40 rounded-lg p-2.5">
             <div className="mt-0.5 shrink-0">{f.icon}</div>
             <div>
               <p className="text-white text-xs font-medium">{f.title}</p>
-              <p className="text-slate-400 text-xs mt-0.5">{f.desc}</p>
+              <p className="text-slate-500 text-xs mt-0.5">{f.desc}</p>
             </div>
           </div>
         ))}
@@ -237,16 +237,16 @@ function EngineFeaturesCard() {
 function TopKeywordsCard({ topKeywords }: { topKeywords: any[] }) {
   if (!topKeywords || topKeywords.length === 0) return null;
   return (
-    <Card className="bg-slate-800 border-slate-700">
+    <Card className="bg-slate-100 border-slate-200">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+        <CardTitle className="text-sm font-semibold text-slate-600 flex items-center gap-2">
           <Hash className="w-4 h-4 text-yellow-400" />
           近7日 Top 关键词
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0 space-y-2">
         {topKeywords.map((kw, i) => (
-          <div key={i} className="flex items-center justify-between bg-slate-700/40 rounded-lg px-3 py-2">
+          <div key={i} className="flex items-center justify-between bg-slate-200/40 rounded-lg px-3 py-2">
             <div className="flex items-center gap-2">
               <span className="text-slate-500 text-xs w-4">{i + 1}</span>
               <span className="text-white text-sm font-medium">{kw.matchedKeyword ?? `关键词 #${kw.keywordId}`}</span>
@@ -301,14 +301,14 @@ export default function TdlibEngineTab() {
             <Activity className="w-5 h-5 text-green-400" />
             监控引擎状态
           </h2>
-          <p className="text-slate-400 text-xs mt-0.5">
+          <p className="text-slate-500 text-xs mt-0.5">
             实时监控 Pyrogram 引擎运行状态、账号健康度和消息命中情况
           </p>
         </div>
         <Button
           size="sm"
           variant="outline"
-          className="border-slate-600 text-slate-300 hover:bg-slate-700 h-8"
+          className="border-slate-300 text-slate-600 hover:bg-slate-200 h-8"
           onClick={handleRefresh}
           disabled={isRefetching}
         >

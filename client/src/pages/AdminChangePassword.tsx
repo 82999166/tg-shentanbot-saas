@@ -84,7 +84,7 @@ export default function AdminChangePassword() {
             {/* 原密码 */}
             <div className="space-y-2">
               <Label className="text-slate-600 text-sm flex items-center gap-2">
-                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                <Lock className="w-3.5 h-3.5 text-slate-500" />
                 当前密码
               </Label>
               <div className="relative">
@@ -112,7 +112,7 @@ export default function AdminChangePassword() {
             {/* 新密码 */}
             <div className="space-y-2">
               <Label className="text-slate-600 text-sm flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+                <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
                 新密码
               </Label>
               <div className="relative">
@@ -157,7 +157,7 @@ export default function AdminChangePassword() {
             {/* 确认新密码 */}
             <div className="space-y-2">
               <Label className="text-slate-600 text-sm flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+                <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
                 确认新密码
               </Label>
               <div className="relative">
@@ -199,7 +199,7 @@ export default function AdminChangePassword() {
                 <div key={req.label} className="flex items-center gap-2">
                   <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] ${
                     newPassword.length === 0
-                      ? "bg-slate-200 text-slate-400"
+                      ? "bg-slate-200 text-slate-500"
                       : req.ok
                       ? "bg-green-500/20 text-green-400"
                       : "bg-red-500/20 text-red-400"
@@ -208,7 +208,7 @@ export default function AdminChangePassword() {
                   </div>
                   <span className={`text-xs ${
                     newPassword.length === 0
-                      ? "text-slate-400"
+                      ? "text-slate-500"
                       : req.ok ? "text-green-400" : "text-slate-500"
                   }`}>{req.label}</span>
                 </div>

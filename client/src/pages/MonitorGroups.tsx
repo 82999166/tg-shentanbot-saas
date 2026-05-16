@@ -230,9 +230,9 @@ export default function MonitorGroups() {
 
   const statusColors: Record<string, string> = {
     monitoring: "bg-emerald-900 text-emerald-300",
-    paused: "bg-slate-700 text-slate-300",
+    paused: "bg-slate-200 text-slate-600",
     error: "bg-red-900 text-red-300",
-    stopped: "bg-slate-700 text-slate-400",
+    stopped: "bg-slate-200 text-slate-500",
     active: "bg-emerald-900 text-emerald-300",
   };
   const statusLabels: Record<string, string> = {
@@ -274,29 +274,29 @@ export default function MonitorGroups() {
         </div>
 
         {/* 引擎状态栏 */}
-        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-lg mb-5 text-sm border ${engineOnline ? "bg-emerald-950/40 border-emerald-800/50" : "bg-slate-800/60 border-slate-700"}`}>
+        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-lg mb-5 text-sm border ${engineOnline ? "bg-emerald-950/40 border-emerald-800/50" : "bg-slate-100/80 border-slate-200"}`}>
           {engineOnline
             ? <Wifi className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            : <WifiOff className="w-4 h-4 text-slate-400 flex-shrink-0" />
+            : <WifiOff className="w-4 h-4 text-slate-500 flex-shrink-0" />
           }
-          <span className={engineOnline ? "text-emerald-300 font-medium" : "text-slate-400"}>
+          <span className={engineOnline ? "text-emerald-300 font-medium" : "text-slate-500"}>
             引擎{engineOnline ? "在线" : "离线"}
           </span>
           {heartbeat && (
             <>
               <span className="text-slate-500 text-xs">最后心跳: {lastHeartbeatText}</span>
               {heartbeat.totalGroups != null && (
-                <span className="text-slate-400 text-xs">· 监控群组: <span className="text-blue-400 font-medium">{heartbeat.totalGroups}</span> 个</span>
+                <span className="text-slate-500 text-xs">· 监控群组: <span className="text-blue-400 font-medium">{heartbeat.totalGroups}</span> 个</span>
               )}
               {heartbeat.activeAccounts != null && (
-                <span className="text-slate-400 text-xs">· 活跃账号: <span className="text-green-400 font-medium">{heartbeat.activeAccounts}</span> 个</span>
+                <span className="text-slate-500 text-xs">· 活跃账号: <span className="text-green-400 font-medium">{heartbeat.activeAccounts}</span> 个</span>
               )}
             </>
           )}
           <Button
             size="sm"
             variant="ghost"
-            className="ml-auto h-6 px-2 text-xs text-slate-400 hover:text-white"
+            className="ml-auto h-6 px-2 text-xs text-slate-500 hover:text-white"
             onClick={() => refetchHeartbeat()}
             disabled={fetchingHeartbeat}
           >
@@ -328,12 +328,12 @@ export default function MonitorGroups() {
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <Badge className={`text-xs border-0 ${statusColors[g.monitorStatus] ?? "bg-slate-700 text-slate-300"}`}>
+                      <Badge className={`text-xs border-0 ${statusColors[g.monitorStatus] ?? "bg-slate-200 text-slate-600"}`}>
                         {statusLabels[g.monitorStatus] ?? g.monitorStatus}
                       </Badge>
                       {/* 引擎在线时显示引擎监控状态 */}
                       {engineOnline && (
-                        <Badge className={`text-xs border-0 ${g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "bg-blue-900/60 text-blue-300" : "bg-slate-700/60 text-slate-400"}`}>
+                        <Badge className={`text-xs border-0 ${g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "bg-blue-900/60 text-blue-300" : "bg-slate-200/60 text-slate-500"}`}>
                           {g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "🔍 引擎监控中" : "⏸ 引擎未监控"}
                         </Badge>
                       )}
@@ -390,36 +390,36 @@ export default function MonitorGroups() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             {/* 引擎连接状态 */}
-            <div className={`flex items-center gap-3 p-4 rounded-lg border ${engineOnline ? "bg-emerald-950/40 border-emerald-800" : "bg-slate-800 border-slate-700"}`}>
+            <div className={`flex items-center gap-3 p-4 rounded-lg border ${engineOnline ? "bg-emerald-950/40 border-emerald-800" : "bg-slate-100 border-slate-200"}`}>
               {engineOnline
                 ? <Wifi className="w-6 h-6 text-emerald-400" />
-                : <WifiOff className="w-6 h-6 text-slate-400" />
+                : <WifiOff className="w-6 h-6 text-slate-500" />
               }
               <div>
-                <div className={`font-semibold ${engineOnline ? "text-emerald-300" : "text-slate-300"}`}>
+                <div className={`font-semibold ${engineOnline ? "text-emerald-300" : "text-slate-600"}`}>
                   引擎{engineOnline ? "在线运行中" : "离线 / 未响应"}
                 </div>
-                <div className="text-xs text-slate-400 mt-0.5">最后心跳: {lastHeartbeatText}</div>
+                <div className="text-xs text-slate-500 mt-0.5">最后心跳: {lastHeartbeatText}</div>
               </div>
             </div>
 
             {/* 引擎详细数据 */}
             {heartbeat ? (
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700">
-                  <div className="text-xs text-slate-400 mb-1">引擎类型</div>
+                <div className="bg-slate-100/80 rounded-lg p-3 border border-slate-200">
+                  <div className="text-xs text-slate-500 mb-1">引擎类型</div>
                   <div className="font-medium text-white text-sm">🐍 {heartbeat.engineType ?? "Pyrogram"}</div>
                 </div>
-                <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700">
-                  <div className="text-xs text-slate-400 mb-1">活跃账号数</div>
+                <div className="bg-slate-100/80 rounded-lg p-3 border border-slate-200">
+                  <div className="text-xs text-slate-500 mb-1">活跃账号数</div>
                   <div className="font-bold text-green-400 text-xl">{heartbeat.activeAccounts ?? 0}</div>
                 </div>
-                <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700">
-                  <div className="text-xs text-slate-400 mb-1">监控群组总数</div>
+                <div className="bg-slate-100/80 rounded-lg p-3 border border-slate-200">
+                  <div className="text-xs text-slate-500 mb-1">监控群组总数</div>
                   <div className="font-bold text-blue-400 text-xl">{heartbeat.totalGroups ?? 0}</div>
                 </div>
-                <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700">
-                  <div className="text-xs text-slate-400 mb-1">数据库群组数</div>
+                <div className="bg-slate-100/80 rounded-lg p-3 border border-slate-200">
+                  <div className="text-xs text-slate-500 mb-1">数据库群组数</div>
                   <div className="font-bold text-purple-400 text-xl">{groups?.length ?? 0}</div>
                 </div>
               </div>
@@ -433,20 +433,20 @@ export default function MonitorGroups() {
             {/* 各群组监控状态列表 */}
             {groups && groups.length > 0 && (
               <div>
-                <div className="text-xs text-slate-400 mb-2 font-medium">各群组监控状态</div>
+                <div className="text-xs text-slate-500 mb-2 font-medium">各群组监控状态</div>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto">
                   {groups.map((g) => (
-                    <div key={g.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/50">
+                    <div key={g.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-100/70 border border-slate-200/50">
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium text-white truncate">{g.groupTitle ?? `群组 ${g.groupId}`}</div>
                         <div className="text-xs text-slate-500 font-mono truncate">ID: {g.groupId}</div>
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-                        <Badge className={`text-xs border-0 ${statusColors[g.monitorStatus] ?? "bg-slate-700 text-slate-300"}`}>
+                        <Badge className={`text-xs border-0 ${statusColors[g.monitorStatus] ?? "bg-slate-200 text-slate-600"}`}>
                           {statusLabels[g.monitorStatus] ?? g.monitorStatus}
                         </Badge>
                         {engineOnline && (
-                          <Badge className={`text-xs border-0 ${g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "bg-blue-900/60 text-blue-300" : "bg-slate-700/60 text-slate-500"}`}>
+                          <Badge className={`text-xs border-0 ${g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "bg-blue-900/60 text-blue-300" : "bg-slate-200/60 text-slate-500"}`}>
                             {g.monitorStatus === "active" || g.monitorStatus === "monitoring" ? "引擎✓" : "引擎✗"}
                           </Badge>
                         )}
@@ -458,8 +458,8 @@ export default function MonitorGroups() {
             )}
 
             {/* 说明 */}
-            <div className="text-xs text-slate-500 bg-slate-800/40 rounded-lg p-3 border border-slate-700/50">
-              <p className="font-medium text-slate-400 mb-1">说明</p>
+            <div className="text-xs text-slate-500 bg-slate-100/60 rounded-lg p-3 border border-slate-200/50">
+              <p className="font-medium text-slate-500 mb-1">说明</p>
               <p>• 引擎每 30 秒上报一次心跳，2 分钟内无心跳则判定为离线</p>
               <p>• 「引擎✓」表示该群组状态为「监控中」，引擎应已加载该群组</p>
               <p>• 「引擎✗」表示该群组已暂停或异常，引擎不会监控该群组消息</p>

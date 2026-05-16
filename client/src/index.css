@@ -1,3 +1,72 @@
+
+/* ─── 亮色主题 CSS 变量（全局覆盖）─── */
+:root {
+  --background: 0 0% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 210 40% 96%;
+  --accent-foreground: 222 47% 11%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 217 91% 60%;
+  --radius: 0.5rem;
+  --sidebar-background: 0 0% 100%;
+  --sidebar-foreground: 222 47% 11%;
+  --sidebar-primary: 217 91% 60%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 210 40% 96%;
+  --sidebar-accent-foreground: 222 47% 11%;
+  --sidebar-border: 214 32% 91%;
+  --sidebar-ring: 217 91% 60%;
+}
+
+/* 禁用 dark mode 自动切换 */
+.dark {
+  --background: 0 0% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 210 40% 96%;
+  --accent-foreground: 222 47% 11%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 217 91% 60%;
+  --sidebar-background: 0 0% 100%;
+  --sidebar-foreground: 222 47% 11%;
+  --sidebar-primary: 217 91% 60%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 210 40% 96%;
+  --sidebar-accent-foreground: 222 47% 11%;
+  --sidebar-border: 214 32% 91%;
+  --sidebar-ring: 217 91% 60%;
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -44,94 +113,10 @@
 }
 
 /* ── 亮色主题（明亮清爽风格）─────────────────────────────────────── */
-:root {
-  --radius: 0.5rem;
 
-  /* 背景：浅灰白 */
-  --background: oklch(0.97 0.003 240);
-  --foreground: oklch(0.20 0.015 240);
-
-  /* 卡片：纯白 */
-  --card: oklch(1.00 0 0);
-  --card-foreground: oklch(0.20 0.015 240);
-
-  /* 弹出层：纯白 */
-  --popover: oklch(1.00 0 0);
-  --popover-foreground: oklch(0.20 0.015 240);
-
-  /* 主色：蓝色 */
-  --primary: oklch(0.55 0.20 250);
-  --primary-foreground: oklch(0.99 0.002 240);
-
-  /* 次要：浅灰 */
-  --secondary: oklch(0.94 0.005 240);
-  --secondary-foreground: oklch(0.30 0.015 240);
-
-  /* 静音：更浅灰 */
-  --muted: oklch(0.95 0.004 240);
-  --muted-foreground: oklch(0.50 0.01 240);
-
-  /* 强调：极浅蓝 */
-  --accent: oklch(0.93 0.015 250);
-  --accent-foreground: oklch(0.30 0.02 250);
-
-  /* 危险：红色 */
-  --destructive: oklch(0.55 0.22 25);
-  --destructive-foreground: oklch(0.99 0.002 240);
-
-  /* 边框：浅灰 */
-  --border: oklch(0.88 0.006 240);
-  --input: oklch(0.92 0.005 240);
-  --ring: oklch(0.55 0.20 250);
-
-  /* 图表颜色 */
-  --chart-1: oklch(0.55 0.20 250);
-  --chart-2: oklch(0.60 0.18 160);
-  --chart-3: oklch(0.65 0.18 80);
-  --chart-4: oklch(0.55 0.20 300);
-  --chart-5: oklch(0.60 0.20 25);
-
-  /* 侧边栏：纯白 */
-  --sidebar: oklch(1.00 0 0);
-  --sidebar-foreground: oklch(0.25 0.015 240);
-  --sidebar-primary: oklch(0.55 0.20 250);
-  --sidebar-primary-foreground: oklch(0.99 0.002 240);
-  --sidebar-accent: oklch(0.93 0.015 250);
-  --sidebar-accent-foreground: oklch(0.30 0.02 250);
-  --sidebar-border: oklch(0.90 0.006 240);
-  --sidebar-ring: oklch(0.55 0.20 250);
-}
 
 /* 保留 dark 类以兼容可能的暗色组件 */
-.dark {
-  --background: oklch(0.10 0.01 240);
-  --foreground: oklch(0.92 0.01 240);
-  --card: oklch(0.14 0.015 240);
-  --card-foreground: oklch(0.92 0.01 240);
-  --popover: oklch(0.14 0.015 240);
-  --popover-foreground: oklch(0.92 0.01 240);
-  --primary: oklch(0.60 0.20 240);
-  --primary-foreground: oklch(0.98 0.005 240);
-  --secondary: oklch(0.18 0.015 240);
-  --secondary-foreground: oklch(0.85 0.01 240);
-  --muted: oklch(0.18 0.015 240);
-  --muted-foreground: oklch(0.55 0.01 240);
-  --accent: oklch(0.22 0.02 240);
-  --accent-foreground: oklch(0.92 0.01 240);
-  --destructive: oklch(0.55 0.22 25);
-  --destructive-foreground: oklch(0.98 0.005 240);
-  --border: oklch(0.22 0.015 240);
-  --input: oklch(0.18 0.015 240);
-  --ring: oklch(0.60 0.20 240);
-  --sidebar: oklch(0.12 0.015 240);
-  --sidebar-foreground: oklch(0.85 0.01 240);
-  --sidebar-primary: oklch(0.60 0.20 240);
-  --sidebar-primary-foreground: oklch(0.98 0.005 240);
-  --sidebar-accent: oklch(0.18 0.015 240);
-  --sidebar-accent-foreground: oklch(0.92 0.01 240);
-  --sidebar-border: oklch(0.20 0.015 240);
-  --sidebar-ring: oklch(0.60 0.20 240);
-}
+
 
 @layer base {
   * {

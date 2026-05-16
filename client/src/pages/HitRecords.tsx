@@ -11,12 +11,12 @@ import { Activity, Download, RefreshCw, Search, Trash2, Users } from "lucide-rea
 import { useState } from "react";
 
 const DM_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  none: { label: "未发送", color: "bg-slate-700 text-slate-300" },
+  none: { label: "未发送", color: "bg-slate-200 text-slate-600" },
   queued: { label: "排队中", color: "bg-blue-900 text-blue-300" },
   pending: { label: "排队中", color: "bg-blue-900 text-blue-300" },
   sent: { label: "已发送", color: "bg-emerald-900 text-emerald-300" },
   failed: { label: "失败", color: "bg-red-900 text-red-300" },
-  skipped: { label: "已跳过", color: "bg-slate-700 text-slate-400" },
+  skipped: { label: "已跳过", color: "bg-slate-200 text-slate-500" },
 };
 
 export default function HitRecords() {

@@ -68,7 +68,7 @@ function GroupKeywordsPanel({ groupId, groupTitle }: { groupId: number; groupTit
       <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
         <Tag className="w-3.5 h-3.5" />
         <span>「{groupTitle}」独立关键词</span>
-        <span className="ml-auto text-slate-400">{keywords?.length ?? 0} 个</span>
+        <span className="ml-auto text-slate-500">{keywords?.length ?? 0} 个</span>
       </div>
       <div className="flex gap-2">
         <Input
@@ -97,13 +97,13 @@ function GroupKeywordsPanel({ groupId, groupTitle }: { groupId: number; groupTit
       </div>
       <div className="flex flex-wrap gap-1.5">
         {!keywords || keywords.length === 0 ? (
-          <span className="text-slate-400 text-xs">暂无关键词，此群组将使用各用户自己的关键词规则</span>
+          <span className="text-slate-500 text-xs">暂无关键词，此群组将使用各用户自己的关键词规则</span>
         ) : (
           keywords.map((kw) => (
             <div key={kw.id} className="flex items-center gap-1 bg-blue-500/15 border border-blue-500/30 rounded px-2 py-0.5">
               <span className="text-blue-300 text-xs">{kw.pattern}</span>
               <span className="text-blue-500/60 text-xs">[{kw.matchType}]</span>
-              <button onClick={() => removeKwMutation.mutate({ id: kw.id })} className="text-slate-400 hover:text-red-400 ml-1">
+              <button onClick={() => removeKwMutation.mutate({ id: kw.id })} className="text-slate-500 hover:text-red-400 ml-1">
                 <XCircle className="w-3 h-3" />
               </button>
             </div>
@@ -126,11 +126,11 @@ function GroupJoinStatusPanel({ groupId, groupTitle }: { groupId: number; groupT
         <span>监控账号加群状态</span>
         <span className="ml-auto">
           <span className="text-green-400">{joinedCount}</span>
-          <span className="text-slate-400">/{totalCount} 已加入</span>
+          <span className="text-slate-500">/{totalCount} 已加入</span>
         </span>
       </div>
       {!statusList || statusList.length === 0 ? (
-        <span className="text-slate-400 text-xs">暂无监控账号</span>
+        <span className="text-slate-500 text-xs">暂无监控账号</span>
       ) : (
         <div className="space-y-1">
           {statusList.map((s) => (
@@ -266,7 +266,7 @@ function PublicGroupsTab() {
 
           <div className="space-y-2">
             {!groups || groups.length === 0 ? (
-              <div className="text-center py-8 text-slate-400 text-sm">暂无公共监控群组，点击上方按钮添加</div>
+              <div className="text-center py-8 text-slate-500 text-sm">暂无公共监控群组，点击上方按钮添加</div>
             ) : (
               groups.map((g) => (
                 <div key={g.id} className={`rounded-lg border ${
@@ -280,8 +280,8 @@ function PublicGroupsTab() {
                           ? <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">监控中</Badge>
                           : <Badge className="bg-gray-500/20 text-slate-500 border-gray-500/30 text-xs">已禁用</Badge>}
                       </div>
-                      <div className="text-slate-400 text-xs mt-0.5 font-mono">{g.groupId}</div>
-                      {g.note && <div className="text-slate-400 text-xs mt-0.5">{g.note}</div>}
+                      <div className="text-slate-500 text-xs mt-0.5 font-mono">{g.groupId}</div>
+                      {g.note && <div className="text-slate-500 text-xs mt-0.5">{g.note}</div>}
                     </div>
                     <div className="flex items-center gap-1.5 ml-3 shrink-0">
                       <Button
@@ -345,7 +345,7 @@ function PublicGroupsTab() {
             )}
           </div>
           {groups && groups.length > 0 && (
-            <p className="text-slate-400 text-xs">共 {groups.filter(g => g.isActive).length} 个活跃公共群组，{groups.filter(g => !g.isActive).length} 个已禁用</p>
+            <p className="text-slate-500 text-xs">共 {groups.filter(g => g.isActive).length} 个活跃公共群组，{groups.filter(g => !g.isActive).length} 个已禁用</p>
           )}
         </CardContent>
       </Card>
@@ -775,7 +775,7 @@ function RedeemCodesTab() {
         </CardHeader>
         <CardContent>
           {!codes || codes.length === 0 ? (
-            <p className="text-slate-400 text-sm text-center py-4">暂无卡密</p>
+            <p className="text-slate-500 text-sm text-center py-4">暂无卡密</p>
           ) : (
             <div className="space-y-1 max-h-64 overflow-y-auto">
               {codes.map((code) => (
@@ -799,7 +799,7 @@ function RedeemCodesTab() {
                       {code.planId} × {code.durationMonths}月
                     </p>
                     {code.usedAt && (
-                      <p className="text-slate-400 text-xs">{new Date(code.usedAt).toLocaleDateString()}</p>
+                      <p className="text-slate-500 text-xs">{new Date(code.usedAt).toLocaleDateString()}</p>
                     )}
                   </div>
                 </div>
@@ -855,7 +855,7 @@ function OrdersTab() {
       </div>
 
       {!orders || orders.length === 0 ? (
-        <p className="text-slate-400 text-sm text-center py-8">暂无订单</p>
+        <p className="text-slate-500 text-sm text-center py-8">暂无订单</p>
       ) : (
         <div className="space-y-2">
           {orders.map((order) => (
@@ -908,7 +908,7 @@ function OrdersTab() {
                 )}
 
                 {order.txHash && (
-                  <p className="mt-1 text-slate-400 text-xs font-mono truncate">
+                  <p className="mt-1 text-slate-500 text-xs font-mono truncate">
                     TxHash: {order.txHash}
                   </p>
                 )}
@@ -1033,7 +1033,7 @@ function BotConfigTab() {
               onChange={(e) => setChannelId(e.target.value)}
               className="bg-white border-slate-300 text-white"
             />
-            <p className="text-slate-400 text-xs mt-1">将关键词命中通知推送到此频道或群组。留空则不推送到频道。</p>
+            <p className="text-slate-500 text-xs mt-1">将关键词命中通知推送到此频道或群组。留空则不推送到频道。</p>
           </div>
 
           <Button
@@ -1071,7 +1071,7 @@ function BotConfigTab() {
                 onChange={(e) => setAlertThreshold(e.target.value)}
                 className="bg-white border-slate-300 text-white"
               />
-              <p className="text-slate-400 text-xs mt-1">当前设置：{alertCfgMap["health_alert_threshold"] || "40"} 分</p>
+              <p className="text-slate-500 text-xs mt-1">当前设置：{alertCfgMap["health_alert_threshold"] || "40"} 分</p>
             </div>
             <div>
               <Label className="text-slate-500 text-xs mb-1.5 block">告警冷却时间（小时）</Label>
@@ -1084,7 +1084,7 @@ function BotConfigTab() {
                 onChange={(e) => setAlertCooldown(e.target.value)}
                 className="bg-white border-slate-300 text-white"
               />
-              <p className="text-slate-400 text-xs mt-1">当前设置：{alertCfgMap["health_alert_cooldown_hours"] || "1"} 小时</p>
+              <p className="text-slate-500 text-xs mt-1">当前设置：{alertCfgMap["health_alert_cooldown_hours"] || "1"} 小时</p>
             </div>
           </div>
           <Button
@@ -1168,7 +1168,7 @@ function BuyConfigTab() {
               onChange={(e) => handleChange("buy_usdt_address", e.target.value)}
               className="bg-white border-slate-300 text-white font-mono text-xs"
             />
-            <p className="text-slate-400 text-xs mt-1">用户点击 /buy 后，Bot 会显示此地址供用户付款</p>
+            <p className="text-slate-500 text-xs mt-1">用户点击 /buy 后，Bot 会显示此地址供用户付款</p>
           </div>
         </CardContent>
       </Card>
@@ -1189,7 +1189,7 @@ function BuyConfigTab() {
               onChange={(e) => handleChange("buy_qr_image_url", e.target.value)}
               className="bg-white border-slate-300 text-white text-xs"
             />
-            <p className="text-slate-400 text-xs mt-1">
+            <p className="text-slate-500 text-xs mt-1">
               建议尺寸：400×400px，格式：PNG/JPG。填写图片直链 URL，留空则不发送图片。
             </p>
           </div>
@@ -1225,7 +1225,7 @@ function BuyConfigTab() {
               onChange={(e) => handleChange("buy_plans_text", e.target.value)}
               className="w-full bg-white border border-slate-300 text-white rounded-md p-3 text-sm resize-y font-mono"
             />
-            <p className="text-slate-400 text-xs mt-1">每行一条价格说明，Bot 会逐行展示</p>
+            <p className="text-slate-500 text-xs mt-1">每行一条价格说明，Bot 会逐行展示</p>
           </div>
         </CardContent>
       </Card>
@@ -1357,7 +1357,7 @@ function SysConfigTab() {
               onChange={(e) => handleChange("support_username", e.target.value)}
               className="bg-white border-slate-300 text-white"
             />
-            <p className="text-slate-400 text-xs mt-1">用户点击「技术支持」按钮时，将跳转到此 TG 账号</p>
+            <p className="text-slate-500 text-xs mt-1">用户点击「技术支持」按钮时，将跳转到此 TG 账号</p>
           </div>
 
           <div>
@@ -1368,7 +1368,7 @@ function SysConfigTab() {
               onChange={(e) => handleChange("official_channel", e.target.value)}
               className="bg-white border-slate-300 text-white"
             />
-            <p className="text-slate-400 text-xs mt-1">用户点击「官方频道」按钮时，将跳转到此链接</p>
+            <p className="text-slate-500 text-xs mt-1">用户点击「官方频道」按钮时，将跳转到此链接</p>
           </div>
         </CardContent>
       </Card>
@@ -1378,7 +1378,7 @@ function SysConfigTab() {
           <CardTitle className="text-slate-700 text-sm font-medium">使用教程内容</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-slate-400 text-xs">用户点击「使用教程」按钮时显示的内容，支持 Markdown 格式</p>
+          <p className="text-slate-500 text-xs">用户点击「使用教程」按钮时显示的内容，支持 Markdown 格式</p>
           <textarea
             rows={10}
             placeholder={`例如：\n📖 **使用教程**\n\n1. 添加监控账号\n2. 设置关键词\n3. 添加监控群组\n4. 开启自动私信`}
@@ -1403,7 +1403,7 @@ function SysConfigTab() {
           <div className="flex items-center justify-between">
             <div>
               <Label className="text-slate-600 text-sm">启用刷词过滤</Label>
-              <p className="text-slate-400 text-xs mt-0.5">关闭后所有发送者均不受频率限制</p>
+              <p className="text-slate-500 text-xs mt-0.5">关闭后所有发送者均不受频率限制</p>
             </div>
             <button
               type="button"
@@ -1422,7 +1422,7 @@ function SysConfigTab() {
                 onChange={(e) => handleChange("anti_spam_daily_limit", e.target.value)}
                 className="bg-white border-slate-300 text-white"
               />
-              <p className="text-slate-400 text-xs mt-1">同一用户当天命中超过此次数后跳过</p>
+              <p className="text-slate-500 text-xs mt-1">同一用户当天命中超过此次数后跳过</p>
             </div>
             <div>
               <Label className="text-slate-500 text-xs mb-1.5 block">短时窗口（秒）</Label>
@@ -1432,7 +1432,7 @@ function SysConfigTab() {
                 onChange={(e) => handleChange("anti_spam_rate_window", e.target.value)}
                 className="bg-white border-slate-300 text-white"
               />
-              <p className="text-slate-400 text-xs mt-1">短时频率检测的时间窗口</p>
+              <p className="text-slate-500 text-xs mt-1">短时频率检测的时间窗口</p>
             </div>
             <div>
               <Label className="text-slate-500 text-xs mb-1.5 block">窗口内最大命中次数</Label>
@@ -1442,7 +1442,7 @@ function SysConfigTab() {
                 onChange={(e) => handleChange("anti_spam_rate_limit", e.target.value)}
                 className="bg-white border-slate-300 text-white"
               />
-              <p className="text-slate-400 text-xs mt-1">窗口内超过此次数则判定为刷词</p>
+              <p className="text-slate-500 text-xs mt-1">窗口内超过此次数则判定为刷词</p>
             </div>
             <div>
               <Label className="text-slate-500 text-xs mb-1.5 block">最小消息长度（字符）</Label>
@@ -1452,7 +1452,7 @@ function SysConfigTab() {
                 onChange={(e) => handleChange("anti_spam_min_msg_len", e.target.value)}
                 className="bg-white border-slate-300 text-white"
               />
-              <p className="text-slate-400 text-xs mt-1">0 = 不限制；设为 2 可过滤纯单字消息</p>
+              <p className="text-slate-500 text-xs mt-1">0 = 不限制；设为 2 可过滤纯单字消息</p>
             </div>
             <div>
               <Label className="text-slate-500 text-xs mb-1.5 block">最大消息长度（字符）</Label>
@@ -1462,7 +1462,7 @@ function SysConfigTab() {
                 onChange={(e) => handleChange("anti_spam_max_msg_len", e.target.value)}
                 className="bg-white border-slate-300 text-white"
               />
-              <p className="text-slate-400 text-xs mt-1">0 = 不限制；超过此长度的消息将被过滤</p>
+              <p className="text-slate-500 text-xs mt-1">0 = 不限制；超过此长度的消息将被过滤</p>
             </div>
           </div>
         </CardContent>
@@ -1485,7 +1485,7 @@ function SysConfigTab() {
               onChange={(e) => handleChange("alert_tg_id", e.target.value)}
               className="bg-white border-slate-300 text-white"
             />
-            <p className="text-slate-400 text-xs mt-1">支持填写数字 ID 或 @用户名两种格式。用户名需先向该 Bot 发送一条消息才能收到通知。留空则不发送通知。</p>
+            <p className="text-slate-500 text-xs mt-1">支持填写数字 ID 或 @用户名两种格式。用户名需先向该 Bot 发送一条消息才能收到通知。留空则不发送通知。</p>
           </div>
         </CardContent>
       </Card>
@@ -1594,7 +1594,7 @@ function SmtpSettingsTab() {
                 <p className="text-slate-700 font-medium mb-1">{s.name}</p>
                 <p>服务器：{s.host}</p>
                 <p>端口：{s.port}</p>
-                <p className="text-slate-400 mt-1">{s.note}</p>
+                <p className="text-slate-500 mt-1">{s.note}</p>
               </div>
             ))}
           </div>
@@ -1612,7 +1612,7 @@ export default function SystemSettings() {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <Settings className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+          <Settings className="w-12 h-12 text-slate-500 mx-auto mb-3" />
           <p className="text-slate-500">仅管理员可访问此页面</p>
         </div>
       </div>

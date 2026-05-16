@@ -78,7 +78,7 @@ function UserDetailDialog({ userId, onClose, planColors }: {
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="bg-slate-900 border-slate-700 text-slate-900 max-w-2xl h-[85vh] overflow-y-auto">
+      <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-2xl h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Eye className="w-5 h-5 text-blue-400" /> 用户详情
@@ -88,35 +88,35 @@ function UserDetailDialog({ userId, onClose, planColors }: {
         {isLoading ? (
           <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
         ) : !data ? (
-          <p className="text-slate-400 text-center py-8">加载失败</p>
+          <p className="text-slate-500 text-center py-8">加载失败</p>
         ) : (
           <div className="space-y-5">
             {/* ── 基本信息 ── */}
-            <div className="bg-slate-800 rounded-xl p-4 space-y-2 text-sm">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">基本信息</h3>
+            <div className="bg-slate-100 rounded-xl p-4 space-y-2 text-sm">
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">基本信息</h3>
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex justify-between col-span-2 sm:col-span-1">
-                  <span className="text-slate-400">用户名</span>
+                  <span className="text-slate-500">用户名</span>
                   <span className="text-slate-900 font-medium">{data.user.name ?? "—"}</span>
                 </div>
                 <div className="flex justify-between col-span-2 sm:col-span-1">
-                  <span className="text-slate-400">邮箱</span>
+                  <span className="text-slate-500">邮箱</span>
                   <span className="text-slate-900">{data.user.email ?? "—"}</span>
                 </div>
                 <div className="flex justify-between col-span-2 sm:col-span-1">
-                  <span className="text-slate-400">TG ID</span>
+                  <span className="text-slate-500">TG ID</span>
                   <span className="text-slate-900 font-mono text-xs">{data.user.tgUserId ?? "未绑定"}</span>
                 </div>
                 <div className="flex justify-between col-span-2 sm:col-span-1">
-                  <span className="text-slate-400">角色</span>
+                  <span className="text-slate-500">角色</span>
                   <span className="text-slate-900 capitalize">{data.user.role}</span>
                 </div>
                 <div className="flex justify-between col-span-2 sm:col-span-1">
-                  <span className="text-slate-400">注册时间</span>
+                  <span className="text-slate-500">注册时间</span>
                   <span className="text-slate-900">{new Date(data.user.createdAt).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between col-span-2 sm:col-span-1">
-                  <span className="text-slate-400">最后登录</span>
+                  <span className="text-slate-500">最后登录</span>
                   <span className="text-slate-900">{new Date(data.user.lastSignedIn).toLocaleString()}</span>
                 </div>
               </div>
@@ -130,7 +130,7 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                 { label: "关键词", value: `${data.stats.activeKeywordCount}/${data.stats.keywordCount}`, color: "text-purple-400", icon: Tag },
                 { label: "监控群组", value: `${data.stats.activeGroupCount}/${data.stats.groupCount}`, color: "text-cyan-400", icon: Hash },
               ].map((s) => (
-                <div key={s.label} className="bg-slate-800 rounded-lg p-3 text-center">
+                <div key={s.label} className="bg-slate-100 rounded-lg p-3 text-center">
                   <s.icon className={`w-4 h-4 mx-auto mb-1 ${s.color}`} />
                   <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
                   <p className="text-xs text-slate-500">{s.label}</p>
@@ -139,9 +139,9 @@ function UserDetailDialog({ userId, onClose, planColors }: {
             </div>
 
             {/* ── 套餐管理 ── */}
-            <div className="bg-slate-800 rounded-xl p-4">
+            <div className="bg-slate-100 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
                   <Crown className="w-3.5 h-3.5 text-amber-400" /> 套餐管理
                 </h3>
                 {!planEditing && (
@@ -154,13 +154,13 @@ function UserDetailDialog({ userId, onClose, planColors }: {
               {!planEditing ? (
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-slate-400">当前套餐</span>
+                    <span className="text-slate-500">当前套餐</span>
                     <Badge className={`text-xs border-0 ${planColors[data.user.planId ?? "free"] ?? planColors.free}`}>
                       {data.user.planId ?? "free"}
                     </Badge>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">到期日期</span>
+                    <span className="text-slate-500">到期日期</span>
                     <span className="text-slate-900 flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-slate-500" />
                       {data.user.planExpiresAt ? new Date(data.user.planExpiresAt).toLocaleDateString() : "永久 / 未设置"}
@@ -171,12 +171,12 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs text-slate-400 mb-1 block">套餐类型</label>
+                      <label className="text-xs text-slate-500 mb-1 block">套餐类型</label>
                       <Select value={editPlan} onValueChange={(v) => setEditPlan(v as any)}>
-                        <SelectTrigger className="h-8 text-xs bg-slate-700 border-slate-600 text-slate-900">
+                        <SelectTrigger className="h-8 text-xs bg-slate-200 border-slate-300 text-slate-900">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="bg-slate-800 border-slate-600">
+                        <SelectContent className="bg-slate-100 border-slate-300">
                           {["free", "basic", "pro", "enterprise"].map((p) => (
                             <SelectItem key={p} value={p} className="text-xs capitalize">{p}</SelectItem>
                           ))}
@@ -184,13 +184,13 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                       </Select>
                     </div>
                     <div>
-                      <label className="text-xs text-slate-400 mb-1 block">到期日期（留空=永久）</label>
+                      <label className="text-xs text-slate-500 mb-1 block">到期日期（留空=永久）</label>
                       <Input type="date" value={editExpiry} onChange={(e) => setEditExpiry(e.target.value)}
-                        className="h-8 text-xs bg-slate-700 border-slate-600 text-slate-900" />
+                        className="h-8 text-xs bg-slate-200 border-slate-300 text-slate-900" />
                     </div>
                   </div>
                   <div className="flex gap-2 justify-end">
-                    <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-400"
+                    <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500"
                       onClick={() => setPlanEditing(false)}>取消</Button>
                     <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
                       disabled={updatePlanMut.isPending}
@@ -208,10 +208,10 @@ function UserDetailDialog({ userId, onClose, planColors }: {
             </div>
 
             {/* ── 关键词管理 ── */}
-            <div className="bg-slate-800 rounded-xl p-4">
+            <div className="bg-slate-100 rounded-xl p-4">
               <button className="w-full flex items-center justify-between mb-3"
                 onClick={() => setKwExpanded(!kwExpanded)}>
-                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
                   <Key className="w-3.5 h-3.5 text-purple-400" /> 关键词管理
                   <Badge className="text-xs bg-purple-900/50 text-purple-300 border-0">
                     {data.stats.activeKeywordCount} 个启用
@@ -233,13 +233,13 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                           addKwMut.mutate({ userId, keyword: newKeyword.trim(), matchType: newMatchType });
                         }
                       }}
-                      className="h-8 text-xs bg-slate-700 border-slate-600 text-slate-900 placeholder-slate-500 flex-1"
+                      className="h-8 text-xs bg-slate-200 border-slate-300 text-slate-900 placeholder-slate-500 flex-1"
                     />
                     <Select value={newMatchType} onValueChange={(v) => setNewMatchType(v as any)}>
-                      <SelectTrigger className="h-8 w-20 text-xs bg-slate-700 border-slate-600 text-slate-900">
+                      <SelectTrigger className="h-8 w-20 text-xs bg-slate-200 border-slate-300 text-slate-900">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-slate-800 border-slate-600">
+                      <SelectContent className="bg-slate-100 border-slate-300">
                         {["contains", "exact", "regex"].map((t) => (
                           <SelectItem key={t} value={t} className="text-xs">{matchTypeLabels[t]}</SelectItem>
                         ))}
@@ -258,10 +258,10 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                   ) : (
                     <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                       {data.keywords.map((kw: any) => (
-                        <div key={kw.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors ${kw.isActive ? "bg-slate-700" : "bg-slate-800/50 opacity-60"}`}>
+                        <div key={kw.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors ${kw.isActive ? "bg-slate-200" : "bg-slate-100/70 opacity-60"}`}>
                           <div className="flex items-center gap-2 min-w-0">
                             <span className={`font-medium truncate ${kw.isActive ? "text-slate-900" : "text-slate-500"}`}>{kw.keyword}</span>
-                            <Badge className="text-xs bg-slate-600 text-slate-300 border-0 shrink-0">
+                            <Badge className="text-xs bg-slate-600 text-slate-600 border-0 shrink-0">
                               {matchTypeLabels[kw.matchType] ?? kw.matchType}
                             </Badge>
                             {kw.hitCount > 0 && (
@@ -270,7 +270,7 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                           </div>
                           <div className="flex items-center gap-1 shrink-0 ml-2">
                             <Button size="icon" variant="ghost"
-                              className={`w-6 h-6 ${kw.isActive ? "text-green-400 hover:text-slate-400" : "text-slate-500 hover:text-green-400"}`}
+                              className={`w-6 h-6 ${kw.isActive ? "text-green-400 hover:text-slate-500" : "text-slate-500 hover:text-green-400"}`}
                               onClick={() => toggleKwMut.mutate({ keywordId: kw.id, userId, isActive: !kw.isActive })}>
                               {kw.isActive ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
                             </Button>
@@ -289,10 +289,10 @@ function UserDetailDialog({ userId, onClose, planColors }: {
             </div>
 
             {/* ── 监控群组 ── */}
-            <div className="bg-slate-800 rounded-xl p-4">
+            <div className="bg-slate-100 rounded-xl p-4">
               <button className="w-full flex items-center justify-between mb-3"
                 onClick={() => setGroupExpanded(!groupExpanded)}>
-                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
                   <Hash className="w-3.5 h-3.5 text-cyan-400" /> 监控群组
                   <Badge className="text-xs bg-cyan-900/50 text-cyan-300 border-0">
                     {data.stats.activeGroupCount} 个启用
@@ -307,12 +307,12 @@ function UserDetailDialog({ userId, onClose, planColors }: {
                 ) : (
                   <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                     {data.monitorGroups.map((g: any) => (
-                      <div key={g.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs ${g.isActive ? "bg-slate-700" : "bg-slate-800/50 opacity-60"}`}>
+                      <div key={g.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs ${g.isActive ? "bg-slate-200" : "bg-slate-100/70 opacity-60"}`}>
                         <div className="min-w-0">
                           <span className="text-slate-900 font-medium truncate block">{g.groupTitle ?? g.groupId}</span>
                           <span className="text-slate-500 font-mono">{g.groupId}</span>
                         </div>
-                        <Badge className={`text-xs border shrink-0 ml-2 ${g.isActive ? "border-green-700 text-green-300" : "border-slate-600 text-slate-400"}`}>
+                        <Badge className={`text-xs border shrink-0 ml-2 ${g.isActive ? "border-green-700 text-green-300" : "border-slate-300 text-slate-500"}`}>
                           {g.isActive ? "监控中" : "已停用"}
                         </Badge>
                       </div>
@@ -324,15 +324,15 @@ function UserDetailDialog({ userId, onClose, planColors }: {
 
             {/* ── TG 账号 ── */}
             {data.tgAccounts.length > 0 && (
-              <div className="bg-slate-800 rounded-xl p-4">
-                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <div className="bg-slate-100 rounded-xl p-4">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
                   <Smartphone className="w-3.5 h-3.5 text-blue-400" /> 绑定 TG 账号（{data.tgAccounts.length} 个）
                 </h3>
                 <div className="space-y-1.5">
                   {data.tgAccounts.map((a: any) => (
-                    <div key={a.id} className="flex items-center justify-between bg-slate-700 rounded-lg px-3 py-2 text-xs">
+                    <div key={a.id} className="flex items-center justify-between bg-slate-200 rounded-lg px-3 py-2 text-xs">
                       <span className="text-slate-900">{a.tgFirstName ?? a.phone ?? `账号 #${a.id}`}</span>
-                      <Badge className={`border text-xs ${a.sessionStatus === "active" ? "border-green-700 text-green-300" : "border-slate-600 text-slate-400"}`}>
+                      <Badge className={`border text-xs ${a.sessionStatus === "active" ? "border-green-700 text-green-300" : "border-slate-300 text-slate-500"}`}>
                         {a.sessionStatus ?? "pending"}
                       </Badge>
                     </div>
@@ -344,7 +344,7 @@ function UserDetailDialog({ userId, onClose, planColors }: {
         )}
 
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose} className="text-slate-400">关闭</Button>
+          <Button variant="ghost" onClick={onClose} className="text-slate-500">关闭</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -438,48 +438,48 @@ function JoinConfigPanel() {
   });
 
   if (isLoading) {
-    return <div className="text-center py-8 text-slate-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>;
+    return <div className="text-center py-8 text-slate-500"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>;
   }
 
   return (
     <div className="space-y-4">
       {/* 统计卡片 */}
       <div className="grid grid-cols-3 gap-4">
-        <Card className="bg-slate-800/60 border-slate-700">
+        <Card className="bg-slate-100/80 border-slate-200">
           <CardContent className="pt-4 pb-4 text-center">
             <div className="text-2xl font-bold text-slate-900">{totalCount}</div>
-            <div className="text-xs text-slate-400 mt-1">公共群组总数</div>
+            <div className="text-xs text-slate-500 mt-1">公共群组总数</div>
           </CardContent>
         </Card>
-        <Card className="bg-slate-800/60 border-slate-700">
+        <Card className="bg-slate-100/80 border-slate-200">
           <CardContent className="pt-4 pb-4 text-center">
             <div className="text-2xl font-bold text-slate-900">{maxGroupsPerAccount}</div>
-            <div className="text-xs text-slate-400 mt-1">每账号上限</div>
+            <div className="text-xs text-slate-500 mt-1">每账号上限</div>
           </CardContent>
         </Card>
-        <Card className="bg-slate-800/60 border-slate-700">
+        <Card className="bg-slate-100/80 border-slate-200">
           <CardContent className="pt-4 pb-4 text-center">
             <div className="text-2xl font-bold text-slate-900">{joinIntervalMin}-{joinIntervalMax}s</div>
-            <div className="text-xs text-slate-400 mt-1">当前加群间隔</div>
+            <div className="text-xs text-slate-500 mt-1">当前加群间隔</div>
           </CardContent>
         </Card>
       </div>
       {/* 配置表单 */}
-      <Card className="bg-slate-800/60 border-slate-700">
+      <Card className="bg-slate-100/80 border-slate-200">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base text-slate-900">
             <Settings2 className="h-5 w-5" /> 加群参数配置
           </CardTitle>
-          <CardDescription className="text-slate-400">配置监控账号自动加入群组的行为规则</CardDescription>
+          <CardDescription className="text-slate-500">配置监控账号自动加入群组的行为规则</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* 启用开关 */}
-          <div className="flex items-center justify-between p-4 rounded-lg border border-slate-700 bg-slate-900/50">
+          <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-white/50">
             <div className="flex items-center gap-3">
               <Zap className="h-5 w-5 text-yellow-500" />
               <div>
-                <Label className="text-sm font-medium text-slate-200">启用自动加群</Label>
-                <p className="text-xs text-slate-400 mt-0.5">引擎启动时自动让监控账号加入所有公共群组</p>
+                <Label className="text-sm font-medium text-slate-700">启用自动加群</Label>
+                <p className="text-xs text-slate-500 mt-0.5">引擎启动时自动让监控账号加入所有公共群组</p>
               </div>
             </div>
             <Switch checked={joinEnabled} onCheckedChange={setJoinEnabled} />
@@ -487,36 +487,36 @@ function JoinConfigPanel() {
           {/* 加群间隔 */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-slate-400" />
-              <Label className="text-sm font-medium text-slate-200">加群间隔（秒）</Label>
+              <Clock className="h-4 w-4 text-slate-500" />
+              <Label className="text-sm font-medium text-slate-700">加群间隔（秒）</Label>
             </div>
-            <p className="text-xs text-slate-400">每次加群之间的随机等待时间，建议 30-120 秒防封号</p>
+            <p className="text-xs text-slate-500">每次加群之间的随机等待时间，建议 30-120 秒防封号</p>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-400">最小间隔（秒）</Label>
+                <Label className="text-xs text-slate-500">最小间隔（秒）</Label>
                 <Input type="number" min={5} max={3600} value={joinIntervalMin}
                   onChange={(e) => setJoinIntervalMin(parseInt(e.target.value) || 30)}
-                  className="bg-slate-900 border-slate-600 text-slate-900" />
+                  className="bg-white border-slate-300 text-slate-900" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-400">最大间隔（秒）</Label>
+                <Label className="text-xs text-slate-500">最大间隔（秒）</Label>
                 <Input type="number" min={5} max={3600} value={joinIntervalMax}
                   onChange={(e) => setJoinIntervalMax(parseInt(e.target.value) || 60)}
-                  className="bg-slate-900 border-slate-600 text-slate-900" />
+                  className="bg-white border-slate-300 text-slate-900" />
               </div>
             </div>
           </div>
           {/* 每账号上限 */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-slate-400" />
-              <Label className="text-sm font-medium text-slate-200">每账号最多加入群组数</Label>
+              <Users className="h-4 w-4 text-slate-500" />
+              <Label className="text-sm font-medium text-slate-700">每账号最多加入群组数</Label>
             </div>
-            <p className="text-xs text-slate-400">单个监控账号最多加入的群组数量，超出部分由其他账号负责</p>
+            <p className="text-xs text-slate-500">单个监控账号最多加入的群组数量，超出部分由其他账号负责</p>
             <Input type="number" min={1} max={500} value={maxGroupsPerAccount}
               onChange={(e) => setMaxGroupsPerAccount(parseInt(e.target.value) || 100)}
-              className="bg-slate-900 border-slate-600 text-slate-900" />
-            <p className="text-xs text-slate-400">当前共 {totalCount} 个群组，建议每账号不超过 200 个</p>
+              className="bg-white border-slate-300 text-slate-900" />
+            <p className="text-xs text-slate-500">当前共 {totalCount} 个群组，建议每账号不超过 200 个</p>
           </div>
           {/* 保存按钮 */}
           <div className="pt-2">
@@ -608,7 +608,7 @@ export default function AdminPanel() {
   };
 
   const planColors: Record<string, string> = {
-    free: "bg-slate-700 text-slate-300",
+    free: "bg-slate-200 text-slate-600",
     basic: "bg-blue-900/50 text-blue-300",
     pro: "bg-purple-900/50 text-purple-300",
     enterprise: "bg-amber-900/50 text-amber-300",
@@ -625,7 +625,7 @@ export default function AdminPanel() {
       <AppLayout>
         <div className="p-6 text-center">
           <Shield className="w-12 h-12 mx-auto mb-4 text-slate-600" />
-          <p className="text-slate-400">无权访问此页面，需要管理员权限</p>
+          <p className="text-slate-500">无权访问此页面，需要管理员权限</p>
         </div>
       </AppLayout>
     );
@@ -640,10 +640,10 @@ export default function AdminPanel() {
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
               <Shield className="w-6 h-6 text-amber-400" /> 管理后台
             </h1>
-            <p className="text-sm text-slate-400 mt-1">平台全局管理，仅管理员可见</p>
+            <p className="text-sm text-slate-500 mt-1">平台全局管理，仅管理员可见</p>
           </div>
           <Button variant="outline" size="sm" onClick={() => { refetchStats(); refetchUsers(); refetchAccounts(); }} disabled={isAdminRefetching}
-            className="border-slate-600 text-slate-300 hover:bg-slate-700">
+            className="border-slate-300 text-slate-600 hover:bg-slate-200">
             <RefreshCw className={`w-4 h-4 mr-1 ${isAdminRefetching ? 'animate-spin' : ''}`} /> 刷新
           </Button>
         </div>
@@ -656,12 +656,12 @@ export default function AdminPanel() {
             { label: "监控账号", value: (allAccounts as any[]).length, icon: Smartphone, color: "text-cyan-400", bg: "from-cyan-500/10 to-cyan-600/5" },
             { label: "活跃账号", value: (allAccounts as any[]).filter((a: any) => a.sessionStatus === "active").length, icon: Wifi, color: "text-green-400", bg: "from-green-500/10 to-green-600/5" },
           ].map((item) => (
-            <Card key={item.label} className={`bg-gradient-to-br ${item.bg} border-slate-700`}>
+            <Card key={item.label} className={`bg-gradient-to-br ${item.bg} border-slate-200`}>
               <CardContent className="p-4 flex items-center gap-3">
                 <item.icon className={`w-8 h-8 ${item.color}`} />
                 <div>
                   <p className="text-2xl font-bold text-slate-900">{item.value}</p>
-                  <p className="text-xs text-slate-400">{item.label}</p>
+                  <p className="text-xs text-slate-500">{item.label}</p>
                 </div>
               </CardContent>
             </Card>
@@ -670,9 +670,9 @@ export default function AdminPanel() {
 
         {/* 套餐分布 */}
         {stats && (
-          <Card className="bg-slate-800/60 border-slate-700">
+          <Card className="bg-slate-100/80 border-slate-200">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm text-slate-300 flex items-center gap-2">
+              <CardTitle className="text-sm text-slate-600 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-purple-400" /> 套餐分布
               </CardTitle>
             </CardHeader>
@@ -684,8 +684,8 @@ export default function AdminPanel() {
                   return (
                     <div key={plan} className="space-y-2">
                       <div className="flex justify-between text-xs">
-                        <span className="text-slate-300 capitalize">{plan}</span>
-                        <span className="text-slate-400">{count} ({pct}%)</span>
+                        <span className="text-slate-600 capitalize">{plan}</span>
+                        <span className="text-slate-500">{count} ({pct}%)</span>
                       </div>
                       <Progress value={pct} className="h-2" />
                     </div>
@@ -698,14 +698,14 @@ export default function AdminPanel() {
 
         {/* 主内容 Tabs */}
         <Tabs defaultValue="accounts" className="space-y-4">
-          <TabsList className="bg-slate-800 border border-slate-700">
-            <TabsTrigger value="accounts" className="data-[state=active]:bg-slate-700 text-slate-300">
+          <TabsList className="bg-slate-100 border border-slate-200">
+            <TabsTrigger value="accounts" className="data-[state=active]:bg-slate-200 text-slate-600">
               <Smartphone className="w-4 h-4 mr-2" /> 监控账号管理
             </TabsTrigger>
-            <TabsTrigger value="users" className="data-[state=active]:bg-slate-700 text-slate-300">
+            <TabsTrigger value="users" className="data-[state=active]:bg-slate-200 text-slate-600">
               <Users className="w-4 h-4 mr-2" /> 用户管理
             </TabsTrigger>
-            <TabsTrigger value="join-config" className="data-[state=active]:bg-slate-700 text-slate-300">
+            <TabsTrigger value="join-config" className="data-[state=active]:bg-slate-200 text-slate-600">
               <UserPlus className="w-4 h-4 mr-2" /> 加群配置
             </TabsTrigger>
           </TabsList>
@@ -713,7 +713,7 @@ export default function AdminPanel() {
           {/* ── Tab 1: 监控账号管理 ── */}
           <TabsContent value="accounts" className="space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-400">管理所有用户的 Telegram 监控账号</p>
+              <p className="text-sm text-slate-500">管理所有用户的 Telegram 监控账号</p>
               <div className="flex gap-2 text-xs text-slate-500">
                 <span className="flex items-center gap-1"><Wifi className="w-3 h-3 text-green-400" /> 运行中: {(allAccounts as any[]).filter((a: any) => a.sessionStatus === "active").length}</span>
                 <span className="flex items-center gap-1"><WifiOff className="w-3 h-3 text-red-400" /> 封禁: {(allAccounts as any[]).filter((a: any) => a.sessionStatus === "banned").length}</span>
@@ -723,10 +723,10 @@ export default function AdminPanel() {
             {accountsLoading ? (
               <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
             ) : (allAccounts as any[]).length === 0 ? (
-              <Card className="bg-slate-800/60 border-slate-700 border-dashed">
+              <Card className="bg-slate-100/80 border-slate-200 border-dashed">
                 <CardContent className="py-12 text-center">
                   <Smartphone className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-                  <p className="text-slate-400">暂无监控账号</p>
+                  <p className="text-slate-500">暂无监控账号</p>
                 </CardContent>
               </Card>
             ) : (
@@ -735,14 +735,14 @@ export default function AdminPanel() {
                   const score = account.healthScore ?? 0;
                   const statusMap: Record<string, { label: string; cls: string }> = {
                     active: { label: "运行中", cls: "bg-green-900/50 text-green-300 border-green-700" },
-                    pending: { label: "待激活", cls: "bg-slate-700 text-slate-300 border-slate-600" },
+                    pending: { label: "待激活", cls: "bg-slate-200 text-slate-600 border-slate-300" },
                     expired: { label: "已过期", cls: "bg-amber-900/50 text-amber-300 border-amber-700" },
                     banned: { label: "已封禁", cls: "bg-red-900/50 text-red-300 border-red-700" },
                   };
                   const roleMap: Record<string, string> = { monitor: "监控", sender: "发信", both: "监控+发信" };
                   const st = statusMap[account.sessionStatus ?? "pending"] ?? statusMap.pending;
                   return (
-                    <Card key={account.id} className="bg-slate-800/60 border-slate-700 hover:border-slate-500 transition-colors">
+                    <Card key={account.id} className="bg-slate-100/80 border-slate-200 hover:border-slate-500 transition-colors">
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between gap-4">
                           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -756,7 +756,7 @@ export default function AdminPanel() {
                                 </span>
                                 {account.tgUsername && <span className="text-slate-500 text-xs">@{account.tgUsername}</span>}
                                 <Badge className={`text-xs border ${st.cls}`}>{st.label}</Badge>
-                                <Badge variant="outline" className="text-xs border-slate-600 text-slate-400">{roleMap[account.accountRole ?? "both"]}</Badge>
+                                <Badge variant="outline" className="text-xs border-slate-300 text-slate-500">{roleMap[account.accountRole ?? "both"]}</Badge>
                               </div>
                               <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
                                 {account.phone && <span><Phone className="w-3 h-3 inline mr-1" />{account.phone}</span>}
@@ -771,21 +771,21 @@ export default function AdminPanel() {
                             </div>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
-                            <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-cyan-400" title="同步群组（触发引擎为此账号加入所有公共群组）"
+                            <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-500 hover:text-cyan-400" title="同步群组（触发引擎为此账号加入所有公共群组）"
                               onClick={() => syncGroupsMut.mutate({ id: account.id })}>
                               {syncGroupsMut.isPending && syncGroupsMut.variables?.id === account.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                             </Button>
-                            <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-blue-400" title="测试连接"
+                            <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-500 hover:text-blue-400" title="测试连接"
                               onClick={() => testConnMut.mutate({ id: account.id })}>
                               {testConnMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                             </Button>
                             <Button size="icon" variant="ghost"
-                              className={`w-8 h-8 ${account.isActive ? "text-green-400 hover:text-slate-400" : "text-slate-500 hover:text-green-400"}`}
+                              className={`w-8 h-8 ${account.isActive ? "text-green-400 hover:text-slate-500" : "text-slate-500 hover:text-green-400"}`}
                               title={account.isActive ? "停用" : "启用"}
                               onClick={async () => { await toggleActiveMut.mutateAsync({ id: account.id, isActive: !account.isActive }); toast.success(account.isActive ? "账号已停用" : "账号已启用"); }}>
                               {account.isActive ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                             </Button>
-                            <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-400 hover:text-red-400" title="删除"
+                            <Button size="icon" variant="ghost" className="w-8 h-8 text-slate-500 hover:text-red-400" title="删除"
                               onClick={() => setDeleteAccountId(account.id)}>
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -814,15 +814,15 @@ export default function AdminPanel() {
                       setUserPage(1);
                     }
                   }}
-                  className="bg-slate-800 border-slate-600 text-slate-900 pl-9 placeholder-slate-500"
+                  className="bg-slate-100 border-slate-300 text-slate-900 pl-9 placeholder-slate-500"
                 />
               </div>
-              <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700"
+              <Button size="sm" variant="outline" className="border-slate-300 text-slate-600 hover:bg-slate-200"
                 onClick={() => { setUserSearch(userSearchInput); setUserPage(1); }}>
                 搜索
               </Button>
               {userSearch && (
-                <Button size="sm" variant="ghost" className="text-slate-400 hover:text-slate-900"
+                <Button size="sm" variant="ghost" className="text-slate-500 hover:text-slate-900"
                   onClick={() => { setUserSearch(""); setUserSearchInput(""); setUserPage(1); }}>
                   清除
                 </Button>
@@ -833,11 +833,11 @@ export default function AdminPanel() {
             {usersLoading ? (
               <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-blue-400" /></div>
             ) : (
-              <Card className="bg-slate-800/60 border-slate-700">
+              <Card className="bg-slate-100/80 border-slate-200">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-slate-700 text-xs text-slate-400">
+                      <tr className="border-b border-slate-200 text-xs text-slate-500">
                         <th className="text-left px-4 py-3 font-medium">用户</th>
                         <th className="text-left px-4 py-3 font-medium">套餐</th>
                         <th className="text-left px-4 py-3 font-medium">到期日期</th>
@@ -855,7 +855,7 @@ export default function AdminPanel() {
                         const expiringSoon = u.planExpiresAt && !isExpired &&
                           (new Date(u.planExpiresAt).getTime() - Date.now()) < 7 * 24 * 3600 * 1000;
                         return (
-                          <tr key={u.id} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
+                          <tr key={u.id} className="border-b border-slate-200/50 hover:bg-slate-200/30 transition-colors">
                             {/* 用户 */}
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
@@ -875,10 +875,10 @@ export default function AdminPanel() {
                             <td className="px-4 py-3">
                               <Select value={u.planId ?? "free"}
                                 onValueChange={(v) => updatePlanMut.mutate({ userId: u.id, planId: v as any })}>
-                                <SelectTrigger className="w-24 h-7 text-xs bg-slate-700 border-slate-600 text-slate-900">
+                                <SelectTrigger className="w-24 h-7 text-xs bg-slate-200 border-slate-300 text-slate-900">
                                   <SelectValue />
                                 </SelectTrigger>
-                                <SelectContent className="bg-slate-800 border-slate-600">
+                                <SelectContent className="bg-slate-100 border-slate-300">
                                   {["free", "basic", "pro", "enterprise"].map((p) => (
                                     <SelectItem key={p} value={p} className="text-xs capitalize">{p}</SelectItem>
                                   ))}
@@ -889,7 +889,7 @@ export default function AdminPanel() {
                             <td className="px-4 py-3">
                               {u.planExpiresAt ? (
                                 <span className={`text-xs flex items-center gap-1 ${
-                                  isExpired ? "text-red-400" : expiringSoon ? "text-amber-400" : "text-slate-300"
+                                  isExpired ? "text-red-400" : expiringSoon ? "text-amber-400" : "text-slate-600"
                                 }`}>
                                   <Calendar className="w-3 h-3" />
                                   {new Date(u.planExpiresAt).toLocaleDateString()}
@@ -920,15 +920,15 @@ export default function AdminPanel() {
                             </td>
                             {/* 注册时间 */}
                             <td className="px-4 py-3">
-                              <span className="text-xs text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</span>
+                              <span className="text-xs text-slate-500">{new Date(u.createdAt).toLocaleDateString()}</span>
                             </td>
                             {/* 最后登录 */}
                             <td className="px-4 py-3">
-                              <span className="text-xs text-slate-400">{new Date(u.lastSignedIn).toLocaleDateString()}</span>
+                              <span className="text-xs text-slate-500">{new Date(u.lastSignedIn).toLocaleDateString()}</span>
                             </td>
                             {/* 操作 */}
                             <td className="px-4 py-3 text-right">
-                              <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-400 hover:text-blue-400" title="查看详情"
+                              <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-500 hover:text-blue-400" title="查看详情"
                                 onClick={() => setViewUserId(u.id)}>
                                 <Eye className="w-4 h-4" />
                               </Button>
@@ -941,18 +941,18 @@ export default function AdminPanel() {
                   {filteredUsers.length === 0 && (
                     <div className="py-12 text-center">
                       <Users className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-                      <p className="text-slate-400">暂无用户</p>
+                      <p className="text-slate-500">暂无用户</p>
                     </div>
                   )}
                 </div>
                 {/* 分页控件 */}
                 {totalPages > 1 && (
-                  <div className="flex items-center justify-between px-4 py-3 border-t border-slate-700">
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
                     <p className="text-xs text-slate-500">
                       第 {(userPage - 1) * USER_PAGE_SIZE + 1}–{Math.min(userPage * USER_PAGE_SIZE, usersTotal)} 条，共 {usersTotal} 条
                     </p>
                     <div className="flex items-center gap-1">
-                      <Button size="sm" variant="outline" className="h-7 px-2 border-slate-600 text-slate-300 hover:bg-slate-700 disabled:opacity-40"
+                      <Button size="sm" variant="outline" className="h-7 px-2 border-slate-300 text-slate-600 hover:bg-slate-200 disabled:opacity-40"
                         disabled={userPage <= 1} onClick={() => setUserPage(p => p - 1)}>
                         上一页
                       </Button>
@@ -964,14 +964,14 @@ export default function AdminPanel() {
                             className={`h-7 w-7 p-0 text-xs ${
                               p === userPage
                                 ? "bg-blue-600 hover:bg-blue-700 text-slate-900 border-blue-600"
-                                : "border-slate-600 text-slate-300 hover:bg-slate-700"
+                                : "border-slate-300 text-slate-600 hover:bg-slate-200"
                             }`}
                             onClick={() => setUserPage(p)}>
                             {p}
                           </Button>
                         ) : null;
                       })}
-                      <Button size="sm" variant="outline" className="h-7 px-2 border-slate-600 text-slate-300 hover:bg-slate-700 disabled:opacity-40"
+                      <Button size="sm" variant="outline" className="h-7 px-2 border-slate-300 text-slate-600 hover:bg-slate-200 disabled:opacity-40"
                         disabled={userPage >= totalPages} onClick={() => setUserPage(p => p + 1)}>
                         下一页
                       </Button>
@@ -990,13 +990,13 @@ export default function AdminPanel() {
 
       {/* 删除账号确认 */}
       <Dialog open={deleteAccountId !== null} onOpenChange={(o) => { if (!o) setDeleteAccountId(null); }}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-slate-900 max-w-sm">
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-400"><Trash2 className="w-5 h-5" /> 确认删除账号</DialogTitle>
-            <DialogDescription className="text-slate-400">删除后该账号的 Session 将被清除，所有监控任务将停止。此操作不可撤销。</DialogDescription>
+            <DialogDescription className="text-slate-500">删除后该账号的 Session 将被清除，所有监控任务将停止。此操作不可撤销。</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setDeleteAccountId(null)} className="text-slate-400">取消</Button>
+            <Button variant="ghost" onClick={() => setDeleteAccountId(null)} className="text-slate-500">取消</Button>
             <Button variant="destructive" disabled={deleteAccountMut.isPending}
               onClick={() => deleteAccountId !== null && deleteAccountMut.mutate({ id: deleteAccountId })}>
               {deleteAccountMut.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />} 确认删除

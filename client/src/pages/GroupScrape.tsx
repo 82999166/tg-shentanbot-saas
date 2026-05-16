@@ -118,7 +118,7 @@ type ExtractedLink = {
 
 // AI 评分条组件
 function AiScoreBar({ score }: { score: number | null }) {
-  if (score === null || score === undefined) return <span className="text-slate-400 text-xs">-</span>;
+  if (score === null || score === undefined) return <span className="text-slate-500 text-xs">-</span>;
   const pct = Math.max(0, Math.min(100, score));
   const color = pct >= 80 ? "bg-green-500" : pct >= 60 ? "bg-yellow-500" : pct >= 40 ? "bg-orange-500" : "bg-red-500";
   const textColor = pct >= 80 ? "text-green-400" : pct >= 60 ? "text-yellow-400" : pct >= 40 ? "text-orange-400" : "text-red-400";
@@ -148,7 +148,7 @@ function ImportStatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; className: string }> = {
     pending: { label: "待审核", className: "bg-slate-200 text-slate-600" },
     imported: { label: "已导入", className: "bg-green-900/50 text-green-400" },
-    ignored: { label: "已忽略", className: "bg-slate-100 text-slate-400" },
+    ignored: { label: "已忽略", className: "bg-slate-100 text-slate-500" },
   };
   const { label, className } = (map[status] || map.pending);
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${className}`}>{label}</span>;
@@ -230,7 +230,7 @@ function TaskForm({
           ))}
         </div>
         <div>
-          <p className="text-xs text-slate-400 mb-1.5">快速添加预置关键词：</p>
+          <p className="text-xs text-slate-500 mb-1.5">快速添加预置关键词：</p>
           <div className="flex flex-wrap gap-1">
             {PRESET_KEYWORDS.filter(k => !taskKeywords.includes(k)).map(kw => (
               <button
@@ -254,7 +254,7 @@ function TaskForm({
             onChange={e => setTaskMinMembers(parseInt(e.target.value) || 0)}
             className="bg-slate-100 border-slate-200 text-slate-900"
           />
-          <p className="text-xs text-slate-400 mt-1">成员数低于此值的群组将被过滤</p>
+          <p className="text-xs text-slate-500 mt-1">成员数低于此值的群组将被过滤</p>
         </div>
         <div>
           <label className="text-sm text-slate-600 block mb-1.5">每关键词最多采集数</label>
@@ -266,7 +266,7 @@ function TaskForm({
             onChange={e => setTaskMaxResults(Math.min(500, Math.max(1, parseInt(e.target.value) || 10)))}
             className="bg-slate-100 border-slate-200 text-slate-900"
           />
-          <p className="text-xs text-slate-400 mt-1">每个关键词最多采集条数（1~500）</p>
+          <p className="text-xs text-slate-500 mt-1">每个关键词最多采集条数（1~500）</p>
         </div>
       </div>
 
@@ -276,7 +276,7 @@ function TaskForm({
           <div className="flex items-center gap-2">
             <GitBranch className="w-4 h-4 text-purple-400" />
             <span className="text-sm font-medium text-slate-700">裂变采集</span>
-            <span className="text-xs text-slate-400">从已采集群组扩展发现更多相似群</span>
+            <span className="text-xs text-slate-500">从已采集群组扩展发现更多相似群</span>
           </div>
           <Switch
             checked={fissionEnabled}
@@ -300,7 +300,7 @@ function TaskForm({
                   <SelectItem value="3">3 层（较慢）</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-slate-400 mt-1">层数越多采集越多，耗时越长</p>
+              <p className="text-xs text-slate-500 mt-1">层数越多采集越多，耗时越长</p>
             </div>
             <div>
               <label className="text-xs text-slate-500 block mb-1">每种子群最多扩展数</label>
@@ -312,7 +312,7 @@ function TaskForm({
                 min={1}
                 max={50}
               />
-              <p className="text-xs text-slate-400 mt-1">每个种子群最多发现几个相似群</p>
+              <p className="text-xs text-slate-500 mt-1">每个种子群最多发现几个相似群</p>
             </div>
           </div>
         )}
@@ -810,11 +810,11 @@ export default function GroupScrape() {
             </CardHeader>
             <CardContent>
               {tasksLoading ? (
-                <div className="flex items-center justify-center py-12 text-slate-400">
+                <div className="flex items-center justify-center py-12 text-slate-500">
                   <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
                 </div>
               ) : tasks.length === 0 ? (
-                <div className="text-center py-12 text-slate-400">
+                <div className="text-center py-12 text-slate-500">
                   <Search className="w-10 h-10 mx-auto mb-3 opacity-30" />
                   <p>暂无采集任务，点击右上角新建</p>
                 </div>
@@ -845,7 +845,7 @@ export default function GroupScrape() {
                               </span>
                             ))}
                             {task.keywords.length > 4 && (
-                              <span className="text-slate-400 text-xs">+{task.keywords.length - 4}</span>
+                              <span className="text-slate-500 text-xs">+{task.keywords.length - 4}</span>
                             )}
                           </div>
                         </TableCell>
@@ -858,7 +858,7 @@ export default function GroupScrape() {
                               {task.fissionDepth}层/{task.fissionMaxPerSeed}个
                             </span>
                           ) : (
-                            <span className="text-slate-400 text-xs">关闭</span>
+                            <span className="text-slate-500 text-xs">关闭</span>
                           )}
                         </TableCell>
                         <TableCell><StatusBadge status={task.status} /></TableCell>
@@ -871,7 +871,7 @@ export default function GroupScrape() {
                               {task.totalFound} 个 <ArrowRight className="w-3 h-3" />
                             </button>
                           ) : (
-                            <span className="text-slate-400 text-sm">-</span>
+                            <span className="text-slate-500 text-sm">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-slate-500 text-sm">
@@ -1009,11 +1009,11 @@ export default function GroupScrape() {
             <Card className="bg-white border-slate-200">
               <CardContent className="p-0">
                 {resultsLoading ? (
-                  <div className="flex items-center justify-center py-12 text-slate-400">
+                  <div className="flex items-center justify-center py-12 text-slate-500">
                     <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
                   </div>
                 ) : results.length === 0 ? (
-                  <div className="text-center py-12 text-slate-400">
+                  <div className="text-center py-12 text-slate-500">
                     <Search className="w-10 h-10 mx-auto mb-3 opacity-30" />
                     <p>暂无采集结果</p>
                     <p className="text-xs mt-1">请先触发采集任务，等待引擎执行完成</p>
@@ -1071,7 +1071,7 @@ export default function GroupScrape() {
                             </TableCell>
                             <TableCell className="text-slate-600">
                               <div className="flex items-center gap-1">
-                                <Users className="w-3 h-3 text-slate-400" />
+                                <Users className="w-3 h-3 text-slate-500" />
                                 {r.memberCount.toLocaleString()}
                               </div>
                             </TableCell>
@@ -1227,7 +1227,7 @@ export default function GroupScrape() {
                               @{g}
                               <button
                                 onClick={() => setTargetGroups(prev => prev.filter(x => x !== g))}
-                                className="text-slate-400 hover:text-red-400"
+                                className="text-slate-500 hover:text-red-400"
                               >×</button>
                             </span>
                           ))}
@@ -1294,7 +1294,7 @@ export default function GroupScrape() {
                           min={1}
                           max={2000}
                         />
-                        <p className="text-xs text-slate-400 mt-1">每个群最多采集用户数（1~2000）</p>
+                        <p className="text-xs text-slate-500 mt-1">每个群最多采集用户数（1~2000）</p>
                       </div>
                     )}
 
@@ -1344,7 +1344,7 @@ export default function GroupScrape() {
                               />
                               <span className="text-slate-500 text-sm">/ 100</span>
                             </div>
-                            <p className="text-xs text-slate-400 mt-1">评分维度：成员数、有用户名、标题质量、有简介、类型</p>
+                            <p className="text-xs text-slate-500 mt-1">评分维度：成员数、有用户名、标题质量、有简介、类型</p>
                           </div>
 
                           {/* 最低成员数 */}
@@ -1378,7 +1378,7 @@ export default function GroupScrape() {
                               />
                               <span className="text-slate-500 text-sm">/ 100</span>
                             </div>
-                            <p className="text-xs text-slate-400 mt-1">基于近期消息频率评估群组活跃程度</p>
+                            <p className="text-xs text-slate-500 mt-1">基于近期消息频率评估群组活跃程度</p>
                           </div>
 
                           {/* 过滤选项 */}
@@ -1575,11 +1575,11 @@ export default function GroupScrape() {
                       </div>
 
                       {collectedGroupsLoading ? (
-                        <div className="flex items-center justify-center py-12 text-slate-400">
+                        <div className="flex items-center justify-center py-12 text-slate-500">
                           <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
                         </div>
                       ) : collectedGroups.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400">
+                        <div className="text-center py-12 text-slate-500">
                           <Globe className="w-10 h-10 mx-auto mb-3 opacity-30" />
                           <p>暂无采集到的群组/频道</p>
                           <p className="text-xs mt-1">请先配置目标群组并开始采集</p>
@@ -1630,7 +1630,7 @@ export default function GroupScrape() {
                                         @{g.username}
                                       </a>
                                     ) : (
-                                      <span className="text-slate-400">-</span>
+                                      <span className="text-slate-500">-</span>
                                     )}
                                   </TableCell>
                                   <TableCell>
@@ -1644,14 +1644,14 @@ export default function GroupScrape() {
                                   </TableCell>
                                   <TableCell className="text-slate-600">
                                     <div className="flex items-center gap-1">
-                                      <Users className="w-3 h-3 text-slate-400" />
+                                      <Users className="w-3 h-3 text-slate-500" />
                                       {(g.memberCount || 0).toLocaleString()}
                                     </div>
                                   </TableCell>
                                   <TableCell>
                                     <AiScoreBar score={g.aiScore} />
                                   </TableCell>
-                                  <TableCell className="text-slate-400 text-xs">
+                                  <TableCell className="text-slate-500 text-xs">
                                     {g.sourceGroupId}
                                   </TableCell>
                                   <TableCell>
@@ -1690,11 +1690,11 @@ export default function GroupScrape() {
                       </div>
 
                       {collectedUsersLoading ? (
-                        <div className="flex items-center justify-center py-12 text-slate-400">
+                        <div className="flex items-center justify-center py-12 text-slate-500">
                           <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
                         </div>
                       ) : collectedUsers.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400">
+                        <div className="text-center py-12 text-slate-500">
                           <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
                           <p>暂无采集到的用户</p>
                           <p className="text-xs mt-1">请勾选「用户成员」类型并开始采集</p>
@@ -1729,10 +1729,10 @@ export default function GroupScrape() {
                                         @{u.username}
                                       </a>
                                     ) : (
-                                      <span className="text-slate-400">-</span>
+                                      <span className="text-slate-500">-</span>
                                     )}
                                   </TableCell>
-                                  <TableCell className="text-slate-400 text-xs font-mono">
+                                  <TableCell className="text-slate-500 text-xs font-mono">
                                     {u.tgId}
                                   </TableCell>
                                   <TableCell>
@@ -1752,7 +1752,7 @@ export default function GroupScrape() {
                                   <TableCell>
                                     <AiScoreBar score={u.aiScore} />
                                   </TableCell>
-                                  <TableCell className="text-slate-400 text-xs">
+                                  <TableCell className="text-slate-500 text-xs">
                                     {u.sourceGroupId}
                                   </TableCell>
                                 </TableRow>
@@ -1788,7 +1788,7 @@ export default function GroupScrape() {
                   <MessageSquare className="w-4 h-4 text-orange-400" />
                   从群组历史消息中提取群链接
                 </CardTitle>
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-xs text-slate-500 mt-1">
                   扫描指定群组的历史消息，自动提取其中的 t.me 群组/频道链接，可批量导入监控池
                 </p>
               </CardHeader>
@@ -1810,7 +1810,7 @@ export default function GroupScrape() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-slate-400 mt-1">账号需已加入目标群组</p>
+                    <p className="text-xs text-slate-500 mt-1">账号需已加入目标群组</p>
                   </div>
 
                   {/* 群组链接 */}
@@ -1822,7 +1822,7 @@ export default function GroupScrape() {
                       placeholder="https://t.me/+xxx 或 @username"
                       className="bg-slate-100 border-slate-200 text-slate-900"
                     />
-                    <p className="text-xs text-slate-400 mt-1">支持邀请链接或 @用户名</p>
+                    <p className="text-xs text-slate-500 mt-1">支持邀请链接或 @用户名</p>
                   </div>
 
                   {/* 扫描消息数 */}
@@ -1840,7 +1840,7 @@ export default function GroupScrape() {
                         <SelectItem value="5000">5000 条（较慢）</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-slate-400 mt-1">消息越多耗时越长</p>
+                    <p className="text-xs text-slate-500 mt-1">消息越多耗时越长</p>
                   </div>
                 </div>
 
@@ -2005,7 +2005,7 @@ export default function GroupScrape() {
 
             {/* 无结果提示 */}
             {!extractFromGroup.isPending && extractedLinks.length === 0 && extractScanned > 0 && (
-              <div className="text-center py-12 text-slate-400">
+              <div className="text-center py-12 text-slate-500">
                 <Link2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
                 <p>未在该群组的 {extractScanned} 条消息中找到任何群组链接</p>
               </div>
@@ -2185,7 +2185,7 @@ export default function GroupScrape() {
               readOnly
               className="bg-slate-100 border-slate-200 text-slate-900 text-sm h-48 font-mono resize-none"
             />
-            <p className="text-xs text-slate-400">共 {exportContent.split("\n").filter(Boolean).length} 个用户</p>
+            <p className="text-xs text-slate-500">共 {exportContent.split("\n").filter(Boolean).length} 个用户</p>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setExportUsersDialog(false)} className="text-slate-500">关闭</Button>

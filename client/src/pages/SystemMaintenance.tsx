@@ -120,12 +120,12 @@ export default function SystemMaintenance() {
       </div>
 
       {/* ─── 进程重启 ─── */}
-      <Card className="bg-slate-900 border-slate-700">
+      <Card className="bg-white border-slate-200">
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
             <RefreshCw className="w-5 h-5 text-orange-400" /> 进程重启
           </CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-slate-500">
             当引擎出现断连、推送停止等异常情况时，可点击下方按鈕手动重启对应进程。
           </CardDescription>
         </CardHeader>
@@ -157,20 +157,20 @@ export default function SystemMaintenance() {
       </Card>
 
       {/* ─── 监控引擎同步 ─── */}
-      <Card className="bg-slate-900 border-slate-700">
+      <Card className="bg-white border-slate-200">
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
             <RefreshCw className="w-5 h-5 text-cyan-400" /> 监控引擎同步
           </CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-slate-500">
             引擎每 30 秒自动同步一次公共群组配置。添加新群组后，点击「立即同步」可跳过等待，引擎将立即重新加载群组列表并触发加群操作。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="bg-slate-800/60 rounded-lg p-4 border border-slate-700">
+          <div className="bg-slate-100/80 rounded-lg p-4 border border-slate-200">
             <div className="flex items-start gap-3">
               <Info className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
-              <div className="text-sm text-slate-300 space-y-1">
+              <div className="text-sm text-slate-600 space-y-1">
                 <p>引擎会检测公共群组列表变化，发现新群组后自动触发所有监控账号加入。</p>
                 <p>如果添加群组后监控账号未能及时加入，可点击下方按钮立即触发同步。</p>
               </div>
@@ -202,18 +202,18 @@ export default function SystemMaintenance() {
       </Card>
 
       {/* ─── 数据库记录统计 ─── */}
-      <Card className="bg-slate-900 border-slate-700">
+      <Card className="bg-white border-slate-200">
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
             <Database className="w-5 h-5 text-purple-400" /> 数据库记录统计
           </CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-slate-500">
             各类历史记录的当前数量，建议定期清理以保持系统性能
           </CardDescription>
         </CardHeader>
         <CardContent>
           {statsLoading ? (
-            <div className="flex items-center gap-2 text-slate-400">
+            <div className="flex items-center gap-2 text-slate-500">
               <Loader2 className="w-4 h-4 animate-spin" /> 加载中...
             </div>
           ) : (
@@ -222,9 +222,9 @@ export default function SystemMaintenance() {
                 { label: "命中记录", key: "hitRecords", color: "text-orange-400", desc: "关键词命中的消息记录" },
                 { label: "DM 队列", key: "dmQueue", color: "text-blue-400", desc: "私信发送队列记录" },
                 { label: "发送历史", key: "senderHistory", color: "text-green-400", desc: "消息发送历史记录" },
-                { label: "登录记录", key: "loginAttempts", color: "text-slate-400", desc: "用户登录尝试记录" },
+                { label: "登录记录", key: "loginAttempts", color: "text-slate-500", desc: "用户登录尝试记录" },
               ].map((item) => (
-                <div key={item.key} className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+                <div key={item.key} className="bg-slate-100 rounded-lg p-4 border border-slate-200">
                   <p className={`text-2xl font-bold ${item.color}`}>
                     {formatCount((stats as any)?.[item.key] ?? 0)}
                   </p>
@@ -238,12 +238,12 @@ export default function SystemMaintenance() {
       </Card>
 
       {/* ─── 数据清理 ─── */}
-      <Card className="bg-slate-900 border-slate-700">
+      <Card className="bg-white border-slate-200">
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
             <Trash2 className="w-5 h-5 text-red-400" /> 历史数据清理
           </CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-slate-500">
             清理指定天数之前的历史记录，释放数据库空间。设置为 0 表示不清理该类型数据。
           </CardDescription>
         </CardHeader>
@@ -260,12 +260,12 @@ export default function SystemMaintenance() {
               { key: "hitRecordsDays", label: "命中记录", desc: "保留最近 N 天的关键词命中记录", color: "border-orange-700/40" },
               { key: "dmQueueDays", label: "DM 队列", desc: "保留最近 N 天的私信队列记录", color: "border-blue-700/40" },
               { key: "senderHistoryDays", label: "发送历史", desc: "保留最近 N 天的消息发送历史", color: "border-green-700/40" },
-              { key: "loginAttemptsDays", label: "登录记录", desc: "保留最近 N 天的登录尝试记录", color: "border-slate-700/40" },
+              { key: "loginAttemptsDays", label: "登录记录", desc: "保留最近 N 天的登录尝试记录", color: "border-slate-200/40" },
             ].map((item) => (
-              <div key={item.key} className={`bg-slate-800 rounded-lg p-4 border ${item.color}`}>
+              <div key={item.key} className={`bg-slate-100 rounded-lg p-4 border ${item.color}`}>
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-white">{item.label}</p>
-                  <Badge variant="outline" className="border-slate-600 text-slate-400 text-xs">
+                  <Badge variant="outline" className="border-slate-300 text-slate-500 text-xs">
                     {(cleanupConfig as any)[item.key]} 天前
                   </Badge>
                 </div>
@@ -286,7 +286,7 @@ export default function SystemMaintenance() {
                     max={365}
                     value={(cleanupConfig as any)[item.key]}
                     onChange={(e) => setCleanupConfig(prev => ({ ...prev, [item.key]: Math.max(0, Math.min(365, Number(e.target.value))) }))}
-                    className="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white text-center"
+                    className="w-16 bg-slate-200 border border-slate-300 rounded px-2 py-1 text-sm text-white text-center"
                   />
                 </div>
               </div>
@@ -307,7 +307,7 @@ export default function SystemMaintenance() {
             </Button>
             <Button
               variant="ghost"
-              className="text-slate-400"
+              className="text-slate-500"
               onClick={() => setCleanupConfig({ hitRecordsDays: 30, dmQueueDays: 7, senderHistoryDays: 30, loginAttemptsDays: 7 })}
             >
               <RotateCcw className="w-4 h-4 mr-2" /> 恢复默认
@@ -315,7 +315,7 @@ export default function SystemMaintenance() {
           </div>
 
           {cleanupResult && (
-            <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 space-y-2">
+            <div className="bg-slate-100 rounded-lg p-4 border border-slate-200 space-y-2">
               <div className="flex items-center gap-2 text-green-400 font-medium">
                 <CheckCircle2 className="w-4 h-4" /> {cleanupResult.message}
               </div>
@@ -330,7 +330,7 @@ export default function SystemMaintenance() {
                   return (
                     <div key={key} className="text-center">
                       <p className="text-lg font-bold text-white">{count.toLocaleString()}</p>
-                      <p className="text-xs text-slate-400">{labels[key] ?? key}</p>
+                      <p className="text-xs text-slate-500">{labels[key] ?? key}</p>
                     </div>
                   );
                 })}

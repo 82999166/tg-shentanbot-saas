@@ -24,8 +24,8 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.E
   sending: { label: "发送中", color: "bg-amber-900 text-amber-300", icon: Send },
   sent: { label: "已发送", color: "bg-emerald-900 text-emerald-300", icon: CheckCircle2 },
   failed: { label: "失败", color: "bg-red-900 text-red-300", icon: XCircle },
-  skipped: { label: "已跳过", color: "bg-slate-700 text-slate-400", icon: SkipForward },
-  cancelled: { label: "已取消", color: "bg-slate-700 text-slate-400", icon: SkipForward },
+  skipped: { label: "已跳过", color: "bg-slate-200 text-slate-500", icon: SkipForward },
+  cancelled: { label: "已取消", color: "bg-slate-200 text-slate-500", icon: SkipForward },
 };
 
 export default function DmQueue() {
@@ -157,7 +157,7 @@ export default function DmQueue() {
                       </span>
                       <Badge className={`text-xs border-0 ${sc.color}`}>{sc.label}</Badge>
                       {item.retryCount > 0 && (
-                        <Badge className="text-xs bg-slate-700 text-slate-300 border-0">重试 {item.retryCount} 次</Badge>
+                        <Badge className="text-xs bg-slate-200 text-slate-600 border-0">重试 {item.retryCount} 次</Badge>
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground truncate">{item.content}</p>

@@ -52,7 +52,7 @@ export default function Orders() {
           </CardHeader>
           <CardContent>
             {!orders || orders.length === 0 ? (
-              <p className="text-slate-400 text-sm text-center py-8">暂无订单</p>
+              <p className="text-slate-500 text-sm text-center py-8">暂无订单</p>
             ) : (
               <div className="space-y-3">
                 {orders.map((o: any) => (
@@ -65,7 +65,7 @@ export default function Orders() {
                         </Badge>
                         <span className="text-xs text-slate-600">{o.plan} · {o.months}个月</span>
                       </div>
-                      <div className="flex items-center gap-4 text-xs text-slate-400">
+                      <div className="flex items-center gap-4 text-xs text-slate-500">
                         <span>用户 ID: {o.userId}</span>
                         <span>金额: {o.amount} USDT</span>
                         <span>创建: {new Date(o.createdAt).toLocaleString()}</span>

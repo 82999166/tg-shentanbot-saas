@@ -131,7 +131,7 @@ export default function RedeemCodes() {
               >
                 {generateMutation.isPending ? "生成中..." : `生成 ${genCount} 个卡密`}
               </Button>
-              <span className="text-slate-400 text-xs">
+              <span className="text-slate-500 text-xs">
                 将生成 <span className="text-blue-400 font-medium">{genPlan === "basic" ? "基础版" : genPlan === "pro" ? "专业版" : "企业版"}</span>
                 {" · "}
                 <span className="text-green-400 font-medium">{DURATION_OPTIONS.find(o => o.value === genMonths)?.label ?? `${genMonths}个月`}</span>
@@ -180,7 +180,7 @@ export default function RedeemCodes() {
           </CardHeader>
           <CardContent>
             {!codes || codes.length === 0 ? (
-              <p className="text-slate-400 text-sm text-center py-4">暂无卡密</p>
+              <p className="text-slate-500 text-sm text-center py-4">暂无卡密</p>
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {codes.map((c: any) => (
@@ -190,11 +190,11 @@ export default function RedeemCodes() {
                       <Badge className={`text-xs px-1.5 py-0 ${statusColors[c.status] || ""}`}>
                         {statusLabels[c.status] || c.status}
                       </Badge>
-                      <span className="text-xs text-slate-400">
+                      <span className="text-xs text-slate-500">
                         {c.planId} · {c.durationMonths >= 12 ? `${c.durationMonths / 12}年` : `${c.durationMonths}个月`}
                       </span>
                     </div>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-xs text-slate-500">
                       {c.usedAt ? `使用于 ${new Date(c.usedAt).toLocaleDateString()}` : `过期 ${new Date(c.expiresAt).toLocaleDateString()}`}
                     </div>
                   </div>
