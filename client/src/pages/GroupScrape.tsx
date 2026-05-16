@@ -7,6 +7,8 @@
  */
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import AdminLayout from "@/components/AdminLayout";
+import { useAuth } from "@/_core/hooks/useAuth";
 import {
   Search, Target, Link2, Plus, Play, Trash2, RefreshCw,
   Download, Upload, Tag, Star, Users, Globe, Bot,
@@ -126,6 +128,7 @@ function Pagination({ page, pageSize, total, onChange }: {
 // ── 主组件 ────────────────────────────────────────────────────────────────
 
 export default function GroupScrape() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"keyword" | "target" | "extract">("keyword");
 
   const tabs = [
@@ -135,47 +138,49 @@ export default function GroupScrape() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* 页面头部 */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-slate-800 flex items-center gap-2">
-              <Search className="w-5 h-5 text-blue-500" />
-              群组采集
-            </h1>
-            <p className="text-sm text-slate-500 mt-0.5">
-              通过关键词搜索、指定群组深度采集或消息提取，发现并导入高质量群组/频道/用户
-            </p>
+    <AdminLayout title="群组采集">
+      <div className="min-h-full bg-slate-50">
+        {/* 页面头部 */}
+        <div className="bg-white border-b border-slate-200 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-semibold text-slate-800 flex items-center gap-2">
+                <Search className="w-5 h-5 text-blue-500" />
+                群组采集
+              </h1>
+              <p className="text-sm text-slate-500 mt-0.5">
+                通过关键词搜索、指定群组深度采集或消息提取，发现并导入高质量群组/频道/用户
+              </p>
+            </div>
+          </div>
+
+          {/* Tab 导航 */}
+          <div className="flex gap-1 mt-4">
+            {tabs.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  activeTab === tab.key
+                    ? "bg-blue-500 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Tab 导航 */}
-        <div className="flex gap-1 mt-4">
-          {tabs.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === tab.key
-                  ? "bg-blue-500 text-white shadow-sm"
-                  : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
+        {/* Tab 内容 */}
+        <div className="p-6">
+          {activeTab === "keyword" && <KeywordTab />}
+          {activeTab === "target" && <TargetTab />}
+          {activeTab === "extract" && <ExtractTab />}
         </div>
       </div>
-
-      {/* Tab 内容 */}
-      <div className="p-6">
-        {activeTab === "keyword" && <KeywordTab />}
-        {activeTab === "target" && <TargetTab />}
-        {activeTab === "extract" && <ExtractTab />}
-      </div>
-    </div>
+    </AdminLayout>
   );
 }
 
