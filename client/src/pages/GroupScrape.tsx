@@ -5,36 +5,34 @@
  * Tab2: 指定群组采集（批次管理 + AI标签 + 全局去重）
  * Tab3: 消息提取链接（工具 + AI过滤）
  */
-import { useState, useCallback } from "react";
-import { trpc } from "../utils/trpc";
+import { useState } from "react";
+import { trpc } from "@/lib/trpc";
 import {
   Search, Target, Link2, Plus, Play, Trash2, RefreshCw,
-  Download, Upload, ChevronRight, ChevronDown, Filter,
-  Tag, Star, Users, Globe, Lock, Zap, Bot, Crown,
-  MessageSquare, BarChart2, CheckCircle, XCircle, Clock,
-  AlertTriangle, Info, Copy, FileText, Settings2, Layers,
-  ArrowRight, Eye, MoreHorizontal, Hash, Activity
+  Download, Upload, Tag, Star, Users, Globe, Bot,
+  CheckCircle, AlertTriangle, Info, Copy, FileText, Settings2, Layers,
+  Hash
 } from "lucide-react";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Textarea } from "../components/ui/textarea";
-import { Badge } from "../components/ui/badge";
-import { Switch } from "../components/ui/switch";
-import { Slider } from "../components/ui/slider";
-import { Checkbox } from "../components/ui/checkbox";
-import { Label } from "../components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "../components/ui/select";
+} from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "../components/ui/dialog";
+} from "@/components/ui/dialog";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "../components/ui/table";
+} from "@/components/ui/table";
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
-} from "../components/ui/tooltip";
+} from "@/components/ui/tooltip";
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
 
@@ -537,7 +535,7 @@ function TargetTab() {
   const [isRunning, setIsRunning] = useState(false);
   const [lastResult, setLastResult] = useState<any>(null);
 
-  const { data: accounts } = trpc.tgAccounts?.list?.useQuery?.() ?? { data: [] };
+  const { data: accounts } = trpc.tgAccounts.list.useQuery();
   const { data: batches, refetch: refetchBatches } = trpc.groupScrape.listBatches.useQuery({ scrapeMode: "target", page: 1, pageSize: 20 });
   const { data: globalStats, refetch: refetchStats } = trpc.groupScrape.getGlobalStats.useQuery();
 
@@ -1156,7 +1154,7 @@ function ExtractTab() {
   const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
   const [tagFilter, setTagFilter] = useState("");
 
-  const { data: accounts } = trpc.tgAccounts?.list?.useQuery?.() ?? { data: [] };
+  const { data: accounts } = trpc.tgAccounts.list.useQuery();
 
   const extractMutation = trpc.groupScrape.extractFromGroup.useMutation({
     onSuccess: (data) => {
