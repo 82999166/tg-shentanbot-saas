@@ -1108,7 +1108,7 @@ export const groupScrapeRouter = router({
           const resp = await fetch(`http://127.0.0.1:${port}/dialogs`, {
             headers: { "X-Engine-Secret": engineSecret },
             // @ts-ignore
-            signal: AbortSignal.timeout(30000),
+            signal: AbortSignal.timeout(300000), // 全量拉取需要更长时间（5分钟）
           });
           if (!resp.ok) continue;
           const data = (await resp.json()) as any;
