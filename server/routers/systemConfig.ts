@@ -939,4 +939,93 @@ export const systemConfigRouter = router({
         joinLog: r.joinLog ? JSON.parse(r.joinLog) : [],
       }));
     }),
+
+  // 从系统 TG 账号同步公共群组（确保每个公共群组都有系统账号加入）
+  syncPublicGroupsFromAccounts: adminProcedure
+    .mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库未连接" });
+
+      // 获取所有活跃的公共群组
+      const publicGroups = await db.select().from(publicMonitorGroups).where(eq(publicMonitorGroups.isActive, true));
+      if (publicGroups.length === 0) return { success: true, message: "没有活跃的公共群组", synced: 0 };
+
+      // 获取所有系统 TG 账号（有引擎端口的）
+      const accounts = await db.select().from(monitorAccounts).where(eq(monitorAccounts.isActive, true));
+      if (accounts.length === 0) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "没有活跃的系统 TG 账号" });
+
+      // 获取每个群组的已加入账号
+      const joinStatuses = await db.select().from(publicGroupJoinStatus);
+      const joinedMap: Record<number, Set<number>> = {};
+      for (const s of joinStatuses) {
+        if (s.status === "joined" || s.status === "subscribed") {
+          if (!joinedMap[s.publicGroupId]) joinedMap[s.publicGroupId] = new Set();
+          joinedMap[s.publicGroupId].add(s.monitorAccountId);
+        }
+      }
+
+      // 找出没有任何账号加入的群组
+      const unjoined = publicGroups.filter(g => !joinedMap[g.id] || joinedMap[g.id].size === 0);
+
+      if (unjoined.length === 0) {
+        return { success: true, message: "所有公共群组都已有系统账号加入", synced: 0, total: publicGroups.length };
+      }
+
+      // 为每个未加入的群组分配一个账号并触发加群
+      const accountJoinCount: Record<number, number> = {};
+      for (const acc of accounts) {
+        const joined = joinStatuses.filter(s => s.monitorAccountId === acc.id && (s.status === "joined" || s.status === "subscribed")).length;
+        accountJoinCount[acc.id] = joined;
+      }
+
+      let syncedCount = 0;
+      for (const group of unjoined) {
+        // 选择当前加群数最少的账号（负载均衡）
+        const sortedAccounts = [...accounts].sort((a, b) => (accountJoinCount[a.id] || 0) - (accountJoinCount[b.id] || 0));
+        const targetAccount = sortedAccounts[0];
+
+        // 检查是否已有记录
+        const existing = await db.select().from(publicGroupJoinStatus)
+          .where(
+            and(
+              eq(publicGroupJoinStatus.publicGroupId, group.id),
+              eq(publicGroupJoinStatus.monitorAccountId, targetAccount.id)
+            )
+          );
+
+        if (existing.length === 0) {
+          await db.insert(publicGroupJoinStatus).values({
+            publicGroupId: group.id,
+            monitorAccountId: targetAccount.id,
+            assignedAccountId: targetAccount.id,
+            status: "pending",
+          });
+          accountJoinCount[targetAccount.id] = (accountJoinCount[targetAccount.id] || 0) + 1;
+          syncedCount++;
+        }
+      }
+
+      // 触发引擎同步
+      try {
+        for (const acc of accounts) {
+          const port = 7100 + acc.id;
+          try {
+            await fetch(`http://127.0.0.1:${port}/sync-groups`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({}),
+              signal: AbortSignal.timeout(3000),
+            });
+          } catch (e) { /* 忽略单个引擎错误 */ }
+        }
+      } catch (e) { /* 忽略 */ }
+
+      return {
+        success: true,
+        message: `已为 ${syncedCount} 个未加入群组分配账号，共 ${publicGroups.length} 个群组，${publicGroups.length - unjoined.length} 个已有账号`,
+        synced: syncedCount,
+        total: publicGroups.length,
+        unjoined: unjoined.length,
+      };
+    }),
 });

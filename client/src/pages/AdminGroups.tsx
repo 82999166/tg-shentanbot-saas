@@ -129,6 +129,13 @@ export default function AdminGroups() {
   });
 
   // 批量同步群组 realId
+  const syncPublicGroupsMut = trpc.sysConfig.syncPublicGroupsFromAccounts.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message || "同步完成");
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
   const syncRealIdsMut = trpc.groupScrape.syncGroupRealIds.useMutation({
     onSuccess: (res) => {
       if (res.success) {
@@ -405,6 +412,17 @@ export default function AdminGroups() {
               <Smartphone className="w-4 h-4 mr-1" />
               从TG账号导入
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => syncPublicGroupsMut.mutate()}
+              disabled={syncPublicGroupsMut.isPending}
+              title="检查所有公共群组，为没有系统账号加入的群组自动分配账号并触发加群"
+              className="border-purple-500/50 text-purple-600 hover:bg-purple-500/10"
+            >
+              <Users className="w-4 h-4 mr-1" />
+              {syncPublicGroupsMut.isPending ? "同步中..." : "账号覆盖检查"}
+            </Button>
 
             <Button size="sm" onClick={() => setAddDialog(true)}>
               <Plus className="w-4 h-4 mr-1" />
@@ -554,6 +572,8 @@ export default function AdminGroups() {
                     <TableHead>群组用户名</TableHead>
                     <TableHead>群组名称</TableHead>
                     <TableHead>备注</TableHead>
+                    <TableHead>群组人数</TableHead>
+                    <TableHead>健康状态</TableHead>
                     <TableHead>状态</TableHead>
                     <TableHead>已加入账号</TableHead>
                     <TableHead>添加时间</TableHead>
@@ -584,6 +604,19 @@ export default function AdminGroups() {
                       <TableCell>{group.groupTitle || "-"}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {(group as any).note || "-"}
+                      </TableCell>
+                      <TableCell className="text-sm text-foreground">
+                        {(group as any).memberCount > 0 ? ((group as any).memberCount >= 10000 ? `${((group as any).memberCount / 10000).toFixed(1)}万` : (group as any).memberCount.toLocaleString()) : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const hs = (group as any).healthStatus || "normal";
+                          if (hs === "normal") return <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30 text-xs">正常</Badge>;
+                          if (hs === "restricted") return <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/30 text-xs">内容受限</Badge>;
+                          if (hs === "scam") return <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/30 text-xs">诈骗群组</Badge>;
+                          if (hs === "fake") return <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/30 text-xs">虚假群组</Badge>;
+                          return <Badge variant="outline" className="bg-gray-500/10 text-gray-500 border-gray-500/30 text-xs">未知</Badge>;
+                        })()}
                       </TableCell>
                       <TableCell>
                         {group.isActive ? (
