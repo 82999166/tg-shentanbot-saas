@@ -760,7 +760,7 @@ export const tgAccountsRouter = router({
             "X-Engine-Secret": engineSecret,
           },
         };
-        const req = require("http").request(options, (res: any) => {
+        const req = http.request(options, (res: any) => {
           let data = "";
           res.on("data", (chunk: any) => { data += chunk; });
           res.on("end", () => {
