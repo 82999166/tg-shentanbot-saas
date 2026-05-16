@@ -45,6 +45,9 @@ import {
   ServerOff,
   PackagePlus,
   FolderInput,
+  Activity,
+  AlertTriangle,
+  CheckCircle,
 } from "lucide-react";
 import { useState, useRef } from "react";
 
@@ -148,6 +151,66 @@ export default function TgAccounts() {
   const [importChatsError, setImportChatsError] = useState<string>('');
   const getAccountChats = trpc.tgAccounts.getAccountChats.useMutation();
   const importChatsToPublic = trpc.tgAccounts.importChatsToPublic.useMutation();
+
+  // 频道健康检测状态
+  const [healthCheckAccountId, setHealthCheckAccountId] = useState<number | null>(null);
+  const [healthCheckLoading, setHealthCheckLoading] = useState(false);
+  const [healthCheckResult, setHealthCheckResult] = useState<{
+    total: number;
+    normalCount: number;
+    abnormalCount: number;
+    normalGroups: Array<{ groupId: string; title: string; username: string; memberCount: number; status: string; reason: string }>;
+    abnormalGroups: Array<{ groupId: string; title: string; username: string; memberCount: number; status: string; reason: string }>;
+  } | null>(null);
+  const [healthCheckError, setHealthCheckError] = useState<string>('');
+  const [healthCheckStep, setHealthCheckStep] = useState<'loading' | 'result' | 'error'>('loading');
+  const [healthCheckSelected, setHealthCheckSelected] = useState<Set<string>>(new Set());
+  const checkGroupHealth = trpc.tgAccounts.checkGroupHealth.useMutation();
+  const deleteAbnormalGroups = trpc.tgAccounts.deleteAbnormalPublicGroups.useMutation();
+
+  const openHealthCheck = async (accountId: number) => {
+    setHealthCheckAccountId(accountId);
+    setHealthCheckStep('loading');
+    setHealthCheckResult(null);
+    setHealthCheckError('');
+    setHealthCheckSelected(new Set());
+    setHealthCheckLoading(true);
+    try {
+      // 先获取公共群组池的所有群组 ID
+      const chatsRes = await getAccountChats.mutateAsync({ id: accountId });
+      const groupIds = chatsRes.chats.map((c: any) => c.chatId);
+      if (!groupIds.length) {
+        setHealthCheckError('该账号没有已加入的群组，无法检测');
+        setHealthCheckStep('error');
+        setHealthCheckLoading(false);
+        return;
+      }
+      // 调用健康检测
+      const res = await checkGroupHealth.mutateAsync({ accountId, groupIds });
+      setHealthCheckResult(res);
+      // 默认选中所有异常群组
+      setHealthCheckSelected(new Set(res.abnormalGroups.map((g: any) => g.groupId)));
+      setHealthCheckStep('result');
+    } catch (e: any) {
+      setHealthCheckError(e.message ?? '检测失败');
+      setHealthCheckStep('error');
+    } finally {
+      setHealthCheckLoading(false);
+    }
+  };
+
+  const handleDeleteAbnormal = async () => {
+    const toDelete = Array.from(healthCheckSelected);
+    if (!toDelete.length) return toast.error('请至少选择一个异常群组');
+    try {
+      const res = await deleteAbnormalGroups.mutateAsync({ groupIds: toDelete });
+      toast.success(`已从公共群组池删除 ${res.deletedCount} 个异常群组`);
+      setHealthCheckAccountId(null);
+      refresh();
+    } catch (e: any) { toast.error(e.message ?? '删除失败'); }
+  };
+
+
 
   const openImportChats = async (accountId: number) => {
     setImportChatsAccountId(accountId);
@@ -508,6 +571,10 @@ export default function TgAccounts() {
                             <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-500 hover:text-purple-400" title="从TG账号导入群组到公共群组池"
                               onClick={() => openImportChats(account.id)}>
                               {importChatsLoading && importChatsAccountId === account.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <FolderInput className="w-3 h-3" />}
+                            </Button>
+                            <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-500 hover:text-orange-400" title="频道健康检测（检测已加入群组中的异常/违规群组）"
+                              onClick={() => openHealthCheck(account.id)}>
+                              {healthCheckLoading && healthCheckAccountId === account.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
                             </Button>
                             <Button size="icon" variant="ghost" className="w-7 h-7 text-slate-500 hover:text-green-400" title="测试连接"
                               onClick={async () => { const r = await testConn.mutateAsync({ id: account.id }); if (r.success) { toast.success(r.message); refresh(); } else toast.error(r.message); }}>
@@ -1130,6 +1197,145 @@ export default function TgAccounts() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ─── 频道健康检测 Dialog ─────────────────────────────────── */}
+      <Dialog open={healthCheckAccountId !== null} onOpenChange={(o) => { if (!o) { setHealthCheckAccountId(null); setHealthCheckResult(null); setHealthCheckSelected(new Set()); setHealthCheckStep('loading'); setHealthCheckError(''); } }}>
+        <DialogContent className="bg-white border-slate-200 text-slate-800 max-w-3xl h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5 text-orange-500" /> 频道健康检测
+            </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              检测该账号已加入的群组中是否存在被 Telegram 标记为违规/屏蔽的异常群组，可批量从公共群组池中删除
+            </DialogDescription>
+          </DialogHeader>
+
+          {healthCheckStep === 'loading' && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4">
+              <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
+              <p className="text-slate-500 text-sm">正在检测群组健康状态，请稍候...</p>
+              <p className="text-slate-400 text-xs">首次检测可能需要 1-3 分钟，取决于群组数量</p>
+            </div>
+          )}
+
+          {healthCheckStep === 'error' && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3">
+              <AlertTriangle className="w-10 h-10 text-red-400" />
+              <p className="text-red-500 text-sm font-medium">检测失败</p>
+              <p className="text-slate-500 text-xs max-w-md text-center">{healthCheckError}</p>
+              <Button onClick={() => healthCheckAccountId && openHealthCheck(healthCheckAccountId)} className="bg-orange-600 hover:bg-orange-700 mt-2">
+                <Activity className="w-4 h-4 mr-1" /> 重新检测
+              </Button>
+            </div>
+          )}
+
+          {healthCheckStep === 'result' && healthCheckResult && (
+            <>
+              {/* 统计概览 */}
+              <div className="grid grid-cols-3 gap-3 mb-2">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-slate-800">{healthCheckResult.total}</p>
+                  <p className="text-xs text-slate-500">检测总数</p>
+                </div>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-green-600">{healthCheckResult.normalCount}</p>
+                  <p className="text-xs text-green-600">正常群组</p>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-red-600">{healthCheckResult.abnormalCount}</p>
+                  <p className="text-xs text-red-600">异常群组</p>
+                </div>
+              </div>
+
+              {/* 标签页：异常 / 正常 */}
+              <Tabs defaultValue="abnormal" className="flex-1 flex flex-col min-h-0">
+                <TabsList className="bg-slate-100 border border-slate-200 w-full">
+                  <TabsTrigger value="abnormal" className="flex-1 data-[state=active]:bg-red-50 data-[state=active]:text-red-600">
+                    <AlertTriangle className="w-3 h-3 mr-1" />
+                    异常群组 ({healthCheckResult.abnormalCount})
+                  </TabsTrigger>
+                  <TabsTrigger value="normal" className="flex-1 data-[state=active]:bg-green-50 data-[state=active]:text-green-600">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    正常群组 ({healthCheckResult.normalCount})
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="abnormal" className="flex-1 overflow-auto mt-2">
+                  {healthCheckResult.abnormalGroups.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 text-slate-500">
+                      <CheckCircle className="w-10 h-10 text-green-400 mb-2" />
+                      <p className="text-sm">太棒了！没有发现异常群组</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between mb-2 px-1">
+                        <p className="text-xs text-slate-500">选中 {healthCheckSelected.size} 个，将从公共群组池删除</p>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" className="h-6 text-xs border-slate-300" onClick={() => setHealthCheckSelected(new Set(healthCheckResult.abnormalGroups.map(g => g.groupId)))}>全选</Button>
+                          <Button size="sm" variant="outline" className="h-6 text-xs border-slate-300" onClick={() => setHealthCheckSelected(new Set())}>取消全选</Button>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        {healthCheckResult.abnormalGroups.map((g) => (
+                          <div key={g.groupId} className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${healthCheckSelected.has(g.groupId) ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200 opacity-60'}`}
+                            onClick={() => setHealthCheckSelected(prev => { const s = new Set(prev); s.has(g.groupId) ? s.delete(g.groupId) : s.add(g.groupId); return s; })}>
+                            <input type="checkbox" checked={healthCheckSelected.has(g.groupId)} onChange={() => {}} className="w-4 h-4 accent-red-500" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-slate-800 text-sm truncate">{g.title || g.groupId}</span>
+                                {g.username && <span className="text-slate-400 text-xs">@{g.username}</span>}
+                                {g.memberCount > 0 && <span className="text-slate-400 text-xs">{g.memberCount.toLocaleString()} 人</span>}
+                              </div>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0" />
+                                <span className="text-red-500 text-xs">{g.reason}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="normal" className="flex-1 overflow-auto mt-2">
+                  <div className="space-y-1">
+                    {healthCheckResult.normalGroups.map((g) => (
+                      <div key={g.groupId} className="flex items-center gap-3 p-2 rounded-lg border bg-slate-50 border-slate-200">
+                        <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-slate-800 text-sm truncate">{g.title || g.groupId}</span>
+                            {g.username && <span className="text-slate-400 text-xs">@{g.username}</span>}
+                            {g.memberCount > 0 && <span className="text-slate-400 text-xs">{g.memberCount.toLocaleString()} 人</span>}
+                          </div>
+                          <span className="text-green-500 text-xs">{g.reason}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              <DialogFooter className="mt-2 flex gap-2">
+                <Button variant="outline" className="border-slate-300 text-slate-600" onClick={() => setHealthCheckAccountId(null)}>关闭</Button>
+                {healthCheckResult.abnormalCount > 0 && (
+                  <Button
+                    className="bg-red-600 hover:bg-red-700"
+                    disabled={healthCheckSelected.size === 0 || deleteAbnormalGroups.isPending}
+                    onClick={handleDeleteAbnormal}
+                  >
+                    {deleteAbnormalGroups.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1" />}
+                    删除选中的 {healthCheckSelected.size} 个异常群组
+                  </Button>
+                )}
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+
     </Layout>
   );
 }

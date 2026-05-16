@@ -2689,6 +2689,151 @@ async def http_server():
             return web.json_response({"error": "unauthorized"}, status=401)
         dm_trigger_event.set()
         return web.json_response({"success": True, "message": "已触发 DM 发送"})
+
+    async def handle_check_group_health(request: web.Request):
+        """检测公共群组池中群组的健康状态（是否被 Telegram 屏蔽/违规）"""
+        secret = request.headers.get("X-Engine-Secret", "")
+        if secret != ENGINE_SECRET:
+            return web.json_response({"error": "unauthorized"}, status=401)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        account_id = body.get("account_id")
+        group_ids = body.get("group_ids", [])  # 群组 ID 列表（字符串或数字）
+        if not account_id:
+            return web.json_response({"error": "account_id required"}, status=400)
+        if not group_ids:
+            return web.json_response({"error": "group_ids required"}, status=400)
+        account_id = int(account_id)
+        worker = active_workers.get(account_id)
+        if not worker:
+            return web.json_response({"error": f"账号 {account_id} 未在引擎中运行，请先启用该账号"}, status=404)
+        if not worker.is_running:
+            return web.json_response({"error": f"账号 {account_id} 未就绪，请稍后重试"}, status=503)
+        
+        import pytdbot.types as _tdt_hc
+        
+        def _get(obj, key, default=None):
+            if hasattr(obj, key):
+                return getattr(obj, key, default)
+            elif isinstance(obj, dict):
+                return obj.get(key, default)
+            return default
+        
+        normal_groups = []
+        abnormal_groups = []
+        
+        for gid_raw in group_ids[:200]:  # 最多检测 200 个
+            gid_str = str(gid_raw).strip()
+            try:
+                # 将群组 ID 转为整数（TDLib 需要）
+                if gid_str.lstrip('-').isdigit():
+                    chat_id = int(gid_str)
+                else:
+                    # 用户名格式，先获取 chat
+                    chat_id = None
+                
+                status = "normal"
+                reason = ""
+                title = gid_str
+                username = ""
+                member_count = 0
+                
+                if chat_id:
+                    # 获取 chat 基本信息
+                    chat = await worker.client.invoke({
+                        "@type": "getChat",
+                        "chat_id": chat_id,
+                    })
+                    if chat is None or isinstance(chat, _tdt_hc.Error):
+                        abnormal_groups.append({
+                            "groupId": gid_str,
+                            "title": gid_str,
+                            "username": "",
+                            "memberCount": 0,
+                            "status": "error",
+                            "reason": "无法获取群组信息（可能已退出或不存在）",
+                        })
+                        continue
+                    
+                    title = _get(chat, "title", gid_str) or gid_str
+                    chat_type_obj = _get(chat, "type", None)
+                    chat_type = ""
+                    if chat_type_obj:
+                        chat_type = _get(chat_type_obj, "@type", "") or str(type(chat_type_obj).__name__)
+                    
+                    # 获取 supergroup_id
+                    sg_id = None
+                    if "supergroup" in chat_type.lower() or "Supergroup" in chat_type:
+                        sg_id = _get(chat_type_obj, "supergroup_id", None)
+                    
+                    if sg_id:
+                        # 获取 supergroup 详细信息（包含 is_scam, is_fake, restriction_reason）
+                        sg_info = await worker.client.invoke({
+                            "@type": "getSupergroup",
+                            "supergroup_id": sg_id,
+                        })
+                        if sg_info and not isinstance(sg_info, _tdt_hc.Error):
+                            username = _get(sg_info, "username", "") or ""
+                            member_count = _get(sg_info, "member_count", 0) or 0
+                            is_scam = _get(sg_info, "is_scam", False) or False
+                            is_fake = _get(sg_info, "is_fake", False) or False
+                            restriction_reason = _get(sg_info, "restriction_reason", "") or ""
+                            is_verified = _get(sg_info, "is_verified", False) or False
+                            
+                            if is_scam:
+                                status = "abnormal"
+                                reason = "Telegram 标记为诈骗群组"
+                            elif is_fake:
+                                status = "abnormal"
+                                reason = "Telegram 标记为虚假群组"
+                            elif restriction_reason:
+                                status = "abnormal"
+                                reason = f"内容受限：{restriction_reason}"
+                            else:
+                                status = "normal"
+                                reason = "正常"
+                    else:
+                        # BasicGroup 或其他类型，尝试直接检查
+                        status = "normal"
+                        reason = "正常（基础群组）"
+                
+                group_info = {
+                    "groupId": gid_str,
+                    "title": title,
+                    "username": username,
+                    "memberCount": member_count,
+                    "status": status,
+                    "reason": reason,
+                }
+                
+                if status == "normal":
+                    normal_groups.append(group_info)
+                else:
+                    abnormal_groups.append(group_info)
+                    
+            except Exception as e:
+                logger.warning(f"[check-group-health] 检测群组 {gid_str} 失败: {e}")
+                abnormal_groups.append({
+                    "groupId": gid_str,
+                    "title": gid_str,
+                    "username": "",
+                    "memberCount": 0,
+                    "status": "error",
+                    "reason": f"检测失败：{str(e)[:100]}",
+                })
+        
+        return web.json_response({
+            "success": True,
+            "total": len(group_ids),
+            "normalCount": len(normal_groups),
+            "abnormalCount": len(abnormal_groups),
+            "normalGroups": normal_groups,
+            "abnormalGroups": abnormal_groups,
+        })
+
+    app.router.add_post("/check-group-health", handle_check_group_health)
     app.router.add_post("/trigger-dm", handle_trigger_dm)
     app.router.add_post("/force-sync", handle_force_sync)
     app.router.add_post("/sync-account", handle_sync_account)
