@@ -1097,7 +1097,11 @@ export const groupScrapeRouter = router({
         return { success: false, message: "没有活跃的监控账号", updated: 0, total: 0, scanned: 0 };
       }
 
-      const dialogMap = new Map<string, string>();
+      // dialogMap: username(小写) => { chatId, memberCount }
+      const dialogMap = new Map<string, { chatId: string; memberCount?: number }>();
+      // chatIdMap: chatId => { memberCount } (用于 @-数字 格式的成员数同步)
+      const chatIdMap = new Map<string, { memberCount?: number }>();
+
       for (const acc of monitorAccounts) {
         const port = engineHttpPortBase + acc.id;
         try {
@@ -1108,17 +1112,25 @@ export const groupScrapeRouter = router({
           });
           if (!resp.ok) continue;
           const data = (await resp.json()) as any;
-          const dialogs: Array<{ chatId: string; username?: string }> =
+          const dialogs: Array<{ chatId: string; username?: string; memberCount?: number }> =
             Array.isArray(data) ? data : (data.dialogs ?? data.groups ?? []);
           for (const d of dialogs) {
-            if (d.username && d.chatId) {
-              dialogMap.set(d.username.replace(/^@/, "").toLowerCase(), d.chatId);
+            if (d.chatId) {
+              // 按 chatId 存储成员数（用于 @-数字 格式）
+              chatIdMap.set(d.chatId, { memberCount: d.memberCount });
+              // 按 username 存储（用于普通用户名匹配）
+              if (d.username) {
+                dialogMap.set(d.username.replace(/^@/, "").toLowerCase(), {
+                  chatId: d.chatId,
+                  memberCount: d.memberCount,
+                });
+              }
             }
           }
         } catch { continue; }
       }
 
-      if (dialogMap.size === 0) {
+      if (dialogMap.size === 0 && chatIdMap.size === 0) {
         return { success: false, message: "引擎未返回任何群组数据", updated: 0, total: 0, scanned: 0 };
       }
 
@@ -1130,6 +1142,7 @@ export const groupScrapeRouter = router({
 
       let updated = 0;
       let directUpdated = 0;
+      let memberCountUpdated = 0;
 
       for (const group of allGroups) {
         const raw = (group.groupId ?? '').trim();
@@ -1139,21 +1152,37 @@ export const groupScrapeRouter = router({
         const idMatch = raw.match(/^@?(-\d+)$/);
         if (idMatch) {
           const extractedId = idMatch[1];
+          const engineInfo = chatIdMap.get(extractedId);
+          const updateData: Record<string, any> = {};
           if (group.realId !== extractedId) {
-            await db.update(publicMonitorGroups)
-              .set({ realId: extractedId })
-              .where(eq(publicMonitorGroups.id, group.id));
+            updateData.realId = extractedId;
             directUpdated++;
+          }
+          // 同步成员数（如果引擎有返回）
+          if (engineInfo?.memberCount != null) {
+            updateData.memberCount = engineInfo.memberCount;
+            memberCountUpdated++;
+          }
+          if (Object.keys(updateData).length > 0) {
+            await db.update(publicMonitorGroups)
+              .set(updateData)
+              .where(eq(publicMonitorGroups.id, group.id));
           }
           continue; // 已处理，跳过引擎匹配
         }
 
         // 情况2：用户名匹配引擎返回的 chatId
         const normalizedGroupId = raw.replace(/^@/, '').toLowerCase();
-        const chatId = dialogMap.get(normalizedGroupId);
-        if (chatId) {
+        const engineInfo = dialogMap.get(normalizedGroupId);
+        if (engineInfo) {
+          const updateData: Record<string, any> = { realId: engineInfo.chatId };
+          // 同步成员数（如果引擎有返回）
+          if (engineInfo.memberCount != null) {
+            updateData.memberCount = engineInfo.memberCount;
+            memberCountUpdated++;
+          }
           await db.update(publicMonitorGroups)
-            .set({ realId: chatId })
+            .set(updateData)
             .where(eq(publicMonitorGroups.id, group.id));
           updated++;
         }
@@ -1161,10 +1190,10 @@ export const groupScrapeRouter = router({
 
       return {
         success: true,
-        message: `同步完成：直接提取ID ${directUpdated} 条，引擎匹配 ${updated} 条，共 ${allGroups.length} 条`,
+        message: `同步完成：直接提取ID ${directUpdated} 条，引擎匹配 ${updated} 条，成员数同步 ${memberCountUpdated} 条，共 ${allGroups.length} 条`,
         updated: updated + directUpdated,
         total: allGroups.length,
-        scanned: dialogMap.size,
+        scanned: dialogMap.size + chatIdMap.size,
       };
     }),
 });
