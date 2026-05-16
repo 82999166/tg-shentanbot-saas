@@ -118,13 +118,13 @@ type ExtractedLink = {
 
 // AI 评分条组件
 function AiScoreBar({ score }: { score: number | null }) {
-  if (score === null || score === undefined) return <span className="text-gray-600 text-xs">-</span>;
+  if (score === null || score === undefined) return <span className="text-slate-400 text-xs">-</span>;
   const pct = Math.max(0, Math.min(100, score));
   const color = pct >= 80 ? "bg-green-500" : pct >= 60 ? "bg-yellow-500" : pct >= 40 ? "bg-orange-500" : "bg-red-500";
   const textColor = pct >= 80 ? "text-green-400" : pct >= 60 ? "text-yellow-400" : pct >= 40 ? "text-orange-400" : "text-red-400";
   return (
     <div className="flex items-center gap-2 min-w-[80px]">
-      <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+      <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
         <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
       </div>
       <span className={`text-xs font-medium ${textColor} w-6 text-right`}>{pct}</span>
@@ -134,7 +134,7 @@ function AiScoreBar({ score }: { score: number | null }) {
 
 function StatusBadge({ status }: { status: Task["status"] }) {
   const map: Record<string, { label: string; className: string }> = {
-    idle: { label: "待触发", className: "bg-gray-700 text-gray-300" },
+    idle: { label: "待触发", className: "bg-slate-200 text-slate-600" },
     pending: { label: "等待执行", className: "bg-yellow-900/50 text-yellow-400" },
     running: { label: "采集中", className: "bg-blue-900/50 text-blue-400" },
     done: { label: "已完成", className: "bg-green-900/50 text-green-400" },
@@ -146,9 +146,9 @@ function StatusBadge({ status }: { status: Task["status"] }) {
 
 function ImportStatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; className: string }> = {
-    pending: { label: "待审核", className: "bg-gray-700 text-gray-300" },
+    pending: { label: "待审核", className: "bg-slate-200 text-slate-600" },
     imported: { label: "已导入", className: "bg-green-900/50 text-green-400" },
-    ignored: { label: "已忽略", className: "bg-gray-800 text-gray-500" },
+    ignored: { label: "已忽略", className: "bg-slate-100 text-slate-400" },
   };
   const { label, className } = (map[status] || map.pending);
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${className}`}>{label}</span>;
@@ -190,30 +190,30 @@ function TaskForm({
   return (
     <div className="space-y-4 py-2">
       <div>
-        <label className="text-sm text-gray-300 block mb-1.5">任务名称</label>
+        <label className="text-sm text-slate-600 block mb-1.5">任务名称</label>
         <Input
           value={taskName}
           onChange={e => setTaskName(e.target.value)}
           placeholder="如：搜索类群组采集"
-          className="bg-gray-800 border-gray-700 text-white"
+          className="bg-slate-100 border-slate-200 text-slate-900"
         />
       </div>
 
       <div>
-        <label className="text-sm text-gray-300 block mb-1.5">搜索关键词</label>
+        <label className="text-sm text-slate-600 block mb-1.5">搜索关键词</label>
         <div className="flex gap-2 mb-2">
           <Input
             value={taskKeywordInput}
             onChange={e => setTaskKeywordInput(e.target.value)}
             onKeyDown={e => e.key === "Enter" && addKeyword(taskKeywordInput)}
             placeholder="输入关键词后按 Enter 添加"
-            className="bg-gray-800 border-gray-700 text-white flex-1"
+            className="bg-slate-100 border-slate-200 text-slate-900 flex-1"
           />
           <Button
             size="sm"
             variant="ghost"
             onClick={() => addKeyword(taskKeywordInput)}
-            className="text-gray-400 hover:text-white border border-gray-700"
+            className="text-slate-500 hover:text-slate-900 border border-slate-200"
           >
             <Plus className="w-4 h-4" />
           </Button>
@@ -222,21 +222,21 @@ function TaskForm({
           {taskKeywords.map(kw => (
             <span
               key={kw}
-              className="bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded flex items-center gap-1"
+              className="bg-slate-200 text-slate-700 text-xs px-2 py-1 rounded flex items-center gap-1"
             >
               {kw}
-              <button onClick={() => removeKeyword(kw)} className="text-gray-400 hover:text-red-400">×</button>
+              <button onClick={() => removeKeyword(kw)} className="text-slate-500 hover:text-red-400">×</button>
             </span>
           ))}
         </div>
         <div>
-          <p className="text-xs text-gray-500 mb-1.5">快速添加预置关键词：</p>
+          <p className="text-xs text-slate-400 mb-1.5">快速添加预置关键词：</p>
           <div className="flex flex-wrap gap-1">
             {PRESET_KEYWORDS.filter(k => !taskKeywords.includes(k)).map(kw => (
               <button
                 key={kw}
                 onClick={() => addKeyword(kw)}
-                className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 text-xs px-2 py-0.5 rounded border border-gray-700 transition-colors"
+                className="bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 text-xs px-2 py-0.5 rounded border border-slate-200 transition-colors"
               >
                 + {kw}
               </button>
@@ -247,36 +247,36 @@ function TaskForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="text-sm text-gray-300 block mb-1.5">最低成员数</label>
+          <label className="text-sm text-slate-600 block mb-1.5">最低成员数</label>
           <Input
             type="number"
             value={taskMinMembers}
             onChange={e => setTaskMinMembers(parseInt(e.target.value) || 0)}
-            className="bg-gray-800 border-gray-700 text-white"
+            className="bg-slate-100 border-slate-200 text-slate-900"
           />
-          <p className="text-xs text-gray-500 mt-1">成员数低于此值的群组将被过滤</p>
+          <p className="text-xs text-slate-400 mt-1">成员数低于此值的群组将被过滤</p>
         </div>
         <div>
-          <label className="text-sm text-gray-300 block mb-1.5">每关键词最多采集数</label>
+          <label className="text-sm text-slate-600 block mb-1.5">每关键词最多采集数</label>
           <Input
             type="number"
             min={1}
             max={500}
             value={taskMaxResults}
             onChange={e => setTaskMaxResults(Math.min(500, Math.max(1, parseInt(e.target.value) || 10)))}
-            className="bg-gray-800 border-gray-700 text-white"
+            className="bg-slate-100 border-slate-200 text-slate-900"
           />
-          <p className="text-xs text-gray-500 mt-1">每个关键词最多采集条数（1~500）</p>
+          <p className="text-xs text-slate-400 mt-1">每个关键词最多采集条数（1~500）</p>
         </div>
       </div>
 
       {/* 裂变采集配置 */}
-      <div className="border border-gray-700 rounded-lg p-4 space-y-3 bg-gray-800/50">
+      <div className="border border-slate-200 rounded-lg p-4 space-y-3 bg-slate-50/80">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <GitBranch className="w-4 h-4 text-purple-400" />
-            <span className="text-sm font-medium text-gray-200">裂变采集</span>
-            <span className="text-xs text-gray-500">从已采集群组扩展发现更多相似群</span>
+            <span className="text-sm font-medium text-slate-700">裂变采集</span>
+            <span className="text-xs text-slate-400">从已采集群组扩展发现更多相似群</span>
           </div>
           <Switch
             checked={fissionEnabled}
@@ -286,33 +286,33 @@ function TaskForm({
         {fissionEnabled && (
           <div className="grid grid-cols-2 gap-4 pt-1">
             <div>
-              <label className="text-xs text-gray-400 block mb-1">裂变深度（1~3 层）</label>
+              <label className="text-xs text-slate-500 block mb-1">裂变深度（1~3 层）</label>
               <Select
                 value={String(fissionDepth)}
                 onValueChange={v => setFissionDepth(parseInt(v))}
               >
-                <SelectTrigger className="bg-gray-800 border-gray-700 text-gray-200 h-8 text-sm">
+                <SelectTrigger className="bg-slate-100 border-slate-200 text-slate-700 h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-gray-900 border-gray-700">
+                <SelectContent className="bg-white border-slate-200">
                   <SelectItem value="1">1 层（推荐）</SelectItem>
                   <SelectItem value="2">2 层</SelectItem>
                   <SelectItem value="3">3 层（较慢）</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-600 mt-1">层数越多采集越多，耗时越长</p>
+              <p className="text-xs text-slate-400 mt-1">层数越多采集越多，耗时越长</p>
             </div>
             <div>
-              <label className="text-xs text-gray-400 block mb-1">每种子群最多扩展数</label>
+              <label className="text-xs text-slate-500 block mb-1">每种子群最多扩展数</label>
               <Input
                 type="number"
                 value={fissionMaxPerSeed}
                 onChange={e => setFissionMaxPerSeed(Math.min(50, parseInt(e.target.value) || 5))}
-                className="bg-gray-800 border-gray-700 text-white h-8 text-sm"
+                className="bg-slate-100 border-slate-200 text-slate-900 h-8 text-sm"
                 min={1}
                 max={50}
               />
-              <p className="text-xs text-gray-600 mt-1">每个种子群最多发现几个相似群</p>
+              <p className="text-xs text-slate-400 mt-1">每个种子群最多发现几个相似群</p>
             </div>
           </div>
         )}
@@ -728,11 +728,11 @@ export default function GroupScrape() {
         {/* 页面标题 */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <Search className="w-5 h-5 text-red-400" />
               群组采集
             </h1>
-            <p className="text-sm text-gray-400 mt-1">
+            <p className="text-sm text-slate-500 mt-1">
               通过关键词搜索公开群组，或指定群组采集成员/子群，导入公共监控群组池
             </p>
           </div>
@@ -741,7 +741,7 @@ export default function GroupScrape() {
               <Button
                 size="sm"
                 onClick={() => setCreateDialog(true)}
-                className="bg-red-600 hover:bg-red-700 text-white"
+                className="bg-red-600 hover:bg-red-700 text-slate-900"
               >
                 <Plus className="w-4 h-4 mr-1" /> 新建采集任务
               </Button>
@@ -750,11 +750,11 @@ export default function GroupScrape() {
         </div>
 
         {/* Tab 切换 */}
-        <div className="flex gap-1 mb-4 bg-gray-900 rounded-lg p-1 w-fit flex-wrap">
+        <div className="flex gap-1 mb-4 bg-white rounded-lg p-1 w-fit flex-wrap">
           <button
             onClick={() => setActiveTab("tasks")}
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
-              activeTab === "tasks" ? "bg-red-600 text-white" : "text-gray-400 hover:text-gray-200"
+              activeTab === "tasks" ? "bg-red-600 text-slate-900" : "text-slate-500 hover:text-slate-700"
             }`}
           >
             采集任务
@@ -762,12 +762,12 @@ export default function GroupScrape() {
           <button
             onClick={() => setActiveTab("results")}
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
-              activeTab === "results" ? "bg-red-600 text-white" : "text-gray-400 hover:text-gray-200"
+              activeTab === "results" ? "bg-red-600 text-slate-900" : "text-slate-500 hover:text-slate-700"
             }`}
           >
             关键词结果
             {totalResults > 0 && (
-              <span className="ml-1.5 bg-gray-700 text-gray-300 text-xs px-1.5 py-0.5 rounded-full">
+              <span className="ml-1.5 bg-slate-200 text-slate-600 text-xs px-1.5 py-0.5 rounded-full">
                 {totalResults}
               </span>
             )}
@@ -775,7 +775,7 @@ export default function GroupScrape() {
           <button
             onClick={() => setActiveTab("target")}
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1.5 ${
-              activeTab === "target" ? "bg-purple-600 text-white" : "text-gray-400 hover:text-gray-200"
+              activeTab === "target" ? "bg-purple-600 text-slate-900" : "text-slate-500 hover:text-slate-700"
             }`}
           >
             <Target className="w-3.5 h-3.5" />
@@ -789,7 +789,7 @@ export default function GroupScrape() {
           <button
             onClick={() => setActiveTab("extract")}
             className={`px-4 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1.5 ${
-              activeTab === "extract" ? "bg-orange-600 text-white" : "text-gray-400 hover:text-gray-200"
+              activeTab === "extract" ? "bg-orange-600 text-slate-900" : "text-slate-500 hover:text-slate-700"
             }`}
           >
             <Link2 className="w-3.5 h-3.5" />
@@ -799,58 +799,58 @@ export default function GroupScrape() {
 
         {/* ── 采集任务 Tab ── */}
         {activeTab === "tasks" && (
-          <Card className="bg-gray-900 border-gray-800">
+          <Card className="bg-white border-slate-200">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-white text-base">采集任务列表</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => refetchTasks()} disabled={tasksRefetching} className="text-gray-400 hover:text-white">
+                <CardTitle className="text-slate-900 text-base">采集任务列表</CardTitle>
+                <Button variant="ghost" size="sm" onClick={() => refetchTasks()} disabled={tasksRefetching} className="text-slate-500 hover:text-slate-900">
                   <RefreshCw className={`w-4 h-4 ${tasksRefetching ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
               {tasksLoading ? (
-                <div className="flex items-center justify-center py-12 text-gray-500">
+                <div className="flex items-center justify-center py-12 text-slate-400">
                   <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
                 </div>
               ) : tasks.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
+                <div className="text-center py-12 text-slate-400">
                   <Search className="w-10 h-10 mx-auto mb-3 opacity-30" />
                   <p>暂无采集任务，点击右上角新建</p>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-gray-800">
-                      <TableHead className="text-gray-400">任务名称</TableHead>
-                      <TableHead className="text-gray-400">关键词</TableHead>
-                      <TableHead className="text-gray-400">最低人数</TableHead>
-                      <TableHead className="text-gray-400">最多结果</TableHead>
-                      <TableHead className="text-gray-400">裂变</TableHead>
-                      <TableHead className="text-gray-400">状态</TableHead>
-                      <TableHead className="text-gray-400">采集数量</TableHead>
-                      <TableHead className="text-gray-400">上次执行</TableHead>
-                      <TableHead className="text-gray-400 text-right">操作</TableHead>
+                    <TableRow className="border-slate-200">
+                      <TableHead className="text-slate-500">任务名称</TableHead>
+                      <TableHead className="text-slate-500">关键词</TableHead>
+                      <TableHead className="text-slate-500">最低人数</TableHead>
+                      <TableHead className="text-slate-500">最多结果</TableHead>
+                      <TableHead className="text-slate-500">裂变</TableHead>
+                      <TableHead className="text-slate-500">状态</TableHead>
+                      <TableHead className="text-slate-500">采集数量</TableHead>
+                      <TableHead className="text-slate-500">上次执行</TableHead>
+                      <TableHead className="text-slate-500 text-right">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(tasks as Task[]).map((task) => (
-                      <TableRow key={task.id} className="border-gray-800 hover:bg-gray-800/50">
-                        <TableCell className="text-white font-medium">{task.name}</TableCell>
+                      <TableRow key={task.id} className="border-slate-200 hover:bg-slate-50/80">
+                        <TableCell className="text-slate-900 font-medium">{task.name}</TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1 max-w-xs">
                             {task.keywords.slice(0, 4).map(kw => (
-                              <span key={kw} className="bg-gray-800 text-gray-300 text-xs px-1.5 py-0.5 rounded">
+                              <span key={kw} className="bg-slate-100 text-slate-600 text-xs px-1.5 py-0.5 rounded">
                                 {kw}
                               </span>
                             ))}
                             {task.keywords.length > 4 && (
-                              <span className="text-gray-500 text-xs">+{task.keywords.length - 4}</span>
+                              <span className="text-slate-400 text-xs">+{task.keywords.length - 4}</span>
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="text-gray-300">{task.minMemberCount.toLocaleString()}</TableCell>
-                        <TableCell className="text-gray-300">{task.maxResults}</TableCell>
+                        <TableCell className="text-slate-600">{task.minMemberCount.toLocaleString()}</TableCell>
+                        <TableCell className="text-slate-600">{task.maxResults}</TableCell>
                         <TableCell>
                           {task.fissionEnabled ? (
                             <span className="inline-flex items-center gap-1 text-xs text-purple-400 bg-purple-900/30 px-1.5 py-0.5 rounded">
@@ -858,7 +858,7 @@ export default function GroupScrape() {
                               {task.fissionDepth}层/{task.fissionMaxPerSeed}个
                             </span>
                           ) : (
-                            <span className="text-gray-600 text-xs">关闭</span>
+                            <span className="text-slate-400 text-xs">关闭</span>
                           )}
                         </TableCell>
                         <TableCell><StatusBadge status={task.status} /></TableCell>
@@ -871,10 +871,10 @@ export default function GroupScrape() {
                               {task.totalFound} 个 <ArrowRight className="w-3 h-3" />
                             </button>
                           ) : (
-                            <span className="text-gray-500 text-sm">-</span>
+                            <span className="text-slate-400 text-sm">-</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-gray-400 text-sm">
+                        <TableCell className="text-slate-500 text-sm">
                           {task.lastRunAt ? new Date(task.lastRunAt).toLocaleString("zh-CN") : "-"}
                         </TableCell>
                         <TableCell className="text-right">
@@ -940,10 +940,10 @@ export default function GroupScrape() {
                 value={selectedTaskId?.toString() || "all"}
                 onValueChange={(v) => { setSelectedTaskId(v === "all" ? undefined : parseInt(v)); setPage(1); }}
               >
-                <SelectTrigger className="w-48 bg-gray-900 border-gray-700 text-gray-200">
+                <SelectTrigger className="w-48 bg-white border-slate-200 text-slate-700">
                   <SelectValue placeholder="全部任务" />
                 </SelectTrigger>
-                <SelectContent className="bg-gray-900 border-gray-700">
+                <SelectContent className="bg-white border-slate-200">
                   <SelectItem value="all">全部任务</SelectItem>
                   {(tasks as Task[]).map((t) => (
                     <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>
@@ -955,10 +955,10 @@ export default function GroupScrape() {
                 value={importStatusFilter}
                 onValueChange={(v: any) => { setImportStatusFilter(v); setPage(1); }}
               >
-                <SelectTrigger className="w-36 bg-gray-900 border-gray-700 text-gray-200">
+                <SelectTrigger className="w-36 bg-white border-slate-200 text-slate-700">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-gray-900 border-gray-700">
+                <SelectContent className="bg-white border-slate-200">
                   <SelectItem value="all">全部状态</SelectItem>
                   <SelectItem value="pending">待审核</SelectItem>
                   <SelectItem value="imported">已导入</SelectItem>
@@ -966,7 +966,7 @@ export default function GroupScrape() {
                 </SelectContent>
               </Select>
 
-              <Button variant="ghost" size="sm" onClick={() => refetchResults()} disabled={resultsRefetching} className="text-gray-400 hover:text-white">
+              <Button variant="ghost" size="sm" onClick={() => refetchResults()} disabled={resultsRefetching} className="text-slate-500 hover:text-slate-900">
                 <RefreshCw className={`w-4 h-4 ${resultsRefetching ? 'animate-spin' : ''}`} />
               </Button>
 
@@ -976,7 +976,7 @@ export default function GroupScrape() {
                     <Button
                       size="sm"
                       onClick={() => setImportConfirmDialog(true)}
-                      className="bg-green-700 hover:bg-green-600 text-white"
+                      className="bg-green-700 hover:bg-green-600 text-slate-900"
                     >
                       <Download className="w-4 h-4 mr-1" />
                       导入选中 ({selectedIds.size})
@@ -985,7 +985,7 @@ export default function GroupScrape() {
                       size="sm"
                       variant="ghost"
                       onClick={() => ignoreResults.mutate({ resultIds: Array.from(selectedIds) })}
-                      className="text-gray-400 hover:text-gray-200"
+                      className="text-slate-500 hover:text-slate-700"
                     >
                       <XCircle className="w-4 h-4 mr-1" />
                       忽略选中
@@ -1006,14 +1006,14 @@ export default function GroupScrape() {
               </div>
             </div>
 
-            <Card className="bg-gray-900 border-gray-800">
+            <Card className="bg-white border-slate-200">
               <CardContent className="p-0">
                 {resultsLoading ? (
-                  <div className="flex items-center justify-center py-12 text-gray-500">
+                  <div className="flex items-center justify-center py-12 text-slate-400">
                     <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
                   </div>
                 ) : results.length === 0 ? (
-                  <div className="text-center py-12 text-gray-500">
+                  <div className="text-center py-12 text-slate-400">
                     <Search className="w-10 h-10 mx-auto mb-3 opacity-30" />
                     <p>暂无采集结果</p>
                     <p className="text-xs mt-1">请先触发采集任务，等待引擎执行完成</p>
@@ -1022,36 +1022,36 @@ export default function GroupScrape() {
                   <>
                     <Table>
                       <TableHeader>
-                        <TableRow className="border-gray-800">
+                        <TableRow className="border-slate-200">
                           <TableHead className="w-10">
                             <Checkbox
                               checked={selectedIds.size === results.length && results.length > 0}
                               onCheckedChange={toggleSelectAll}
-                              className="border-gray-600"
+                              className="border-slate-300"
                             />
                           </TableHead>
-                          <TableHead className="text-gray-400">群组名称</TableHead>
-                          <TableHead className="text-gray-400">群组 ID</TableHead>
-                          <TableHead className="text-gray-400">类型</TableHead>
-                          <TableHead className="text-gray-400">成员数</TableHead>
-                          <TableHead className="text-gray-400">匹配关键词</TableHead>
-                          <TableHead className="text-gray-400">简介</TableHead>
-                          <TableHead className="text-gray-400">状态</TableHead>
-                          <TableHead className="text-gray-400 text-right">操作</TableHead>
+                          <TableHead className="text-slate-500">群组名称</TableHead>
+                          <TableHead className="text-slate-500">群组 ID</TableHead>
+                          <TableHead className="text-slate-500">类型</TableHead>
+                          <TableHead className="text-slate-500">成员数</TableHead>
+                          <TableHead className="text-slate-500">匹配关键词</TableHead>
+                          <TableHead className="text-slate-500">简介</TableHead>
+                          <TableHead className="text-slate-500">状态</TableHead>
+                          <TableHead className="text-slate-500 text-right">操作</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {(results as ScrapeResult[]).map((r) => (
-                          <TableRow key={r.id} className="border-gray-800 hover:bg-gray-800/50">
+                          <TableRow key={r.id} className="border-slate-200 hover:bg-slate-50/80">
                             <TableCell>
                               <Checkbox
                                 checked={selectedIds.has(r.id)}
                                 onCheckedChange={() => toggleSelect(r.id)}
                                 disabled={r.importStatus !== "pending"}
-                                className="border-gray-600"
+                                className="border-slate-300"
                               />
                             </TableCell>
-                            <TableCell className="text-white font-medium max-w-[180px] truncate">
+                            <TableCell className="text-slate-900 font-medium max-w-[180px] truncate">
                               {r.groupTitle || r.groupId}
                             </TableCell>
                             <TableCell className="text-blue-400 text-sm font-mono">
@@ -1065,13 +1065,13 @@ export default function GroupScrape() {
                               </a>
                             </TableCell>
                             <TableCell>
-                              <span className="text-xs text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded">
+                              <span className="text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                                 {r.groupType === "channel" ? "频道" : r.groupType === "supergroup" ? "超级群" : "群组"}
                               </span>
                             </TableCell>
-                            <TableCell className="text-gray-300">
+                            <TableCell className="text-slate-600">
                               <div className="flex items-center gap-1">
-                                <Users className="w-3 h-3 text-gray-500" />
+                                <Users className="w-3 h-3 text-slate-400" />
                                 {r.memberCount.toLocaleString()}
                               </div>
                             </TableCell>
@@ -1079,12 +1079,12 @@ export default function GroupScrape() {
                               <span className={`text-xs px-1.5 py-0.5 rounded ${
                                 r.keyword.startsWith("[裂变]")
                                   ? "bg-purple-900/40 text-purple-300"
-                                  : "bg-gray-800 text-gray-300"
+                                  : "bg-slate-100 text-slate-600"
                               }`}>
                                 {r.keyword}
                               </span>
                             </TableCell>
-                            <TableCell className="text-gray-400 text-xs max-w-[200px] truncate">
+                            <TableCell className="text-slate-500 text-xs max-w-[200px] truncate">
                               {r.description || "-"}
                             </TableCell>
                             <TableCell>
@@ -1113,13 +1113,13 @@ export default function GroupScrape() {
 
                     {/* 分页 */}
                     {totalPages > 1 && (
-                      <div className="flex items-center justify-between px-4 py-3 border-t border-gray-800">
-                        <span className="text-sm text-gray-400">
+                      <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+                        <span className="text-sm text-slate-500">
                           共 {totalResults} 条，第 {page}/{totalPages} 页
                         </span>
                         <div className="flex gap-2">
-                          <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="text-gray-400">上一页</Button>
-                          <Button size="sm" variant="ghost" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="text-gray-400">下一页</Button>
+                          <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="text-slate-500">上一页</Button>
+                          <Button size="sm" variant="ghost" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="text-slate-500">下一页</Button>
                         </div>
                       </div>
                     )}
@@ -1137,9 +1137,9 @@ export default function GroupScrape() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* 左侧：目标群组配置 */}
               <div className="lg:col-span-2 space-y-4">
-                <Card className="bg-gray-900 border-gray-800">
+                <Card className="bg-white border-slate-200">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-white text-base flex items-center gap-2">
+                    <CardTitle className="text-slate-900 text-base flex items-center gap-2">
                       <Target className="w-4 h-4 text-purple-400" />
                       目标群组配置
                     </CardTitle>
@@ -1147,15 +1147,15 @@ export default function GroupScrape() {
                   <CardContent className="space-y-4">
                     {/* 选择任务 */}
                     <div>
-                      <label className="text-sm text-gray-300 block mb-1.5">关联采集任务（用于保存结果）</label>
+                      <label className="text-sm text-slate-600 block mb-1.5">关联采集任务（用于保存结果）</label>
                       <Select
                         value={targetTaskId?.toString() || ""}
                         onValueChange={(v) => setTargetTaskId(parseInt(v))}
                       >
-                        <SelectTrigger className="bg-gray-800 border-gray-700 text-gray-200">
+                        <SelectTrigger className="bg-slate-100 border-slate-200 text-slate-700">
                           <SelectValue placeholder="请选择任务（或先在任务列表新建）" />
                         </SelectTrigger>
-                        <SelectContent className="bg-gray-900 border-gray-700">
+                        <SelectContent className="bg-white border-slate-200">
                           {(tasks as Task[]).map((t) => (
                             <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>
                           ))}
@@ -1165,20 +1165,20 @@ export default function GroupScrape() {
 
                     {/* 单个添加 */}
                     <div>
-                      <label className="text-sm text-gray-300 block mb-1.5">添加目标群组</label>
+                      <label className="text-sm text-slate-600 block mb-1.5">添加目标群组</label>
                       <div className="flex gap-2">
                         <Input
                           value={targetGroupInput}
                           onChange={e => setTargetGroupInput(e.target.value)}
                           onKeyDown={e => e.key === "Enter" && addTargetGroup(targetGroupInput)}
                           placeholder="输入群组 @用户名 或 t.me/xxx"
-                          className="bg-gray-800 border-gray-700 text-white flex-1"
+                          className="bg-slate-100 border-slate-200 text-slate-900 flex-1"
                         />
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => addTargetGroup(targetGroupInput)}
-                          className="text-gray-400 hover:text-white border border-gray-700"
+                          className="text-slate-500 hover:text-slate-900 border border-slate-200"
                         >
                           <Plus className="w-4 h-4" />
                         </Button>
@@ -1187,12 +1187,12 @@ export default function GroupScrape() {
 
                     {/* 批量导入 */}
                     <div>
-                      <label className="text-sm text-gray-300 block mb-1.5">批量导入（每行一个，支持 @用户名 或 t.me/xxx）</label>
+                      <label className="text-sm text-slate-600 block mb-1.5">批量导入（每行一个，支持 @用户名 或 t.me/xxx）</label>
                       <Textarea
                         value={targetGroupsBatch}
                         onChange={e => setTargetGroupsBatch(e.target.value)}
                         placeholder={"@group1\n@group2\nt.me/group3\n..."}
-                        className="bg-gray-800 border-gray-700 text-white text-sm h-24 resize-none"
+                        className="bg-slate-100 border-slate-200 text-slate-900 text-sm h-24 resize-none"
                       />
                       <Button
                         size="sm"
@@ -1210,7 +1210,7 @@ export default function GroupScrape() {
                     {targetGroups.length > 0 && (
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm text-gray-300">已添加 {targetGroups.length} 个目标群组</label>
+                          <label className="text-sm text-slate-600">已添加 {targetGroups.length} 个目标群组</label>
                           <button
                             onClick={() => setTargetGroups([])}
                             className="text-xs text-red-400 hover:text-red-300"
@@ -1222,12 +1222,12 @@ export default function GroupScrape() {
                           {targetGroups.map(g => (
                             <span
                               key={g}
-                              className="bg-gray-800 text-gray-200 text-xs px-2 py-1 rounded flex items-center gap-1 border border-gray-700"
+                              className="bg-slate-100 text-slate-700 text-xs px-2 py-1 rounded flex items-center gap-1 border border-slate-200"
                             >
                               @{g}
                               <button
                                 onClick={() => setTargetGroups(prev => prev.filter(x => x !== g))}
-                                className="text-gray-500 hover:text-red-400"
+                                className="text-slate-400 hover:text-red-400"
                               >×</button>
                             </span>
                           ))}
@@ -1240,9 +1240,9 @@ export default function GroupScrape() {
 
               {/* 右侧：采集配置 */}
               <div className="space-y-4">
-                <Card className="bg-gray-900 border-gray-800">
+                <Card className="bg-white border-slate-200">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-white text-base flex items-center gap-2">
+                    <CardTitle className="text-slate-900 text-base flex items-center gap-2">
                       <Filter className="w-4 h-4 text-blue-400" />
                       采集配置
                     </CardTitle>
@@ -1250,34 +1250,34 @@ export default function GroupScrape() {
                   <CardContent className="space-y-4">
                     {/* 采集内容类型 */}
                     <div>
-                      <label className="text-sm text-gray-300 block mb-2">采集内容类型</label>
+                      <label className="text-sm text-slate-600 block mb-2">采集内容类型</label>
                       <div className="space-y-2">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <Checkbox
                             checked={collectTypes.includes("group")}
                             onCheckedChange={() => toggleCollectType("group")}
-                            className="border-gray-600"
+                            className="border-slate-300"
                           />
                           <Globe className="w-4 h-4 text-blue-400" />
-                          <span className="text-sm text-gray-300">群组</span>
+                          <span className="text-sm text-slate-600">群组</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <Checkbox
                             checked={collectTypes.includes("channel")}
                             onCheckedChange={() => toggleCollectType("channel")}
-                            className="border-gray-600"
+                            className="border-slate-300"
                           />
                           <Radio className="w-4 h-4 text-orange-400" />
-                          <span className="text-sm text-gray-300">频道</span>
+                          <span className="text-sm text-slate-600">频道</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <Checkbox
                             checked={collectTypes.includes("user")}
                             onCheckedChange={() => toggleCollectType("user")}
-                            className="border-gray-600"
+                            className="border-slate-300"
                           />
                           <Users className="w-4 h-4 text-green-400" />
-                          <span className="text-sm text-gray-300">用户成员</span>
+                          <span className="text-sm text-slate-600">用户成员</span>
                         </label>
                       </div>
                     </div>
@@ -1285,27 +1285,27 @@ export default function GroupScrape() {
                     {/* 用户采集上限 */}
                     {collectTypes.includes("user") && (
                       <div>
-                        <label className="text-sm text-gray-300 block mb-1.5">用户采集上限</label>
+                        <label className="text-sm text-slate-600 block mb-1.5">用户采集上限</label>
                         <Input
                           type="number"
                           value={userLimit}
                           onChange={e => setUserLimit(Math.min(2000, Math.max(1, parseInt(e.target.value) || 500)))}
-                          className="bg-gray-800 border-gray-700 text-white"
+                          className="bg-slate-100 border-slate-200 text-slate-900"
                           min={1}
                           max={2000}
                         />
-                        <p className="text-xs text-gray-500 mt-1">每个群最多采集用户数（1~2000）</p>
+                        <p className="text-xs text-slate-400 mt-1">每个群最多采集用户数（1~2000）</p>
                       </div>
                     )}
 
                     {/* 选择账号 */}
                     <div>
-                      <label className="text-sm text-gray-300 block mb-1.5">使用账号（可选）</label>
+                      <label className="text-sm text-slate-600 block mb-1.5">使用账号（可选）</label>
                       <Select value={targetAccountId || "auto"} onValueChange={(v) => setTargetAccountId(v === "auto" ? "" : v)}>
-                        <SelectTrigger className="bg-gray-800 border-gray-700 text-gray-200">
+                        <SelectTrigger className="bg-slate-100 border-slate-200 text-slate-700">
                           <SelectValue placeholder="自动选择" />
                         </SelectTrigger>
-                        <SelectContent className="bg-gray-900 border-gray-700">
+                        <SelectContent className="bg-white border-slate-200">
                           <SelectItem value="auto">自动选择</SelectItem>
                           {(Array.isArray(accounts) ? accounts : []).map((acc: any) => (
                             <SelectItem key={acc.id} value={String(acc.id)}>
@@ -1317,11 +1317,11 @@ export default function GroupScrape() {
                     </div>
 
                     {/* AI 评分 */}
-                    <div className="border border-gray-700 rounded-lg p-3 space-y-3 bg-gray-800/50">
+                    <div className="border border-slate-200 rounded-lg p-3 space-y-3 bg-slate-50/80">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Star className="w-4 h-4 text-yellow-400" />
-                          <span className="text-sm font-medium text-gray-200">AI 质量评分</span>
+                          <span className="text-sm font-medium text-slate-700">AI 质量评分</span>
                         </div>
                         <Switch
                           checked={aiScoreEnabled}
@@ -1332,67 +1332,67 @@ export default function GroupScrape() {
                         <div className="space-y-3">
                           {/* 最低评分阈值 */}
                           <div>
-                            <label className="text-xs text-gray-400 block mb-1">最低评分阈值（低于此分过滤）</label>
+                            <label className="text-xs text-slate-500 block mb-1">最低评分阈值（低于此分过滤）</label>
                             <div className="flex items-center gap-2">
                               <Input
                                 type="number"
                                 value={aiMinScore}
                                 onChange={e => setAiMinScore(Math.min(100, Math.max(0, parseInt(e.target.value) || 60)))}
-                                className="bg-gray-800 border-gray-700 text-white h-8 text-sm"
+                                className="bg-slate-100 border-slate-200 text-slate-900 h-8 text-sm"
                                 min={0}
                                 max={100}
                               />
-                              <span className="text-gray-400 text-sm">/ 100</span>
+                              <span className="text-slate-500 text-sm">/ 100</span>
                             </div>
-                            <p className="text-xs text-gray-600 mt-1">评分维度：成员数、有用户名、标题质量、有简介、类型</p>
+                            <p className="text-xs text-slate-400 mt-1">评分维度：成员数、有用户名、标题质量、有简介、类型</p>
                           </div>
 
                           {/* 最低成员数 */}
                           <div>
-                            <label className="text-xs text-gray-400 block mb-1">最低成员数（低于此数过滤）</label>
+                            <label className="text-xs text-slate-500 block mb-1">最低成员数（低于此数过滤）</label>
                             <div className="flex items-center gap-2">
                               <Input
                                 type="number"
                                 value={aiMinMembers}
                                 onChange={e => setAiMinMembers(Math.max(0, parseInt(e.target.value) || 0))}
-                                className="bg-gray-800 border-gray-700 text-white h-8 text-sm"
+                                className="bg-slate-100 border-slate-200 text-slate-900 h-8 text-sm"
                                 min={0}
                                 placeholder="0 = 不限"
                               />
-                              <span className="text-gray-400 text-sm">人</span>
+                              <span className="text-slate-500 text-sm">人</span>
                             </div>
                           </div>
 
                           {/* 活跃度要求 */}
                           <div>
-                            <label className="text-xs text-gray-400 block mb-1">最低活跃度分（0 = 不限）</label>
+                            <label className="text-xs text-slate-500 block mb-1">最低活跃度分（0 = 不限）</label>
                             <div className="flex items-center gap-2">
                               <Input
                                 type="number"
                                 value={aiMinActivity}
                                 onChange={e => setAiMinActivity(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
-                                className="bg-gray-800 border-gray-700 text-white h-8 text-sm"
+                                className="bg-slate-100 border-slate-200 text-slate-900 h-8 text-sm"
                                 min={0}
                                 max={100}
                                 placeholder="0"
                               />
-                              <span className="text-gray-400 text-sm">/ 100</span>
+                              <span className="text-slate-500 text-sm">/ 100</span>
                             </div>
-                            <p className="text-xs text-gray-600 mt-1">基于近期消息频率评估群组活跃程度</p>
+                            <p className="text-xs text-slate-400 mt-1">基于近期消息频率评估群组活跃程度</p>
                           </div>
 
                           {/* 过滤选项 */}
-                          <div className="space-y-2 pt-1 border-t border-gray-700">
-                            <p className="text-xs text-gray-400 font-medium">过滤选项</p>
+                          <div className="space-y-2 pt-1 border-t border-slate-200">
+                            <p className="text-xs text-slate-500 font-medium">过滤选项</p>
 
                             <div className="flex items-center gap-2">
                               <Checkbox
                                 id="filterBots"
                                 checked={aiFilterBots}
                                 onCheckedChange={v => setAiFilterBots(!!v)}
-                                className="border-gray-600"
+                                className="border-slate-300"
                               />
-                              <label htmlFor="filterBots" className="text-xs text-gray-300 cursor-pointer flex items-center gap-1">
+                              <label htmlFor="filterBots" className="text-xs text-slate-600 cursor-pointer flex items-center gap-1">
                                 <Bot className="w-3 h-3 text-red-400" />
                                 过滤机器人账号
                               </label>
@@ -1403,9 +1403,9 @@ export default function GroupScrape() {
                                 id="filterAds"
                                 checked={aiFilterAds}
                                 onCheckedChange={v => setAiFilterAds(!!v)}
-                                className="border-gray-600"
+                                className="border-slate-300"
                               />
-                              <label htmlFor="filterAds" className="text-xs text-gray-300 cursor-pointer flex items-center gap-1">
+                              <label htmlFor="filterAds" className="text-xs text-slate-600 cursor-pointer flex items-center gap-1">
                                 <Filter className="w-3 h-3 text-orange-400" />
                                 过滤广告用户（无用户名且无头像）
                               </label>
@@ -1416,9 +1416,9 @@ export default function GroupScrape() {
                                 id="requireUsername"
                                 checked={aiRequireUsername}
                                 onCheckedChange={v => setAiRequireUsername(!!v)}
-                                className="border-gray-600"
+                                className="border-slate-300"
                               />
-                              <label htmlFor="requireUsername" className="text-xs text-gray-300 cursor-pointer flex items-center gap-1">
+                              <label htmlFor="requireUsername" className="text-xs text-slate-600 cursor-pointer flex items-center gap-1">
                                 <UserCheck className="w-3 h-3 text-blue-400" />
                                 仅保留有用户名的群组/用户
                               </label>
@@ -1429,9 +1429,9 @@ export default function GroupScrape() {
                                 id="requireDescription"
                                 checked={aiRequireDescription}
                                 onCheckedChange={v => setAiRequireDescription(!!v)}
-                                className="border-gray-600"
+                                className="border-slate-300"
                               />
-                              <label htmlFor="requireDescription" className="text-xs text-gray-300 cursor-pointer flex items-center gap-1">
+                              <label htmlFor="requireDescription" className="text-xs text-slate-600 cursor-pointer flex items-center gap-1">
                                 <FileText className="w-3 h-3 text-green-400" />
                                 仅保留有群组简介的群组
                               </label>
@@ -1445,7 +1445,7 @@ export default function GroupScrape() {
                     <Button
                       onClick={handleRunTargetScrape}
                       disabled={runTargetScrape.isPending || targetGroups.length === 0 || !targetTaskId}
-                      className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                      className="w-full bg-purple-600 hover:bg-purple-700 text-slate-900"
                     >
                       {runTargetScrape.isPending ? (
                         <><Loader2 className="w-4 h-4 animate-spin mr-2" />采集中，请稍候...</>
@@ -1460,10 +1460,10 @@ export default function GroupScrape() {
 
             {/* 采集结果展示 */}
             {targetTaskId && (
-              <Card className="bg-gray-900 border-gray-800">
+              <Card className="bg-white border-slate-200">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-white text-base flex items-center gap-2">
+                    <CardTitle className="text-slate-900 text-base flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-green-400" />
                       采集结果
                       {collectedStats && (
@@ -1485,7 +1485,7 @@ export default function GroupScrape() {
                         size="sm"
                         variant="ghost"
                         onClick={() => { refetchCollectedGroups(); refetchCollectedUsers(); refetchStats(); }}
-                        className="text-gray-400 hover:text-white"
+                        className="text-slate-500 hover:text-slate-900"
                       >
                         <RefreshCw className="w-4 h-4" />
                       </Button>
@@ -1494,7 +1494,7 @@ export default function GroupScrape() {
                           size="sm"
                           variant="outline"
                           onClick={handleExportUsers}
-                          className="border-gray-600 text-gray-300 hover:text-white hover:bg-gray-700"
+                          className="border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
                         >
                           <FileDown className="w-4 h-4 mr-1" />
                           导出用户
@@ -1513,11 +1513,11 @@ export default function GroupScrape() {
                   </div>
 
                   {/* 子 Tab */}
-                  <div className="flex gap-1 mt-3 bg-gray-800 rounded-lg p-1 w-fit">
+                  <div className="flex gap-1 mt-3 bg-slate-100 rounded-lg p-1 w-fit">
                     <button
                       onClick={() => setTargetSubTab("groups")}
                       className={`px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
-                        targetSubTab === "groups" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-gray-200"
+                        targetSubTab === "groups" ? "bg-blue-600 text-slate-900" : "text-slate-500 hover:text-slate-700"
                       }`}
                     >
                       <Globe className="w-3 h-3" />
@@ -1526,7 +1526,7 @@ export default function GroupScrape() {
                     <button
                       onClick={() => setTargetSubTab("channels")}
                       className={`px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
-                        targetSubTab === "channels" ? "bg-orange-600 text-white" : "text-gray-400 hover:text-gray-200"
+                        targetSubTab === "channels" ? "bg-orange-600 text-slate-900" : "text-slate-500 hover:text-slate-700"
                       }`}
                     >
                       <Radio className="w-3 h-3" />
@@ -1535,7 +1535,7 @@ export default function GroupScrape() {
                     <button
                       onClick={() => setTargetSubTab("users")}
                       className={`px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
-                        targetSubTab === "users" ? "bg-green-600 text-white" : "text-gray-400 hover:text-gray-200"
+                        targetSubTab === "users" ? "bg-green-600 text-slate-900" : "text-slate-500 hover:text-slate-700"
                       }`}
                     >
                       <Users className="w-3 h-3" />
@@ -1548,15 +1548,15 @@ export default function GroupScrape() {
                   {(targetSubTab === "groups" || targetSubTab === "channels") && (
                     <>
                       {/* 过滤 */}
-                      <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-800">
+                      <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-200">
                         <Select
                           value={collectedGroupType}
                           onValueChange={(v: any) => { setCollectedGroupType(v); setCollectedGroupPage(1); }}
                         >
-                          <SelectTrigger className="w-32 bg-gray-800 border-gray-700 text-gray-200 h-7 text-xs">
+                          <SelectTrigger className="w-32 bg-slate-100 border-slate-200 text-slate-700 h-7 text-xs">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent className="bg-gray-900 border-gray-700">
+                          <SelectContent className="bg-white border-slate-200">
                             <SelectItem value="all">全部类型</SelectItem>
                             <SelectItem value="group">群组</SelectItem>
                             <SelectItem value="channel">频道</SelectItem>
@@ -1566,7 +1566,7 @@ export default function GroupScrape() {
                           <Button
                             size="sm"
                             onClick={() => setImportCollectedDialog(true)}
-                            className="bg-green-700 hover:bg-green-600 text-white h-7 text-xs"
+                            className="bg-green-700 hover:bg-green-600 text-slate-900 h-7 text-xs"
                           >
                             <Download className="w-3 h-3 mr-1" />
                             导入监控池 ({selectedCollectedGroupIds.size})
@@ -1575,11 +1575,11 @@ export default function GroupScrape() {
                       </div>
 
                       {collectedGroupsLoading ? (
-                        <div className="flex items-center justify-center py-12 text-gray-500">
+                        <div className="flex items-center justify-center py-12 text-slate-400">
                           <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
                         </div>
                       ) : collectedGroups.length === 0 ? (
-                        <div className="text-center py-12 text-gray-500">
+                        <div className="text-center py-12 text-slate-400">
                           <Globe className="w-10 h-10 mx-auto mb-3 opacity-30" />
                           <p>暂无采集到的群组/频道</p>
                           <p className="text-xs mt-1">请先配置目标群组并开始采集</p>
@@ -1588,35 +1588,35 @@ export default function GroupScrape() {
                         <>
                           <Table>
                             <TableHeader>
-                              <TableRow className="border-gray-800">
+                              <TableRow className="border-slate-200">
                                 <TableHead className="w-10">
                                   <Checkbox
                                     checked={selectedCollectedGroupIds.size === collectedGroups.length && collectedGroups.length > 0}
                                     onCheckedChange={toggleCollectedGroupSelectAll}
-                                    className="border-gray-600"
+                                    className="border-slate-300"
                                   />
                                 </TableHead>
-                                <TableHead className="text-gray-400">名称</TableHead>
-                                <TableHead className="text-gray-400">用户名</TableHead>
-                                <TableHead className="text-gray-400">类型</TableHead>
-                                <TableHead className="text-gray-400">成员数</TableHead>
-                                <TableHead className="text-gray-400">AI评分</TableHead>
-                                <TableHead className="text-gray-400">来源群组</TableHead>
-                                <TableHead className="text-gray-400">状态</TableHead>
+                                <TableHead className="text-slate-500">名称</TableHead>
+                                <TableHead className="text-slate-500">用户名</TableHead>
+                                <TableHead className="text-slate-500">类型</TableHead>
+                                <TableHead className="text-slate-500">成员数</TableHead>
+                                <TableHead className="text-slate-500">AI评分</TableHead>
+                                <TableHead className="text-slate-500">来源群组</TableHead>
+                                <TableHead className="text-slate-500">状态</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {collectedGroups.map((g) => (
-                                <TableRow key={g.id} className="border-gray-800 hover:bg-gray-800/50">
+                                <TableRow key={g.id} className="border-slate-200 hover:bg-slate-50/80">
                                   <TableCell>
                                     <Checkbox
                                       checked={selectedCollectedGroupIds.has(g.id)}
                                       onCheckedChange={() => toggleCollectedGroupSelect(g.id)}
                                       disabled={g.importStatus !== "pending"}
-                                      className="border-gray-600"
+                                      className="border-slate-300"
                                     />
                                   </TableCell>
-                                  <TableCell className="text-white font-medium max-w-[160px] truncate">
+                                  <TableCell className="text-slate-900 font-medium max-w-[160px] truncate">
                                     {g.title || g.username || g.tgId || "-"}
                                   </TableCell>
                                   <TableCell className="text-blue-400 text-sm font-mono">
@@ -1630,7 +1630,7 @@ export default function GroupScrape() {
                                         @{g.username}
                                       </a>
                                     ) : (
-                                      <span className="text-gray-600">-</span>
+                                      <span className="text-slate-400">-</span>
                                     )}
                                   </TableCell>
                                   <TableCell>
@@ -1642,16 +1642,16 @@ export default function GroupScrape() {
                                       {g.type === "channel" ? "频道" : "群组"}
                                     </span>
                                   </TableCell>
-                                  <TableCell className="text-gray-300">
+                                  <TableCell className="text-slate-600">
                                     <div className="flex items-center gap-1">
-                                      <Users className="w-3 h-3 text-gray-500" />
+                                      <Users className="w-3 h-3 text-slate-400" />
                                       {(g.memberCount || 0).toLocaleString()}
                                     </div>
                                   </TableCell>
                                   <TableCell>
                                     <AiScoreBar score={g.aiScore} />
                                   </TableCell>
-                                  <TableCell className="text-gray-500 text-xs">
+                                  <TableCell className="text-slate-400 text-xs">
                                     {g.sourceGroupId}
                                   </TableCell>
                                   <TableCell>
@@ -1662,11 +1662,11 @@ export default function GroupScrape() {
                             </TableBody>
                           </Table>
                           {totalCollectedGroupPages > 1 && (
-                            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-800">
-                              <span className="text-sm text-gray-400">共 {totalCollectedGroups} 条，第 {collectedGroupPage}/{totalCollectedGroupPages} 页</span>
+                            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+                              <span className="text-sm text-slate-500">共 {totalCollectedGroups} 条，第 {collectedGroupPage}/{totalCollectedGroupPages} 页</span>
                               <div className="flex gap-2">
-                                <Button size="sm" variant="ghost" disabled={collectedGroupPage <= 1} onClick={() => setCollectedGroupPage(p => p - 1)} className="text-gray-400">上一页</Button>
-                                <Button size="sm" variant="ghost" disabled={collectedGroupPage >= totalCollectedGroupPages} onClick={() => setCollectedGroupPage(p => p + 1)} className="text-gray-400">下一页</Button>
+                                <Button size="sm" variant="ghost" disabled={collectedGroupPage <= 1} onClick={() => setCollectedGroupPage(p => p - 1)} className="text-slate-500">上一页</Button>
+                                <Button size="sm" variant="ghost" disabled={collectedGroupPage >= totalCollectedGroupPages} onClick={() => setCollectedGroupPage(p => p + 1)} className="text-slate-500">下一页</Button>
                               </div>
                             </div>
                           )}
@@ -1678,23 +1678,23 @@ export default function GroupScrape() {
                   {/* 用户列表 */}
                   {targetSubTab === "users" && (
                     <>
-                      <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-800">
+                      <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-200">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <Checkbox
                             checked={onlyWithUsername}
                             onCheckedChange={(v) => setOnlyWithUsername(!!v)}
-                            className="border-gray-600"
+                            className="border-slate-300"
                           />
-                          <span className="text-xs text-gray-300">只显示有 @用户名 的用户</span>
+                          <span className="text-xs text-slate-600">只显示有 @用户名 的用户</span>
                         </label>
                       </div>
 
                       {collectedUsersLoading ? (
-                        <div className="flex items-center justify-center py-12 text-gray-500">
+                        <div className="flex items-center justify-center py-12 text-slate-400">
                           <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
                         </div>
                       ) : collectedUsers.length === 0 ? (
-                        <div className="text-center py-12 text-gray-500">
+                        <div className="text-center py-12 text-slate-400">
                           <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
                           <p>暂无采集到的用户</p>
                           <p className="text-xs mt-1">请勾选「用户成员」类型并开始采集</p>
@@ -1703,19 +1703,19 @@ export default function GroupScrape() {
                         <>
                           <Table>
                             <TableHeader>
-                              <TableRow className="border-gray-800">
-                                <TableHead className="text-gray-400">显示名称</TableHead>
-                                <TableHead className="text-gray-400">@用户名</TableHead>
-                                <TableHead className="text-gray-400">TG ID</TableHead>
-                                <TableHead className="text-gray-400">标签</TableHead>
-                                <TableHead className="text-gray-400">AI评分</TableHead>
-                                <TableHead className="text-gray-400">来源群组</TableHead>
+                              <TableRow className="border-slate-200">
+                                <TableHead className="text-slate-500">显示名称</TableHead>
+                                <TableHead className="text-slate-500">@用户名</TableHead>
+                                <TableHead className="text-slate-500">TG ID</TableHead>
+                                <TableHead className="text-slate-500">标签</TableHead>
+                                <TableHead className="text-slate-500">AI评分</TableHead>
+                                <TableHead className="text-slate-500">来源群组</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {collectedUsers.map((u) => (
-                                <TableRow key={u.id} className="border-gray-800 hover:bg-gray-800/50">
-                                  <TableCell className="text-white font-medium max-w-[140px] truncate">
+                                <TableRow key={u.id} className="border-slate-200 hover:bg-slate-50/80">
+                                  <TableCell className="text-slate-900 font-medium max-w-[140px] truncate">
                                     {u.displayName || "-"}
                                   </TableCell>
                                   <TableCell className="text-blue-400 text-sm font-mono">
@@ -1729,16 +1729,16 @@ export default function GroupScrape() {
                                         @{u.username}
                                       </a>
                                     ) : (
-                                      <span className="text-gray-600">-</span>
+                                      <span className="text-slate-400">-</span>
                                     )}
                                   </TableCell>
-                                  <TableCell className="text-gray-500 text-xs font-mono">
+                                  <TableCell className="text-slate-400 text-xs font-mono">
                                     {u.tgId}
                                   </TableCell>
                                   <TableCell>
                                     <div className="flex gap-1">
                                       {u.isBot && (
-                                        <span className="text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                        <span className="text-xs bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded flex items-center gap-0.5">
                                           <Bot className="w-3 h-3" /> Bot
                                         </span>
                                       )}
@@ -1752,7 +1752,7 @@ export default function GroupScrape() {
                                   <TableCell>
                                     <AiScoreBar score={u.aiScore} />
                                   </TableCell>
-                                  <TableCell className="text-gray-500 text-xs">
+                                  <TableCell className="text-slate-400 text-xs">
                                     {u.sourceGroupId}
                                   </TableCell>
                                 </TableRow>
@@ -1760,11 +1760,11 @@ export default function GroupScrape() {
                             </TableBody>
                           </Table>
                           {totalCollectedUserPages > 1 && (
-                            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-800">
-                              <span className="text-sm text-gray-400">共 {totalCollectedUsers} 条，第 {collectedUserPage}/{totalCollectedUserPages} 页</span>
+                            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+                              <span className="text-sm text-slate-500">共 {totalCollectedUsers} 条，第 {collectedUserPage}/{totalCollectedUserPages} 页</span>
                               <div className="flex gap-2">
-                                <Button size="sm" variant="ghost" disabled={collectedUserPage <= 1} onClick={() => setCollectedUserPage(p => p - 1)} className="text-gray-400">上一页</Button>
-                                <Button size="sm" variant="ghost" disabled={collectedUserPage >= totalCollectedUserPages} onClick={() => setCollectedUserPage(p => p + 1)} className="text-gray-400">下一页</Button>
+                                <Button size="sm" variant="ghost" disabled={collectedUserPage <= 1} onClick={() => setCollectedUserPage(p => p - 1)} className="text-slate-500">上一页</Button>
+                                <Button size="sm" variant="ghost" disabled={collectedUserPage >= totalCollectedUserPages} onClick={() => setCollectedUserPage(p => p + 1)} className="text-slate-500">下一页</Button>
                               </div>
                             </div>
                           )}
@@ -1782,13 +1782,13 @@ export default function GroupScrape() {
         {activeTab === "extract" && (
           <div className="space-y-4">
             {/* 配置卡片 */}
-            <Card className="bg-gray-900 border-gray-800">
+            <Card className="bg-white border-slate-200">
               <CardHeader className="pb-3">
-                <CardTitle className="text-white text-base flex items-center gap-2">
+                <CardTitle className="text-slate-900 text-base flex items-center gap-2">
                   <MessageSquare className="w-4 h-4 text-orange-400" />
                   从群组历史消息中提取群链接
                 </CardTitle>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-slate-400 mt-1">
                   扫描指定群组的历史消息，自动提取其中的 t.me 群组/频道链接，可批量导入监控池
                 </p>
               </CardHeader>
@@ -1796,12 +1796,12 @@ export default function GroupScrape() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   {/* 选择账号 */}
                   <div>
-                    <label className="text-sm text-gray-300 block mb-1.5">选择 TG 账号</label>
+                    <label className="text-sm text-slate-600 block mb-1.5">选择 TG 账号</label>
                     <Select value={extractAccountId} onValueChange={setExtractAccountId}>
-                      <SelectTrigger className="bg-gray-800 border-gray-700 text-gray-200">
+                      <SelectTrigger className="bg-slate-100 border-slate-200 text-slate-700">
                         <SelectValue placeholder="请选择账号" />
                       </SelectTrigger>
-                      <SelectContent className="bg-gray-900 border-gray-700">
+                      <SelectContent className="bg-white border-slate-200">
                         {(Array.isArray(accounts) ? accounts : []).map((acc: any) => (
                           <SelectItem key={acc.id} value={String(acc.id)}>
                             {acc.phone || acc.tgUsername || `账号 #${acc.id}`}
@@ -1810,29 +1810,29 @@ export default function GroupScrape() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-gray-500 mt-1">账号需已加入目标群组</p>
+                    <p className="text-xs text-slate-400 mt-1">账号需已加入目标群组</p>
                   </div>
 
                   {/* 群组链接 */}
                   <div>
-                    <label className="text-sm text-gray-300 block mb-1.5">目标群组链接</label>
+                    <label className="text-sm text-slate-600 block mb-1.5">目标群组链接</label>
                     <Input
                       value={extractGroupUrl}
                       onChange={e => setExtractGroupUrl(e.target.value)}
                       placeholder="https://t.me/+xxx 或 @username"
-                      className="bg-gray-800 border-gray-700 text-white"
+                      className="bg-slate-100 border-slate-200 text-slate-900"
                     />
-                    <p className="text-xs text-gray-500 mt-1">支持邀请链接或 @用户名</p>
+                    <p className="text-xs text-slate-400 mt-1">支持邀请链接或 @用户名</p>
                   </div>
 
                   {/* 扫描消息数 */}
                   <div>
-                    <label className="text-sm text-gray-300 block mb-1.5">最多扫描消息数</label>
+                    <label className="text-sm text-slate-600 block mb-1.5">最多扫描消息数</label>
                     <Select value={String(extractLimit)} onValueChange={v => setExtractLimit(parseInt(v))}>
-                      <SelectTrigger className="bg-gray-800 border-gray-700 text-gray-200">
+                      <SelectTrigger className="bg-slate-100 border-slate-200 text-slate-700">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-gray-900 border-gray-700">
+                      <SelectContent className="bg-white border-slate-200">
                         <SelectItem value="200">200 条（快速）</SelectItem>
                         <SelectItem value="500">500 条（推荐）</SelectItem>
                         <SelectItem value="1000">1000 条</SelectItem>
@@ -1840,7 +1840,7 @@ export default function GroupScrape() {
                         <SelectItem value="5000">5000 条（较慢）</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-gray-500 mt-1">消息越多耗时越长</p>
+                    <p className="text-xs text-slate-400 mt-1">消息越多耗时越长</p>
                   </div>
                 </div>
 
@@ -1857,7 +1857,7 @@ export default function GroupScrape() {
                     });
                   }}
                   disabled={extractFromGroup.isPending}
-                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                  className="bg-orange-600 hover:bg-orange-700 text-slate-900"
                 >
                   {extractFromGroup.isPending ? (
                     <><Loader2 className="w-4 h-4 animate-spin mr-2" />扫描中，请稍候...</>
@@ -1870,13 +1870,13 @@ export default function GroupScrape() {
 
             {/* 提取结果 */}
             {extractedLinks.length > 0 && (
-              <Card className="bg-gray-900 border-gray-800">
+              <Card className="bg-white border-slate-200">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-white text-base flex items-center gap-2">
+                    <CardTitle className="text-slate-900 text-base flex items-center gap-2">
                       <Link2 className="w-4 h-4 text-orange-400" />
                       提取结果
-                      <span className="text-sm font-normal text-gray-400">
+                      <span className="text-sm font-normal text-slate-500">
                         扫描 {extractScanned} 条消息，找到 {extractedLinks.length} 个群组链接
                       </span>
                     </CardTitle>
@@ -1893,7 +1893,7 @@ export default function GroupScrape() {
                           a.click();
                           URL.revokeObjectURL(a.href);
                         }}
-                        className="border-gray-600 text-gray-300 hover:text-white hover:bg-gray-700"
+                        className="border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
                       >
                         <FileText className="w-4 h-4 mr-1" />
                         导出 TXT
@@ -1915,7 +1915,7 @@ export default function GroupScrape() {
                           a.click();
                           URL.revokeObjectURL(a.href);
                         }}
-                        className="border-gray-600 text-gray-300 hover:text-white hover:bg-gray-700"
+                        className="border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
                       >
                         <FileDown className="w-4 h-4 mr-1" />
                         导出 CSV
@@ -1924,7 +1924,7 @@ export default function GroupScrape() {
                         <Button
                           size="sm"
                           onClick={() => setExtractImportDialog(true)}
-                          className="bg-green-700 hover:bg-green-600 text-white"
+                          className="bg-green-700 hover:bg-green-600 text-slate-900"
                         >
                           <Download className="w-4 h-4 mr-1" />
                           导入选中 ({extractSelectedUrls.size})
@@ -1936,29 +1936,29 @@ export default function GroupScrape() {
                 <CardContent className="p-0">
                   <Table>
                     <TableHeader>
-                      <TableRow className="border-gray-800">
+                      <TableRow className="border-slate-200">
                         <TableHead className="w-10">
                           <Checkbox
                             checked={extractSelectedUrls.size === extractedLinks.length && extractedLinks.length > 0}
                             onCheckedChange={toggleExtractSelectAll}
-                            className="border-gray-600"
+                            className="border-slate-300"
                           />
                         </TableHead>
-                        <TableHead className="text-gray-400">群组链接</TableHead>
-                        <TableHead className="text-gray-400">链接类型</TableHead>
-                        <TableHead className="text-gray-400 text-right">操作</TableHead>
+                        <TableHead className="text-slate-500">群组链接</TableHead>
+                        <TableHead className="text-slate-500">链接类型</TableHead>
+                        <TableHead className="text-slate-500 text-right">操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {extractedLinks.map((link) => {
                         const isInvite = link.url.includes("/+") || link.url.includes("/joinchat");
                         return (
-                          <TableRow key={link.url} className="border-gray-800 hover:bg-gray-800/50">
+                          <TableRow key={link.url} className="border-slate-200 hover:bg-slate-50/80">
                             <TableCell>
                               <Checkbox
                                 checked={extractSelectedUrls.has(link.url)}
                                 onCheckedChange={() => toggleExtractSelect(link.url)}
-                                className="border-gray-600"
+                                className="border-slate-300"
                               />
                             </TableCell>
                             <TableCell className="font-mono text-sm">
@@ -1975,7 +1975,7 @@ export default function GroupScrape() {
                               <span className={`text-xs px-1.5 py-0.5 rounded ${
                                 isInvite
                                   ? "bg-purple-900/40 text-purple-300"
-                                  : "bg-gray-800 text-gray-300"
+                                  : "bg-slate-100 text-slate-600"
                               }`}>
                                 {isInvite ? "私有邀请链接" : "公开用户名"}
                               </span>
@@ -2005,7 +2005,7 @@ export default function GroupScrape() {
 
             {/* 无结果提示 */}
             {!extractFromGroup.isPending && extractedLinks.length === 0 && extractScanned > 0 && (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-slate-400">
                 <Link2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
                 <p>未在该群组的 {extractScanned} 条消息中找到任何群组链接</p>
               </div>
@@ -2016,10 +2016,10 @@ export default function GroupScrape() {
 
       {/* ── 新建任务弹窗 ── */}
       <Dialog open={createDialog} onOpenChange={setCreateDialog}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-lg h-[85vh] flex flex-col">
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-lg h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle>新建采集任务</DialogTitle>
-            <DialogDescription className="text-gray-400">
+            <DialogDescription className="text-slate-500">
               配置搜索关键词和过滤条件，引擎将自动搜索并采集符合条件的公开群组
             </DialogDescription>
           </DialogHeader>
@@ -2036,7 +2036,7 @@ export default function GroupScrape() {
             />
           </div>
           <DialogFooter className="shrink-0">
-            <Button variant="ghost" onClick={() => setCreateDialog(false)} className="text-gray-400">取消</Button>
+            <Button variant="ghost" onClick={() => setCreateDialog(false)} className="text-slate-500">取消</Button>
             <Button
               onClick={() => createTask.mutate({
                 name: taskName || "采集任务",
@@ -2048,7 +2048,7 @@ export default function GroupScrape() {
                 fissionMaxPerSeed,
               })}
               disabled={createTask.isPending || taskKeywords.length === 0}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="bg-red-600 hover:bg-red-700 text-slate-900"
             >
               {createTask.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Plus className="w-4 h-4 mr-1" />}
               创建任务
@@ -2059,10 +2059,10 @@ export default function GroupScrape() {
 
       {/* ── 编辑任务弹窗 ── */}
       <Dialog open={editDialog} onOpenChange={v => { setEditDialog(v); if (!v) setEditingTask(null); }}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-lg h-[85vh] flex flex-col">
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-lg h-[85vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle>编辑采集任务</DialogTitle>
-            <DialogDescription className="text-gray-400">
+            <DialogDescription className="text-slate-500">
               修改任务配置后保存，下次触发时将使用新配置
             </DialogDescription>
           </DialogHeader>
@@ -2079,7 +2079,7 @@ export default function GroupScrape() {
             />
           </div>
           <DialogFooter className="shrink-0">
-            <Button variant="ghost" onClick={() => { setEditDialog(false); setEditingTask(null); }} className="text-gray-400">取消</Button>
+            <Button variant="ghost" onClick={() => { setEditDialog(false); setEditingTask(null); }} className="text-slate-500">取消</Button>
             <Button
               onClick={() => editingTask && updateTask.mutate({
                 id: editingTask.id,
@@ -2092,7 +2092,7 @@ export default function GroupScrape() {
                 fissionMaxPerSeed: editFissionMaxPerSeed,
               })}
               disabled={updateTask.isPending || editKeywords.length === 0}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-slate-900"
             >
               {updateTask.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Pencil className="w-4 h-4 mr-1" />}
               保存修改
@@ -2103,19 +2103,19 @@ export default function GroupScrape() {
 
       {/* ── 删除确认弹窗 ── */}
       <Dialog open={deleteTaskId !== null} onOpenChange={() => setDeleteTaskId(null)}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-sm">
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-sm">
           <DialogHeader>
             <DialogTitle>确认删除</DialogTitle>
-            <DialogDescription className="text-gray-400">
+            <DialogDescription className="text-slate-500">
               删除任务将同时删除所有采集结果，此操作不可恢复。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteTaskId(null)} className="text-gray-400">取消</Button>
+            <Button variant="ghost" onClick={() => setDeleteTaskId(null)} className="text-slate-500">取消</Button>
             <Button
               onClick={() => deleteTaskId && deleteTask.mutate({ id: deleteTaskId })}
               disabled={deleteTask.isPending}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="bg-red-600 hover:bg-red-700 text-slate-900"
             >
               {deleteTask.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Trash2 className="w-4 h-4 mr-1" />}
               确认删除
@@ -2126,19 +2126,19 @@ export default function GroupScrape() {
 
       {/* ── 导入确认弹窗（采集结果）── */}
       <Dialog open={importConfirmDialog} onOpenChange={setImportConfirmDialog}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-sm">
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-sm">
           <DialogHeader>
             <DialogTitle>确认导入</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              将选中的 <strong className="text-white">{selectedIds.size}</strong> 个群组导入公共监控群组池，引擎将自动加入并开始监控。
+            <DialogDescription className="text-slate-500">
+              将选中的 <strong className="text-slate-900">{selectedIds.size}</strong> 个群组导入公共监控群组池，引擎将自动加入并开始监控。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setImportConfirmDialog(false)} className="text-gray-400">取消</Button>
+            <Button variant="ghost" onClick={() => setImportConfirmDialog(false)} className="text-slate-500">取消</Button>
             <Button
               onClick={() => importToPool.mutate({ resultIds: Array.from(selectedIds) })}
               disabled={importToPool.isPending}
-              className="bg-green-700 hover:bg-green-600 text-white"
+              className="bg-green-700 hover:bg-green-600 text-slate-900"
             >
               {importToPool.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Download className="w-4 h-4 mr-1" />}
               确认导入
@@ -2149,19 +2149,19 @@ export default function GroupScrape() {
 
       {/* ── 导入采集群组到监控池弹窗 ── */}
       <Dialog open={importCollectedDialog} onOpenChange={setImportCollectedDialog}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-sm">
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-sm">
           <DialogHeader>
             <DialogTitle>导入到监控池</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              将选中的 <strong className="text-white">{selectedCollectedGroupIds.size}</strong> 个群组/频道导入公共监控群组池。
+            <DialogDescription className="text-slate-500">
+              将选中的 <strong className="text-slate-900">{selectedCollectedGroupIds.size}</strong> 个群组/频道导入公共监控群组池。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setImportCollectedDialog(false)} className="text-gray-400">取消</Button>
+            <Button variant="ghost" onClick={() => setImportCollectedDialog(false)} className="text-slate-500">取消</Button>
             <Button
               onClick={() => importCollectedGroups.mutate({ ids: Array.from(selectedCollectedGroupIds) })}
               disabled={importCollectedGroups.isPending}
-              className="bg-green-700 hover:bg-green-600 text-white"
+              className="bg-green-700 hover:bg-green-600 text-slate-900"
             >
               {importCollectedGroups.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Download className="w-4 h-4 mr-1" />}
               确认导入
@@ -2172,10 +2172,10 @@ export default function GroupScrape() {
 
       {/* ── 导出用户列表弹窗 ── */}
       <Dialog open={exportUsersDialog} onOpenChange={setExportUsersDialog}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-lg">
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-lg">
           <DialogHeader>
             <DialogTitle>导出用户列表</DialogTitle>
-            <DialogDescription className="text-gray-400">
+            <DialogDescription className="text-slate-500">
               每行一个 @用户名，可直接复制使用
             </DialogDescription>
           </DialogHeader>
@@ -2183,24 +2183,24 @@ export default function GroupScrape() {
             <Textarea
               value={exportContent}
               readOnly
-              className="bg-gray-800 border-gray-700 text-white text-sm h-48 font-mono resize-none"
+              className="bg-slate-100 border-slate-200 text-slate-900 text-sm h-48 font-mono resize-none"
             />
-            <p className="text-xs text-gray-500">共 {exportContent.split("\n").filter(Boolean).length} 个用户</p>
+            <p className="text-xs text-slate-400">共 {exportContent.split("\n").filter(Boolean).length} 个用户</p>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setExportUsersDialog(false)} className="text-gray-400">关闭</Button>
+            <Button variant="ghost" onClick={() => setExportUsersDialog(false)} className="text-slate-500">关闭</Button>
             <Button
               onClick={() => {
                 navigator.clipboard.writeText(exportContent);
                 toast.success("已复制到剪贴板");
               }}
-              className="bg-gray-700 hover:bg-gray-600 text-white"
+              className="bg-slate-200 hover:bg-slate-300 text-slate-900"
             >
               复制全部
             </Button>
             <Button
               onClick={downloadExportContent}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-slate-900"
             >
               <FileDown className="w-4 h-4 mr-1" />
               下载 TXT
@@ -2211,17 +2211,17 @@ export default function GroupScrape() {
 
       {/* ── 导入确认弹窗（提取的链接）── */}
       <Dialog open={extractImportDialog} onOpenChange={setExtractImportDialog}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-sm">
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-sm">
           <DialogHeader>
             <DialogTitle>确认导入群组链接</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              将选中的 <strong className="text-white">{extractSelectedUrls.size}</strong> 个群组链接导入公共监控群组池。
+            <DialogDescription className="text-slate-500">
+              将选中的 <strong className="text-slate-900">{extractSelectedUrls.size}</strong> 个群组链接导入公共监控群组池。
               <br />
               <span className="text-yellow-400 text-xs mt-1 block">注意：私有邀请链接（t.me/+xxx）需要账号先加入该群才能监控。</span>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setExtractImportDialog(false)} className="text-gray-400">取消</Button>
+            <Button variant="ghost" onClick={() => setExtractImportDialog(false)} className="text-slate-500">取消</Button>
             <Button
               onClick={() => {
                 const chats = Array.from(extractSelectedUrls).map(url => {
@@ -2236,7 +2236,7 @@ export default function GroupScrape() {
                 importExtractedLinks.mutate({ chats });
               }}
               disabled={importExtractedLinks.isPending}
-              className="bg-green-700 hover:bg-green-600 text-white"
+              className="bg-green-700 hover:bg-green-600 text-slate-900"
             >
               {importExtractedLinks.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Download className="w-4 h-4 mr-1" />}
               确认导入

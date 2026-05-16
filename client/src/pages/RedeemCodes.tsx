@@ -48,7 +48,7 @@ export default function RedeemCodes() {
 
   const statusColors: Record<string, string> = {
     unused: "bg-green-500/20 text-green-400 border-green-500/30",
-    used: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+    used: "bg-gray-500/20 text-slate-500 border-gray-500/30",
     expired: "bg-red-500/20 text-red-400 border-red-500/30",
   };
   const statusLabels: Record<string, string> = { unused: "未使用", used: "已使用", expired: "已过期" };
@@ -57,14 +57,14 @@ export default function RedeemCodes() {
     <AdminLayout title="卡密管理">
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-100">卡密管理</h1>
-          <p className="text-gray-400 text-sm mt-1">批量生成、查看和管理激活卡密</p>
+          <h1 className="text-2xl font-bold text-slate-800">卡密管理</h1>
+          <p className="text-slate-500 text-sm mt-1">批量生成、查看和管理激活卡密</p>
         </div>
 
         {/* 生成卡密 */}
-        <Card className="bg-gray-800 border-gray-700">
+        <Card className="bg-slate-100 border-slate-200">
           <CardHeader>
-            <CardTitle className="text-gray-200 text-base flex items-center gap-2">
+            <CardTitle className="text-slate-700 text-base flex items-center gap-2">
               <Key className="w-4 h-4 text-blue-400" />
               批量生成卡密
             </CardTitle>
@@ -72,27 +72,27 @@ export default function RedeemCodes() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
-                <Label className="text-gray-400 text-xs mb-1 block">套餐类型</Label>
+                <Label className="text-slate-500 text-xs mb-1 block">套餐类型</Label>
                 <Select value={genPlan} onValueChange={(v) => setGenPlan(v as any)}>
-                  <SelectTrigger className="bg-gray-700 border-gray-600 text-gray-200 h-8 text-xs">
+                  <SelectTrigger className="bg-slate-200 border-slate-300 text-slate-700 h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-700">
-                    <SelectItem value="basic" className="text-gray-300 text-xs">基础版</SelectItem>
-                    <SelectItem value="pro" className="text-gray-300 text-xs">专业版</SelectItem>
-                    <SelectItem value="enterprise" className="text-gray-300 text-xs">企业版</SelectItem>
+                  <SelectContent className="bg-slate-100 border-slate-200">
+                    <SelectItem value="basic" className="text-slate-600 text-xs">基础版</SelectItem>
+                    <SelectItem value="pro" className="text-slate-600 text-xs">专业版</SelectItem>
+                    <SelectItem value="enterprise" className="text-slate-600 text-xs">企业版</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-gray-400 text-xs mb-1 block">有效时长</Label>
+                <Label className="text-slate-500 text-xs mb-1 block">有效时长</Label>
                 <Select value={String(genMonths)} onValueChange={(v) => setGenMonths(Number(v))}>
-                  <SelectTrigger className="bg-gray-700 border-gray-600 text-gray-200 h-8 text-xs">
+                  <SelectTrigger className="bg-slate-200 border-slate-300 text-slate-700 h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-700">
+                  <SelectContent className="bg-slate-100 border-slate-200">
                     {DURATION_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={String(opt.value)} className="text-gray-300 text-xs">
+                      <SelectItem key={opt.value} value={String(opt.value)} className="text-slate-600 text-xs">
                         {opt.label}
                       </SelectItem>
                     ))}
@@ -100,25 +100,25 @@ export default function RedeemCodes() {
                 </Select>
               </div>
               <div>
-                <Label className="text-gray-400 text-xs mb-1 block">生成数量</Label>
+                <Label className="text-slate-500 text-xs mb-1 block">生成数量</Label>
                 <Input
                   type="number"
                   min={1}
                   max={500}
                   value={genCount}
                   onChange={(e) => setGenCount(Number(e.target.value))}
-                  className="bg-gray-700 border-gray-600 text-gray-200 h-8 text-xs"
+                  className="bg-slate-200 border-slate-300 text-slate-700 h-8 text-xs"
                 />
               </div>
               <div>
-                <Label className="text-gray-400 text-xs mb-1 block">卡密有效期（天）</Label>
+                <Label className="text-slate-500 text-xs mb-1 block">卡密有效期（天）</Label>
                 <Input
                   type="number"
                   min={1}
                   max={3650}
                   value={genExpireDays}
                   onChange={(e) => setGenExpireDays(Number(e.target.value))}
-                  className="bg-gray-700 border-gray-600 text-gray-200 h-8 text-xs"
+                  className="bg-slate-200 border-slate-300 text-slate-700 h-8 text-xs"
                 />
               </div>
             </div>
@@ -131,22 +131,22 @@ export default function RedeemCodes() {
               >
                 {generateMutation.isPending ? "生成中..." : `生成 ${genCount} 个卡密`}
               </Button>
-              <span className="text-gray-500 text-xs">
+              <span className="text-slate-400 text-xs">
                 将生成 <span className="text-blue-400 font-medium">{genPlan === "basic" ? "基础版" : genPlan === "pro" ? "专业版" : "企业版"}</span>
                 {" · "}
                 <span className="text-green-400 font-medium">{DURATION_OPTIONS.find(o => o.value === genMonths)?.label ?? `${genMonths}个月`}</span>
                 {" 卡密"}
               </span>
               {generatedCodes.length > 0 && (
-                <Button size="sm" variant="outline" className="border-gray-600 text-gray-300 text-xs ml-auto" onClick={copyAllCodes}>
+                <Button size="sm" variant="outline" className="border-slate-300 text-slate-600 text-xs ml-auto" onClick={copyAllCodes}>
                   <Copy className="w-3 h-3 mr-1" />
                   复制全部 ({generatedCodes.length})
                 </Button>
               )}
             </div>
             {generatedCodes.length > 0 && (
-              <div className="bg-gray-900 rounded p-3 max-h-40 overflow-y-auto">
-                <p className="text-gray-400 text-xs mb-2">已生成 {generatedCodes.length} 个卡密：</p>
+              <div className="bg-white rounded p-3 max-h-40 overflow-y-auto">
+                <p className="text-slate-500 text-xs mb-2">已生成 {generatedCodes.length} 个卡密：</p>
                 {generatedCodes.map((c, i) => (
                   <div key={i} className="text-green-400 font-mono text-xs">{c}</div>
                 ))}
@@ -156,23 +156,23 @@ export default function RedeemCodes() {
         </Card>
 
         {/* 卡密列表 */}
-        <Card className="bg-gray-800 border-gray-700">
+        <Card className="bg-slate-100 border-slate-200">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-gray-200 text-sm font-medium">卡密列表</CardTitle>
+              <CardTitle className="text-slate-700 text-sm font-medium">卡密列表</CardTitle>
               <div className="flex items-center gap-2">
                 <Select value={codeFilter} onValueChange={(v) => setCodeFilter(v as any)}>
-                  <SelectTrigger className="bg-gray-700 border-gray-600 text-gray-200 h-7 text-xs w-24">
+                  <SelectTrigger className="bg-slate-200 border-slate-300 text-slate-700 h-7 text-xs w-24">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-700">
-                    <SelectItem value="all" className="text-gray-300 text-xs">全部</SelectItem>
-                    <SelectItem value="unused" className="text-gray-300 text-xs">未使用</SelectItem>
-                    <SelectItem value="used" className="text-gray-300 text-xs">已使用</SelectItem>
-                    <SelectItem value="expired" className="text-gray-300 text-xs">已过期</SelectItem>
+                  <SelectContent className="bg-slate-100 border-slate-200">
+                    <SelectItem value="all" className="text-slate-600 text-xs">全部</SelectItem>
+                    <SelectItem value="unused" className="text-slate-600 text-xs">未使用</SelectItem>
+                    <SelectItem value="used" className="text-slate-600 text-xs">已使用</SelectItem>
+                    <SelectItem value="expired" className="text-slate-600 text-xs">已过期</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400" onClick={() => refetchCodes()} disabled={codesRefetching}>
+                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-500" onClick={() => refetchCodes()} disabled={codesRefetching}>
                   <RefreshCw className={`w-3 h-3 ${codesRefetching ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
@@ -180,21 +180,21 @@ export default function RedeemCodes() {
           </CardHeader>
           <CardContent>
             {!codes || codes.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-4">暂无卡密</p>
+              <p className="text-slate-400 text-sm text-center py-4">暂无卡密</p>
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {codes.map((c: any) => (
-                  <div key={c.id} className="flex items-center justify-between bg-gray-750 rounded px-3 py-2 border border-gray-700">
+                  <div key={c.id} className="flex items-center justify-between bg-gray-750 rounded px-3 py-2 border border-slate-200">
                     <div className="flex items-center gap-3">
-                      <span className="font-mono text-xs text-gray-300">{c.code}</span>
+                      <span className="font-mono text-xs text-slate-600">{c.code}</span>
                       <Badge className={`text-xs px-1.5 py-0 ${statusColors[c.status] || ""}`}>
                         {statusLabels[c.status] || c.status}
                       </Badge>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-slate-400">
                         {c.planId} · {c.durationMonths >= 12 ? `${c.durationMonths / 12}年` : `${c.durationMonths}个月`}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-slate-400">
                       {c.usedAt ? `使用于 ${new Date(c.usedAt).toLocaleDateString()}` : `过期 ${new Date(c.expiresAt).toLocaleDateString()}`}
                     </div>
                   </div>

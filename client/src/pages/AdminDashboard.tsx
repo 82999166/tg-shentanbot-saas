@@ -33,9 +33,9 @@ function StatCard({
     <div
       onClick={onClick}
       className={[
-        "rounded-xl p-4 border border-gray-800 flex items-center gap-4 transition-all duration-150",
+        "rounded-xl p-4 border border-slate-200 flex items-center gap-4 transition-all duration-150",
         bgColor,
-        onClick ? "cursor-pointer hover:border-gray-600 hover:scale-[1.02]" : "",
+        onClick ? "cursor-pointer hover:border-slate-300 hover:scale-[1.02]" : "",
       ].join(" ")}
     >
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${color} bg-opacity-20`}
@@ -43,15 +43,15 @@ function StatCard({
         <Icon className={`w-6 h-6 ${color}`} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs text-gray-500 mb-0.5">{label}</p>
+        <p className="text-xs text-slate-400 mb-0.5">{label}</p>
         {loading ? (
-          <div className="h-7 w-16 bg-gray-800 animate-pulse rounded" />
+          <div className="h-7 w-16 bg-slate-100 animate-pulse rounded" />
         ) : (
           <p className={`text-2xl font-bold ${color}`}>{value}</p>
         )}
-        {subValue && <p className="text-xs text-gray-500 mt-0.5">{subValue}</p>}
+        {subValue && <p className="text-xs text-slate-400 mt-0.5">{subValue}</p>}
       </div>
-      {onClick && <ArrowUpRight className="w-4 h-4 text-gray-600 shrink-0" />}
+      {onClick && <ArrowUpRight className="w-4 h-4 text-slate-400 shrink-0" />}
     </div>
   );
 }
@@ -70,15 +70,15 @@ function EngineStatusCard({
   const total = accounts.length;
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Zap className="w-4 h-4 text-yellow-400" />
-          <span className="text-sm font-semibold text-gray-200">监控引擎状态</span>
+          <span className="text-sm font-semibold text-slate-700">监控引擎状态</span>
         </div>
         <button
           onClick={onNavigate}
-          className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1 transition-colors"
+          className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors"
         >
           管理 <ArrowUpRight className="w-3 h-3" />
         </button>
@@ -86,35 +86,35 @@ function EngineStatusCard({
       {loading ? (
         <div className="space-y-2">
           {[1, 2, 3].map(i => (
-            <div key={i} className="h-10 bg-gray-800 animate-pulse rounded-lg" />
+            <div key={i} className="h-10 bg-slate-100 animate-pulse rounded-lg" />
           ))}
         </div>
       ) : (
         <div className="space-y-2">
           {accounts.length === 0 ? (
-            <p className="text-xs text-gray-500 text-center py-3">暂无监控账号</p>
+            <p className="text-xs text-slate-400 text-center py-3">暂无监控账号</p>
           ) : (
             accounts.map((acc: any) => (
-              <div key={acc.id} className="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2">
+              <div key={acc.id} className="flex items-center justify-between bg-slate-100 rounded-lg px-3 py-2">
                 <div className="flex items-center gap-2">
                   {acc.sessionStatus === "active" ? (
                     <Wifi className="w-3.5 h-3.5 text-green-400" />
                   ) : (
                     <WifiOff className="w-3.5 h-3.5 text-red-400" />
                   )}
-                  <span className="text-sm text-gray-200 font-medium">
+                  <span className="text-sm text-slate-700 font-medium">
                     {acc.username ? `@${acc.username}` : acc.phone || `账号 ${acc.id}`}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">{acc.joinedGroupsCount ?? 0} 群</span>
+                  <span className="text-xs text-slate-400">{acc.joinedGroupsCount ?? 0} 群</span>
                   <span className={[
                     "text-xs px-2 py-0.5 rounded-full font-medium",
                     acc.sessionStatus === "active"
                       ? "bg-green-900/50 text-green-400"
                       : acc.sessionStatus === "banned"
                         ? "bg-red-900/50 text-red-400"
-                        : "bg-gray-700 text-gray-400",
+                        : "bg-slate-200 text-slate-500",
                   ].join(" ")}>
                     {acc.sessionStatus === "active" ? "在线" : acc.sessionStatus === "banned" ? "封禁" : "离线"}
                   </span>
@@ -122,8 +122,8 @@ function EngineStatusCard({
               </div>
             ))
           )}
-          <div className="flex items-center justify-between pt-1 border-t border-gray-800 mt-2">
-            <span className="text-xs text-gray-500">在线账号</span>
+          <div className="flex items-center justify-between pt-1 border-t border-slate-200 mt-2">
+            <span className="text-xs text-slate-400">在线账号</span>
             <span className={`text-sm font-bold ${online === total && total > 0 ? "text-green-400" : online > 0 ? "text-yellow-400" : "text-red-400"}`}>
               {online} / {total}
             </span>
@@ -155,13 +155,13 @@ function WeeklyTrendCard({
   });
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-center gap-2 mb-4">
         <TrendingUp className="w-4 h-4 text-blue-400" />
-        <span className="text-sm font-semibold text-gray-200">近 7 日命中趋势</span>
+        <span className="text-sm font-semibold text-slate-700">近 7 日命中趋势</span>
       </div>
       {loading ? (
-        <div className="h-32 bg-gray-800 animate-pulse rounded-lg" />
+        <div className="h-32 bg-slate-100 animate-pulse rounded-lg" />
       ) : (
         <div className="flex items-end gap-1.5 h-32">
           {chartData.map(({ date, count }) => {
@@ -169,14 +169,14 @@ function WeeklyTrendCard({
             const dayLabel = new Date(date + "T00:00:00").toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
             return (
               <div key={date} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-xs text-gray-500 font-medium">{count > 0 ? count : ""}</span>
+                <span className="text-xs text-slate-400 font-medium">{count > 0 ? count : ""}</span>
                 <div className="w-full flex flex-col justify-end" style={{ height: 80 }}>
                   <div
                     className="w-full rounded-t-sm bg-blue-600 transition-all duration-500"
                     style={{ height: `${Math.max(pct, count > 0 ? 8 : 2)}%`, minHeight: count > 0 ? 4 : 2, opacity: count > 0 ? 1 : 0.2 }}
                   />
                 </div>
-                <span className="text-xs text-gray-600">{dayLabel}</span>
+                <span className="text-xs text-slate-400">{dayLabel}</span>
               </div>
             );
           })}
@@ -199,25 +199,25 @@ function TopKeywordsCard({
   const maxCount = Math.max(...(topKeywords.map(k => Number(k.count)) || [1]), 1);
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Hash className="w-4 h-4 text-purple-400" />
-          <span className="text-sm font-semibold text-gray-200">本周 Top 关键词</span>
+          <span className="text-sm font-semibold text-slate-700">本周 Top 关键词</span>
         </div>
         <button
           onClick={onNavigate}
-          className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1 transition-colors"
+          className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors"
         >
           统计 <ArrowUpRight className="w-3 h-3" />
         </button>
       </div>
       {loading ? (
         <div className="space-y-2">
-          {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-8 bg-gray-800 animate-pulse rounded" />)}
+          {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-8 bg-slate-100 animate-pulse rounded" />)}
         </div>
       ) : topKeywords.length === 0 ? (
-        <p className="text-xs text-gray-500 text-center py-4">暂无数据</p>
+        <p className="text-xs text-slate-400 text-center py-4">暂无数据</p>
       ) : (
         <div className="space-y-2">
           {topKeywords.map((kw, idx) => {
@@ -225,10 +225,10 @@ function TopKeywordsCard({
             return (
               <div key={idx} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-300 font-medium truncate max-w-[120px]">{kw.matchedKeyword || "—"}</span>
-                  <span className="text-gray-500 shrink-0 ml-2">{kw.count} 次</span>
+                  <span className="text-slate-600 font-medium truncate max-w-[120px]">{kw.matchedKeyword || "—"}</span>
+                  <span className="text-slate-400 shrink-0 ml-2">{kw.count} 次</span>
                 </div>
-                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-purple-600 rounded-full transition-all duration-500"
                     style={{ width: `${pct}%` }}
@@ -265,37 +265,37 @@ function RecentHitsCard({
   };
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Activity className="w-4 h-4 text-green-400" />
-          <span className="text-sm font-semibold text-gray-200">最近命中记录</span>
+          <span className="text-sm font-semibold text-slate-700">最近命中记录</span>
         </div>
         <button
           onClick={onNavigate}
-          className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1 transition-colors"
+          className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors"
         >
           全部 <ArrowUpRight className="w-3 h-3" />
         </button>
       </div>
       {loading ? (
         <div className="space-y-2">
-          {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-12 bg-gray-800 animate-pulse rounded" />)}
+          {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-12 bg-slate-100 animate-pulse rounded" />)}
         </div>
       ) : recentHits.length === 0 ? (
-        <p className="text-xs text-gray-500 text-center py-4">暂无命中记录</p>
+        <p className="text-xs text-slate-400 text-center py-4">暂无命中记录</p>
       ) : (
         <div className="space-y-1.5">
           {recentHits.slice(0, 8).map((hit: any) => (
-            <div key={hit.id} className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2">
-              <Target className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-              <span className="text-xs text-gray-300 font-medium truncate flex-1">
+            <div key={hit.id} className="flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2">
+              <Target className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="text-xs text-slate-600 font-medium truncate flex-1">
                 {hit.matchedKeyword || "—"}
               </span>
-              <span className="text-xs text-gray-600 shrink-0">
+              <span className="text-xs text-slate-400 shrink-0">
                 {new Date(hit.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
               </span>
-              <span className={`text-xs shrink-0 ${statusColor[hit.dmStatus] || "text-gray-500"}`}>
+              <span className={`text-xs shrink-0 ${statusColor[hit.dmStatus] || "text-slate-400"}`}>
                 {statusLabel[hit.dmStatus] || hit.dmStatus}
               </span>
             </div>
@@ -355,9 +355,9 @@ export default function AdminDashboard() {
               <BarChart2 className="w-5 h-5 text-red-400" />
               系统仪表盘
             </h1>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-slate-400 mt-1">
               平台运行概览 · 每 30 秒自动刷新
-              <span className="ml-2 text-gray-600">
+              <span className="ml-2 text-slate-400">
                 上次刷新: {lastRefresh.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </span>
             </p>
@@ -365,7 +365,7 @@ export default function AdminDashboard() {
           <button
             onClick={handleRefresh}
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
             刷新
@@ -380,7 +380,7 @@ export default function AdminDashboard() {
             value={platformStats?.totalUsers ?? adminStats?.totalUsers ?? 0}
             subValue={`付费 ${paidUsers} 人`}
             color="text-blue-400"
-            bgColor="bg-gray-900"
+            bgColor="bg-white"
             onClick={() => navigate("/admin-users")}
             loading={isLoading}
           />
@@ -390,7 +390,7 @@ export default function AdminDashboard() {
             value={platformStats?.todayHits ?? 0}
             subValue={`累计 ${(platformStats?.totalHits ?? 0).toLocaleString()} 条`}
             color="text-green-400"
-            bgColor="bg-gray-900"
+            bgColor="bg-white"
             onClick={() => navigate("/admin-hit-messages")}
             loading={isLoading}
           />
@@ -400,7 +400,7 @@ export default function AdminDashboard() {
             value={platformStats?.activeGroups ?? 0}
             subValue="公共群组池"
             color="text-cyan-400"
-            bgColor="bg-gray-900"
+            bgColor="bg-white"
             onClick={() => navigate("/admin-groups")}
             loading={isLoading}
           />
@@ -410,7 +410,7 @@ export default function AdminDashboard() {
             value={`${dmSuccessRate}%`}
             subValue={`今日推送 ${platformStats?.todayDmSent ?? 0} 条`}
             color={dmSuccessRate >= 80 ? "text-green-400" : dmSuccessRate >= 50 ? "text-yellow-400" : "text-red-400"}
-            bgColor="bg-gray-900"
+            bgColor="bg-white"
             onClick={() => navigate("/admin-hit-messages")}
             loading={isLoading}
           />
@@ -424,7 +424,7 @@ export default function AdminDashboard() {
             value={`${(allAccounts as any[]).filter((a: any) => a.sessionStatus === "active").length} / ${(allAccounts as any[]).length}`}
             subValue="监控 TG 账号"
             color="text-emerald-400"
-            bgColor="bg-gray-900"
+            bgColor="bg-white"
             onClick={() => navigate("/admin-accounts")}
             loading={accountsLoading}
           />
@@ -434,7 +434,7 @@ export default function AdminDashboard() {
             value={paidUsers}
             subValue={`共 ${adminStats?.totalUsers ?? 0} 用户`}
             color="text-amber-400"
-            bgColor="bg-gray-900"
+            bgColor="bg-white"
             onClick={() => navigate("/admin-users")}
             loading={adminLoading}
           />
@@ -443,8 +443,8 @@ export default function AdminDashboard() {
             label="待推送队列"
             value={platformStats?.pendingQueue ?? 0}
             subValue="等待 Bot 处理"
-            color={(platformStats?.pendingQueue ?? 0) > 10 ? "text-red-400" : "text-gray-400"}
-            bgColor="bg-gray-900"
+            color={(platformStats?.pendingQueue ?? 0) > 10 ? "text-red-400" : "text-slate-500"}
+            bgColor="bg-white"
             onClick={() => navigate("/admin-hit-messages")}
             loading={platformLoading}
           />
@@ -454,7 +454,7 @@ export default function AdminDashboard() {
             value="查看"
             subValue="财务数据"
             color="text-pink-400"
-            bgColor="bg-gray-900"
+            bgColor="bg-white"
             onClick={() => navigate("/admin-orders")}
             loading={false}
           />
@@ -493,10 +493,10 @@ export default function AdminDashboard() {
         </div>
 
         {/* ── 快速操作入口 ── */}
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="flex items-center gap-2 mb-3">
             <Zap className="w-4 h-4 text-yellow-400" />
-            <span className="text-sm font-semibold text-gray-200">快速入口</span>
+            <span className="text-sm font-semibold text-slate-700">快速入口</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             {[
@@ -510,10 +510,10 @@ export default function AdminDashboard() {
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
-                className="flex flex-col items-center gap-2 p-3 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors group"
+                className="flex flex-col items-center gap-2 p-3 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors group"
               >
                 <item.icon className={`w-5 h-5 ${item.color} group-hover:scale-110 transition-transform`} />
-                <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">{item.label}</span>
+                <span className="text-xs text-slate-500 group-hover:text-slate-700 transition-colors">{item.label}</span>
               </button>
             ))}
           </div>

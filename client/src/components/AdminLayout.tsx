@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Globe, Users, Bot, Shield, Settings, LogOut, ShieldCheck, PanelLeft, LayoutDashboard,
-  MessageCircle, BarChart2, Send, Wrench, ShoppingCart, Key, KeyRound, Search, LogIn
+  MessageCircle, BarChart2, Send, Wrench, ShoppingCart, Key, KeyRound, Search, LogIn, ChevronRight
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -43,6 +43,16 @@ const adminMenuItems = [
   { icon: LogIn, label: "管理员登录页", path: "/admin/login", group: "系统配置" },
 ];
 
+// 分组图标颜色映射
+const groupColors: Record<string, string> = {
+  "概览": "text-blue-500",
+  "用户管理": "text-violet-500",
+  "监控数据": "text-emerald-500",
+  "监控管理": "text-sky-500",
+  "财务管理": "text-amber-500",
+  "系统配置": "text-slate-500",
+};
+
 interface AdminLayoutProps {
   children: React.ReactNode;
   title?: string;
@@ -55,8 +65,11 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-950">
-        <div className="text-gray-400 text-sm">加载中...</div>
+      <div className="flex h-screen items-center justify-center bg-slate-50">
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-slate-500 text-sm">加载中...</span>
+        </div>
       </div>
     );
   }
@@ -70,40 +83,40 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
   const groups = Array.from(new Set(adminMenuItems.map(i => i.group)));
 
   return (
-    <div className="flex h-screen bg-gray-950 text-gray-100 overflow-hidden">
+    <div className="flex h-screen bg-slate-50 text-slate-800 overflow-hidden">
       {/* 侧边栏 */}
       <aside
-        className="flex flex-col border-r border-gray-800 bg-gray-900 transition-all duration-200 shrink-0"
-        style={{ width: collapsed ? 56 : 210 }}
+        className="flex flex-col border-r border-slate-200 bg-white shadow-sm transition-all duration-200 shrink-0"
+        style={{ width: collapsed ? 56 : 216 }}
       >
         {/* Logo 区域 */}
-        <div className="flex items-center gap-2.5 px-3 py-3.5 border-b border-gray-800 shrink-0">
-          <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center shrink-0">
+        <div className="flex items-center gap-2.5 px-3 py-3.5 border-b border-slate-100 shrink-0">
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shrink-0 shadow-sm">
             <ShieldCheck className="w-4 h-4 text-white" />
           </div>
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-bold text-white truncate">TG Monitor</div>
-              <div className="text-xs text-red-400 font-medium">管理后台</div>
+              <div className="text-sm font-bold text-slate-800 truncate">TG Monitor</div>
+              <div className="text-xs text-blue-500 font-medium">管理后台</div>
             </div>
           )}
           <button
             onClick={() => setCollapsed(c => !c)}
-            className="text-gray-500 hover:text-gray-300 transition-colors shrink-0"
+            className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md p-0.5 transition-colors shrink-0"
           >
             <PanelLeft className="w-4 h-4" />
           </button>
         </div>
 
-        {/* 菜单区域 - flex-1 撑满，不滚动 */}
-        <nav className="flex-1 overflow-hidden flex flex-col justify-between" style={{ padding: "8px 0 4px" }}>
+        {/* 菜单区域 */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden" style={{ padding: "8px 0 4px" }}>
           <div>
             {groups.map((group, gi) => (
-              <div key={group} className={gi > 0 ? "mt-2" : ""}>
+              <div key={group} className={gi > 0 ? "mt-1" : ""}>
                 {!collapsed && (
-                  <div style={{ padding: "2px 12px 2px" }}>
+                  <div style={{ padding: "6px 14px 2px" }}>
                     <span
-                      className="font-semibold text-gray-500 uppercase tracking-wider"
+                      className="font-semibold text-slate-400 uppercase tracking-wider"
                       style={{ fontSize: 10 }}
                     >
                       {group}
@@ -112,6 +125,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
                 )}
                 {adminMenuItems.filter(i => i.group === group).map(item => {
                   const isActive = location === item.path;
+                  const iconColor = groupColors[group] || "text-slate-500";
                   return (
                     <button
                       key={item.path}
@@ -122,26 +136,34 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
                           setLocation(item.path);
                         }
                       }}
-                      title={item.label}
+                      title={collapsed ? item.label : undefined}
                       className={[
-                        "flex items-center gap-2.5 w-full font-medium transition-colors rounded-md",
+                        "flex items-center gap-2.5 w-full font-medium transition-all rounded-lg",
                         collapsed ? "justify-center" : "",
                         isActive
-                          ? "bg-red-600/20 text-red-400"
-                          : "text-gray-400 hover:bg-gray-800 hover:text-gray-100",
+                          ? "bg-blue-50 text-blue-600"
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-800",
                       ].join(" ")}
                       style={{
                         fontSize: 13,
-                        padding: collapsed ? "6px 0" : "5px 10px",
+                        padding: collapsed ? "7px 0" : "6px 10px",
                         margin: collapsed ? "1px auto" : "1px 6px",
                         width: collapsed ? 40 : "calc(100% - 12px)",
                       }}
                     >
                       <item.icon
-                        className={"shrink-0" + (isActive ? " text-red-400" : "")}
-                        style={{ width: 14, height: 14 }}
+                        className={[
+                          "shrink-0",
+                          isActive ? "text-blue-500" : iconColor,
+                        ].join(" ")}
+                        style={{ width: 15, height: 15 }}
                       />
-                      {!collapsed && <span className="truncate">{item.label}</span>}
+                      {!collapsed && (
+                        <>
+                          <span className="truncate flex-1 text-left">{item.label}</span>
+                          {isActive && <ChevronRight className="w-3 h-3 text-blue-400 shrink-0" />}
+                        </>
+                      )}
                     </button>
                   );
                 })}
@@ -151,30 +173,30 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
         </nav>
 
         {/* 底部用户信息 */}
-        <div className="border-t border-gray-800 p-2 shrink-0">
+        <div className="border-t border-slate-100 p-2 shrink-0 bg-white">
           {!collapsed && (
-            <div className="text-center mb-2" style={{ fontSize: 10, color: "#4b5563" }}>
+            <div className="text-center mb-2" style={{ fontSize: 10, color: "#94a3b8" }}>
               TG Monitor Pro v1.2.0
             </div>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 w-full rounded-lg px-2 py-2 hover:bg-gray-800 transition-colors text-left">
-                <div className="w-7 h-7 bg-red-700 rounded-full flex items-center justify-center shrink-0">
+              <button className="flex items-center gap-2 w-full rounded-lg px-2 py-2 hover:bg-slate-50 transition-colors text-left">
+                <div className="w-7 h-7 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center shrink-0 shadow-sm">
                   <span className="text-xs font-bold text-white">{user?.name?.charAt(0)?.toUpperCase() ?? "A"}</span>
                 </div>
                 {!collapsed && (
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-gray-200 truncate">{user?.name}</div>
-                    <div className="truncate" style={{ fontSize: 10, color: "#6b7280" }}>{user?.email}</div>
+                    <div className="text-xs font-semibold text-slate-700 truncate">{user?.name}</div>
+                    <div className="truncate" style={{ fontSize: 10, color: "#94a3b8" }}>{user?.email}</div>
                   </div>
                 )}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuContent align="end" className="w-44 bg-white border-slate-200 shadow-lg">
               <DropdownMenuItem
                 onClick={logout}
-                className="cursor-pointer text-red-400 focus:text-red-400"
+                className="cursor-pointer text-red-500 focus:text-red-500 focus:bg-red-50"
               >
                 <LogOut className="mr-2 h-4 w-4" />
                 <span>退出登录</span>
@@ -185,7 +207,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
       </aside>
 
       {/* 主内容区 */}
-      <main className="flex-1 overflow-y-auto bg-gray-950">
+      <main className="flex-1 overflow-y-auto bg-slate-50">
         {children}
       </main>
     </div>

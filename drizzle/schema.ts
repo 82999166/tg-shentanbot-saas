@@ -11,7 +11,7 @@ import {
   decimal,
   index,
   uniqueIndex,
-} from "drizzle-orm/mysql-core";
+ real,} from "drizzle-orm/mysql-core";
 
 // ============================================================
 // 用户表（基础）
@@ -701,7 +701,7 @@ export const groupScrapeTasks = mysqlTable("group_scrape_tasks", {
   collectTypes: varchar("collectTypes", { length: 128 }).default("group,channel,user").notNull(),
   userLimit: int("userLimit").default(500).notNull(),
   aiScoreEnabled: boolean("aiScoreEnabled").default(false).notNull(),
-  aiMinScore: float("aiMinScore").default(60),
+  aiMinScore: real("aiMinScore").default(60),
 });
 export type GroupScrapeTask = typeof groupScrapeTasks.$inferSelect;
 export type InsertGroupScrapeTask = typeof groupScrapeTasks.$inferInsert;
@@ -743,7 +743,7 @@ export const scrapeCollectedGroups = mysqlTable("scrape_collected_groups", {
   title: varchar("title", { length: 256 }),                           // 群组/频道名称
   memberCount: int("memberCount").default(0),                         // 成员数
   description: text("description"),                                   // 简介
-  aiScore: float("aiScore"),                                          // AI 质量评分 0-100
+  aiScore: real("aiScore"),                                          // AI 质量评分 0-100
   aiScoreDetail: text("aiScoreDetail"),                               // JSON: 各维度评分
   importStatus: varchar("importStatus", { length: 32 }).default("pending").notNull(), // pending/imported/ignored
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -766,7 +766,7 @@ export const scrapeCollectedUsers = mysqlTable("scrape_collected_users", {
   displayName: varchar("displayName", { length: 256 }),               // 显示名称（真实姓名）
   isBot: boolean("isBot").default(false),                             // 是否机器人
   isPremium: boolean("isPremium").default(false),                     // 是否 Premium 用户
-  aiScore: float("aiScore"),                                          // AI 质量评分 0-100
+  aiScore: real("aiScore"),                                          // AI 质量评分 0-100
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => [
   index("idx_scu_taskId").on(t.taskId),

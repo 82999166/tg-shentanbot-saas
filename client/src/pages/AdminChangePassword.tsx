@@ -73,18 +73,18 @@ export default function AdminChangePassword() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">修改管理员密码</h1>
-              <p className="text-gray-400 text-sm">定期更换密码有助于保护账号安全</p>
+              <p className="text-slate-500 text-sm">定期更换密码有助于保护账号安全</p>
             </div>
           </div>
         </div>
 
         {/* 表单卡片 */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl">
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* 原密码 */}
             <div className="space-y-2">
-              <Label className="text-gray-300 text-sm flex items-center gap-2">
-                <Lock className="w-3.5 h-3.5 text-gray-500" />
+              <Label className="text-slate-600 text-sm flex items-center gap-2">
+                <Lock className="w-3.5 h-3.5 text-slate-400" />
                 当前密码
               </Label>
               <div className="relative">
@@ -93,13 +93,13 @@ export default function AdminChangePassword() {
                   value={oldPassword}
                   onChange={(e) => setOldPassword(e.target.value)}
                   placeholder="请输入当前密码"
-                  className="bg-gray-800 border-gray-700 text-white placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20"
+                  className="bg-slate-100 border-slate-200 text-white placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowOld(!showOld)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
                 >
                   {showOld ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -107,12 +107,12 @@ export default function AdminChangePassword() {
             </div>
 
             {/* 分割线 */}
-            <div className="border-t border-gray-800" />
+            <div className="border-t border-slate-200" />
 
             {/* 新密码 */}
             <div className="space-y-2">
-              <Label className="text-gray-300 text-sm flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5 text-gray-500" />
+              <Label className="text-slate-600 text-sm flex items-center gap-2">
+                <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
                 新密码
               </Label>
               <div className="relative">
@@ -121,13 +121,13 @@ export default function AdminChangePassword() {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="至少8位，含大写字母和数字"
-                  className="bg-gray-800 border-gray-700 text-white placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20"
+                  className="bg-slate-100 border-slate-200 text-white placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowNew(!showNew)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
                 >
                   {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -140,12 +140,12 @@ export default function AdminChangePassword() {
                       <div
                         key={i}
                         className={`h-1 flex-1 rounded-full transition-all ${
-                          i <= strength ? strengthColor : "bg-gray-700"
+                          i <= strength ? strengthColor : "bg-slate-200"
                         }`}
                       />
                     ))}
                   </div>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-slate-500">
                     密码强度：<span className={`font-medium ${
                       strength <= 2 ? "text-red-400" : strength === 3 ? "text-yellow-400" : "text-green-400"
                     }`}>{strengthLabel}</span>
@@ -156,8 +156,8 @@ export default function AdminChangePassword() {
 
             {/* 确认新密码 */}
             <div className="space-y-2">
-              <Label className="text-gray-300 text-sm flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5 text-gray-500" />
+              <Label className="text-slate-600 text-sm flex items-center gap-2">
+                <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
                 确认新密码
               </Label>
               <div className="relative">
@@ -166,7 +166,7 @@ export default function AdminChangePassword() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="再次输入新密码"
-                  className={`bg-gray-800 border-gray-700 text-white placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20 ${
+                  className={`bg-slate-100 border-slate-200 text-white placeholder-gray-500 pr-10 focus:border-red-500 focus:ring-red-500/20 ${
                     confirmPassword && confirmPassword !== newPassword ? "border-red-500" : ""
                   }`}
                   required
@@ -174,7 +174,7 @@ export default function AdminChangePassword() {
                 <button
                   type="button"
                   onClick={() => setShowConfirm(!showConfirm)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
                 >
                   {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -188,8 +188,8 @@ export default function AdminChangePassword() {
             </div>
 
             {/* 密码要求说明 */}
-            <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4 space-y-1.5">
-              <p className="text-xs text-gray-400 font-medium mb-2">密码要求：</p>
+            <div className="bg-slate-50/80 border border-slate-200/50 rounded-xl p-4 space-y-1.5">
+              <p className="text-xs text-slate-500 font-medium mb-2">密码要求：</p>
               {[
                 { label: "至少 8 个字符", ok: newPassword.length >= 8 },
                 { label: "包含大写字母（A-Z）", ok: /[A-Z]/.test(newPassword) },
@@ -199,7 +199,7 @@ export default function AdminChangePassword() {
                 <div key={req.label} className="flex items-center gap-2">
                   <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] ${
                     newPassword.length === 0
-                      ? "bg-gray-700 text-gray-500"
+                      ? "bg-slate-200 text-slate-400"
                       : req.ok
                       ? "bg-green-500/20 text-green-400"
                       : "bg-red-500/20 text-red-400"
@@ -208,8 +208,8 @@ export default function AdminChangePassword() {
                   </div>
                   <span className={`text-xs ${
                     newPassword.length === 0
-                      ? "text-gray-500"
-                      : req.ok ? "text-green-400" : "text-gray-400"
+                      ? "text-slate-400"
+                      : req.ok ? "text-green-400" : "text-slate-500"
                   }`}>{req.label}</span>
                 </div>
               ))}
