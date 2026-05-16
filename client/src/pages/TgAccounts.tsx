@@ -1216,42 +1216,10 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
   const [detectView, setDetectView] = useState<'abnormal' | 'normal'>('abnormal');
   const checkGroupHealth = trpc.tgAccounts.checkGroupHealth.useMutation();
   const deleteAbnormalGroups = trpc.tgAccounts.deleteAbnormalPublicGroups.useMutation();
-  const getAccountChats = trpc.tgAccounts.getAccountChats.useMutation();
-  const [chatsData, setChatsData] = useState<{ chats: any[]; total: number } | null>(null);
-  const [chatsLoading, setChatsLoading] = useState(false);
-  const [chatsError, setChatsError] = useState('');
-
-  // 从引擎实时获取已加入群组
-  const fetchChats = async () => {
-    setChatsLoading(true);
-    setChatsError('');
-    try {
-      const res = await getAccountChats.mutateAsync({ id: accountId });
-      setChatsData(res);
-    } catch (e: any) {
-      setChatsError(e.message ?? '获取失败');
-    } finally {
-      setChatsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (accountId) fetchChats();
-  }, [accountId]);
-
-  const data = chatsData ? { total: chatsData.total, groups: chatsData.chats.map((c: any) => ({
-    id: c.chatId,
-    publicGroupId: 0,
-    groupId: c.username || c.chatId,
-    groupTitle: c.title || c.username || c.chatId,
-    groupType: c.type || 'supergroup',
-    realId: c.chatId,
-    isActive: true,
-    joinedAt: null,
-    link: c.username ? `https://t.me/${c.username}` : '',
-    memberCount: c.memberCount || 0,
-  })) } : null;
-  const isLoading = chatsLoading;
+  // 直接从数据库查询已加入群组（毫秒级响应）
+  const { data: dbData, isLoading: dbLoading, refetch: refetchDb } = trpc.tgAccounts.getAccountJoinedGroups.useQuery({ accountId });
+  const data = dbData ? { total: dbData.total, groups: dbData.groups } : null;
+  const isLoading = dbLoading;
   const [search, setSearch] = useState("");
 
   const filtered = (data?.groups ?? []).filter(g => {
@@ -1454,7 +1422,9 @@ function AccountJoinedGroupsTab({ accountId }: { accountId: number }) {
           <span className="text-sm text-slate-500">
             共已加入 <span className="text-slate-800 font-bold">{data?.total ?? 0}</span> 个群组
           </span>
-          {chatsError && <span className="text-xs text-red-500">{chatsError}</span>}
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-slate-500 hover:text-slate-700" onClick={() => refetchDb()}>
+            <RefreshCw className="w-3 h-3 mr-1" /> 刷新
+          </Button>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -1912,5 +1882,6 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     </div>
   );
 }
+
 
 

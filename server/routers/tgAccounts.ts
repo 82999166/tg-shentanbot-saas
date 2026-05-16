@@ -572,53 +572,38 @@ export const tgAccountsRouter = router({
   getAccountChats: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      // 优先尝试从账号引擎 HTTP 接口获取（端口 = 7100 + accountId）
-      // 若引擎未运行，则降级使用 login-service 的 /get_dialogs 接口（通过 sessionString）
+      // 直接从账号引擎 HTTP 接口获取（端口 = 7100 + accountId）
+      // 引擎不在线则快速报错，不做降级等待
       const engineHttpPort = ENGINE_HTTP_PORT_BASE + input.id;
       const engineHttpUrl = `http://127.0.0.1:${engineHttpPort}/dialogs`;
+      let resp: Response;
       try {
-        const resp = await fetch(engineHttpUrl, {
+        resp = await fetch(engineHttpUrl, {
           // @ts-ignore
-          signal: AbortSignal.timeout(15000), // 15秒超时，引擎不在线时快速失败
+          signal: AbortSignal.timeout(5000), // 5秒超时，引擎不在线快速失败
         });
-        if (!resp.ok) {
-          const errData = await resp.json().catch(() => ({})) as any;
-          throw new Error(errData.error || `引擎响应 ${resp.status}`);
-        }
-        const data = await resp.json() as any;
-        // /dialogs 返回格式：{ success: true, groups: [...], count: N }
-        const chats = (data.groups ?? []).map((g: any) => ({
-          chatId: g.chatId,
-          title: g.title || '',
-          username: g.username || '',
-          type: g.type || 'supergroup',
-        }));
-        return { success: true, chats, total: data.count ?? chats.length, source: 'engine' };
-      } catch (engineErr: any) {
-        // 引擎不可用，降级使用 login-service 直接获取
-        const account = await getTgAccountByIdAdmin(input.id);
-        if (!account) throw new TRPCError({ code: 'NOT_FOUND', message: '账号不存在' });
-        if (!account.sessionString) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: '账号无有效 Session，请重新登录' });
-        }
-        try {
-          const data = await callLoginService('/get_dialogs', { session_string: account.sessionString });
-          const dialogs: Array<{ id: string; title: string; username: string; type: string; members_count: number | null }> = data.dialogs ?? [];
-          const chats = dialogs.map((d) => ({
-            chatId: d.id,
-            title: d.title || '',
-            username: d.username || '',
-            type: d.type || 'supergroup',
-          }));
-          return { success: true, chats, total: chats.length, source: 'login_service' };
-        } catch (loginErr: any) {
-          // 两种方式都失败，抛出综合错误
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: `获取群组列表失败：引擎（${engineErr.message}）；登录服务（${loginErr.message}）`,
-          });
-        }
+      } catch (e: any) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `账号引擎未运行（端口 ${engineHttpPort}），请先在引擎管理中启动该账号`,
+        });
       }
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({})) as any;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: errData.error || `引擎响应 ${resp.status}`,
+        });
+      }
+      const data = await resp.json() as any;
+      // /dialogs 返回格式：{ success: true, groups: [...], count: N }
+      const chats = (data.groups ?? []).map((g: any) => ({
+        chatId: g.chatId,
+        title: g.title || '',
+        username: g.username || '',
+        type: g.type || 'supergroup',
+      }));
+      return { success: true, chats, total: data.count ?? chats.length, source: 'engine' };
     }),
   // ─── 批量导入群组到公共群组池 ──────────────────────────────────────────────
   importChatsToPublic: adminProcedure
@@ -686,7 +671,7 @@ export const tgAccountsRouter = router({
         .from(publicGroupJoinStatus)
         .leftJoin(publicMonitorGroups, eq(publicGroupJoinStatus.publicGroupId, publicMonitorGroups.id))
         .where(
-          sql`${publicGroupJoinStatus.monitorAccountId} = ${input.accountId} AND ${publicGroupJoinStatus.status} IN ('subscribed', 'joined')`
+          sql`${publicGroupJoinStatus.monitorAccountId} = ${input.accountId} AND ${publicGroupJoinStatus.status} IN ('subscribed', 'joined', 'pending', 'failed')`
         )
         .orderBy(desc(publicGroupJoinStatus.joinedAt));
       return {
@@ -988,4 +973,5 @@ async function autoSyncChatsToPublic(
     });
   } catch (_) { /* 忽略 */ }
 }
+
 
