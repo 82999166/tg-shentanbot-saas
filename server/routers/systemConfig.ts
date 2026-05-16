@@ -45,10 +45,12 @@ export { sendTgAlert };
 
 // PM2 可执行文件路径列表（按优先级排列）
 const PM2_PATHS = [
-  "/home/hjroot/.local/lib/node_modules/pm2/bin/pm2",
-  "/usr/bin/pm2",
-  "/www/server/nvm/versions/node/v22.22.0/bin/pm2",
   "pm2",
+  "/home/hjroot/.local/lib/node_modules/pm2/bin/pm2",
+  "/root/.nvm/versions/node/v22.13.0/bin/pm2",
+  "/www/server/nvm/versions/node/v22.22.0/bin/pm2",
+  "/usr/local/bin/pm2",
+  "/usr/bin/pm2",
 ];
 
 async function pm2Restart(processName: string): Promise<{ success: boolean; message: string }> {
@@ -870,15 +872,35 @@ export const systemConfigRouter = router({
       return { success: true };
     }),
 
-  // 重启引擎进程
+  // 重启引擎进程（多账号模式：从数据库动态读取账号列表，生成进程名）
   restartEngine: adminProcedure
     .mutation(async () => {
-      const result = await pm2Restart("神探-引擎");
-      if (!result.success) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.message });
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库连接失败" });
+      // 从数据库读取所有账号，动态生成进程名，不硬编码
+      const accounts = await db.select({ id: tgAccounts.id }).from(tgAccounts);
+      // 始终包含主控进程
+      const engineProcesses = [
+        "神探-引擎-主控",
+        ...accounts.map(a => `神探-引擎-Acc${a.id}`),
+      ];
+      if (engineProcesses.length === 1) {
+        // 只有主控，没有账号
+        const result = await pm2Restart("神探-引擎-主控");
+        if (!result.success) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.message });
+        return { success: true, message: "主控进程重启成功" };
+      }
+      const results = await Promise.all(engineProcesses.map(name => pm2Restart(name)));
+      const failed = results.filter(r => !r.success);
+      const succeeded = results.filter(r => r.success);
+      if (succeeded.length === 0) {
+        // 全部失败才报错
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: failed.map(r => r.message).join("; ") });
+      }
       // 发送 TG 告警通知
       const now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
-      await sendTgAlert(`🔄 <b>监控引擎已重启</b>\n\n⏰ 时间：${now}\n👤 操作：管理员手动重启\n✅ 状态：重启成功`);
-      return result;
+      await sendTgAlert(`🔄 <b>监控引擎已重启</b>\n\n⏰ 时间：${now}\n👤 操作：管理员手动重启\n✅ 状态：${succeeded.length}/${results.length} 个进程重启成功`);
+      return { success: true, message: `${succeeded.length}/${results.length} 个引擎进程重启成功` };
     }),
 
   // 重启 Bot 进程

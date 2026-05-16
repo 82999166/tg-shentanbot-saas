@@ -1,6 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+
+// 引擎 HTTP 端口基址（端口 = ENGINE_HTTP_PORT_BASE + accountId）
+const ENGINE_HTTP_PORT_BASE = 7100;
 import http from "http";
+import { exec } from "child_process";
 import {
   createTgAccount,
   deleteTgAccount,
@@ -403,6 +407,32 @@ export const tgAccountsRouter = router({
         if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
         await deleteTgAccount(input.id, ctx.user.id);
       }
+      // 删除账号后立即停止对应的引擎进程（多路径尝试，与 systemConfig 保持一致）
+      const procName = `神探-引擎-Acc${input.id}`;
+      const pm2Candidates = [
+        "pm2",
+        "/home/hjroot/.local/lib/node_modules/pm2/bin/pm2",
+        "/usr/local/bin/pm2",
+        "/usr/bin/pm2",
+      ];
+      void (async () => {
+        let stopped = false;
+        for (const pm2Bin of pm2Candidates) {
+          try {
+            await new Promise<void>((resolve, reject) => {
+              exec(`${pm2Bin} delete "${procName}" && ${pm2Bin} save`, (err) => {
+                if (err) reject(err); else resolve();
+              });
+            });
+            console.log(`[删除账号] 已停止并删除引擎进程: ${procName}`);
+            stopped = true;
+            break;
+          } catch {
+            // 继续尝试下一个路径
+          }
+        }
+        if (!stopped) console.log(`[删除账号] 引擎进程 ${procName} 不存在或已停止`);
+      })();
       return { success: true };
     }),
 
@@ -542,24 +572,32 @@ export const tgAccountsRouter = router({
   getAccountChats: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      const engineUrl = process.env.ENGINE_URL || 'http://127.0.0.1:7001';
-      const engineSecret = process.env.ENGINE_SECRET || 'shentanbot-engine-secret-2026';
+      // 每个账号引擎的 HTTP 端口 = 7100 + account_id
+      // 例如 account_id=5 → 端口 7105
+      const engineHttpPort = ENGINE_HTTP_PORT_BASE + input.id;
+      const engineHttpUrl = `http://127.0.0.1:${engineHttpPort}/dialogs`;
       try {
-        const resp = await fetch(`${engineUrl}/get-account-chats`, {
-          method: 'POST',
-          headers: { 'X-Engine-Secret': engineSecret, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: input.id }),
+        const resp = await fetch(engineHttpUrl, {
           // @ts-ignore
-          signal: AbortSignal.timeout(60000),
+          signal: AbortSignal.timeout(120000), // 2分钟超时，get_dialogs 可能较慢
         });
-        const data = await resp.json() as any;
         if (!resp.ok) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: data.error || `引擎响应 ${resp.status}` });
+          const errData = await resp.json().catch(() => ({})) as any;
+          throw new TRPCError({ code: 'BAD_REQUEST', message: errData.error || `引擎响应 ${resp.status}` });
         }
-        return { success: true, chats: (data.chats ?? []) as Array<{ chatId: string; title: string; username: string; type: string }>, total: data.total ?? 0 };
+        const data = await resp.json() as any;
+        // /dialogs 返回格式：{ success: true, groups: [...], count: N }
+        // 转换为 getAccountChats 期望的格式：{ chats: [...], total: N }
+        const chats = (data.groups ?? []).map((g: any) => ({
+          chatId: g.chatId,
+          title: g.title || '',
+          username: g.username || '',
+          type: 'supergroup',
+        }));
+        return { success: true, chats, total: data.count ?? chats.length };
       } catch (err: any) {
         if (err instanceof TRPCError) throw err;
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `无法连接引擎: ${err.message}` });
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `无法连接账号引擎（端口${ENGINE_HTTP_PORT_BASE + input.id}）: ${err.message}` });
       }
     }),
   // ─── 批量导入群组到公共群组池 ──────────────────────────────────────────────
@@ -804,19 +842,24 @@ async function autoSyncChatsToPublic(
   }
   if (!ready) return; // 90 秒内未就绪，放弃
 
-  // 获取账号已加入的群组列表
+  // 获取账号已加入的群组列表（直接调用对应账号引擎的 /dialogs 接口，端口 = 7100 + accountId）
   let chats: Array<{ chatId: string; title: string; username: string; type: string }> = [];
   try {
-    const chatResp = await fetch(`${engineUrl}/get-account-chats`, {
-      method: 'POST',
-      headers: { 'X-Engine-Secret': engineSecret, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: accountId }),
+    const accEnginePort = ENGINE_HTTP_PORT_BASE + accountId;
+    const accEngineUrl = `http://127.0.0.1:${accEnginePort}/dialogs`;
+    const chatResp = await fetch(accEngineUrl, {
       // @ts-ignore
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(120000),
     });
     if (chatResp.ok) {
       const chatData = await chatResp.json() as any;
-      chats = chatData.chats ?? [];
+      // /dialogs 返回 { groups: [...], count: N }，转换为 chats 格式
+      chats = (chatData.groups ?? []).map((g: any) => ({
+        chatId: g.chatId,
+        title: g.title || '',
+        username: g.username || '',
+        type: 'supergroup',
+      }));
     }
   } catch (_) { return; }
   if (!chats.length) return;

@@ -216,7 +216,17 @@ export async function deleteTgAccount(id: number, userId?: number) {
   await db.delete(publicGroupJoinStatus).where(eq(publicGroupJoinStatus.monitorAccountId, accountId));
   await db.delete(monitorGroups).where(eq(monitorGroups.tgAccountId, accountId));
   await db.delete(hitRecords).where(eq(hitRecords.tgAccountId, accountId));
-  await db.delete(dmQueue).where(eq(dmQueue.senderAccountId, accountId));
+  // dm_queue 表结构与 schema 不一致，使用原生 SQL 删除（兼容旧表结构）
+  try {
+    await db.execute(sql`DELETE FROM dm_queue WHERE tgAccountId = ${accountId}`);
+  } catch (e) {
+    // 如果旧字段不存在，尝试新字段名
+    try {
+      await db.execute(sql`DELETE FROM dm_queue WHERE senderAccountId = ${accountId}`);
+    } catch (e2) {
+      // 忽略 dm_queue 删除失败（不影响主流程）
+    }
+  }
   // 最后删除账号本身
   await db.delete(tgAccounts).where(eq(tgAccounts.id, accountId));
 }

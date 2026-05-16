@@ -11,6 +11,7 @@ import {
   groupScrapeTasks,
   groupScrapeResults,
   publicMonitorGroups,
+  tgAccounts,
 } from "../../drizzle/schema";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -277,5 +278,87 @@ export const groupScrapeRouter = router({
         if (err instanceof TRPCError) throw err;
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `无法连接引擎: ${err.message}` });
       }
+    }),
+
+  // ── 批量同步公共群组 realId（从引擎 dialogs 接口回写数字 ID）────
+  syncGroupRealIds: adminProcedure
+    .mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const engineSecret = process.env.ENGINE_SECRET || 'shentanbot-engine-secret-2026';
+      const engineHttpPortBase = parseInt(process.env.ENGINE_HTTP_PORT_BASE || "7100", 10);
+
+      // 获取所有活跃监控账号
+      const accounts = await db
+        .select({ id: tgAccounts.id, accountRole: tgAccounts.accountRole })
+        .from(tgAccounts)
+        .where(eq(tgAccounts.isActive, true));
+
+      const monitorAccounts = accounts.filter(
+        (a) => a.accountRole === "monitor" || a.accountRole === "both"
+      );
+
+      if (monitorAccounts.length === 0) {
+        return { success: false, message: "没有活跃的监控账号", updated: 0, total: 0, scanned: 0 };
+      }
+
+      // 从所有监控账号的 dialogs 接口收集群组信息
+      // key: username（小写，去掉 @）→ value: chatId（数字 ID 字符串）
+      const dialogMap = new Map<string, string>();
+      for (const acc of monitorAccounts) {
+        const port = engineHttpPortBase + acc.id;
+        try {
+          const resp = await fetch(`http://127.0.0.1:${port}/dialogs`, {
+            headers: { "X-Engine-Secret": engineSecret },
+            // @ts-ignore
+            signal: AbortSignal.timeout(30000),
+          });
+          if (!resp.ok) continue;
+          const data = (await resp.json()) as any;
+          const dialogs: Array<{ chatId: string; username?: string; title?: string }> =
+            Array.isArray(data) ? data : (data.dialogs ?? data.groups ?? []);
+          for (const d of dialogs) {
+            if (d.username && d.chatId) {
+              const username = d.username.replace(/^@/, "").toLowerCase();
+              dialogMap.set(username, d.chatId);
+            }
+          }
+        } catch {
+          // 单个账号失败不影响其他账号
+          continue;
+        }
+      }
+
+      if (dialogMap.size === 0) {
+        return { success: false, message: "引擎未返回任何群组数据，请确认监控账号正在运行", updated: 0, total: 0, scanned: 0 };
+      }
+
+      // 查询所有公共群组，逐条匹配并回写 realId
+      const allGroups = await db
+        .select({ id: publicMonitorGroups.id, groupId: publicMonitorGroups.groupId })
+        .from(publicMonitorGroups);
+
+      let updated = 0;
+      for (const group of allGroups) {
+        // groupId 可能是 username（如 enjoysearch）或带 @ 前缀
+        const normalizedGroupId = group.groupId.replace(/^@/, "").toLowerCase();
+        const chatId = dialogMap.get(normalizedGroupId);
+        if (chatId) {
+          await db
+            .update(publicMonitorGroups)
+            .set({ realId: chatId })
+            .where(eq(publicMonitorGroups.id, group.id));
+          updated++;
+        }
+      }
+
+      return {
+        success: true,
+        message: `同步完成：共扫描 ${dialogMap.size} 个群组，成功回写 ${updated} / ${allGroups.length} 条记录`,
+        updated,
+        total: allGroups.length,
+        scanned: dialogMap.size,
+      };
     }),
 });

@@ -23,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, XCircle, Users, Eye, ArrowUpFromLine, Zap, Upload, Download, Copy, FileText, File, Smartphone, Search, UserPlus, Loader2 } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Globe, CheckCircle2, XCircle, Users, Eye, Zap, Upload, Download, Copy, FileText, File, Smartphone, Search, Loader2, DatabaseZap } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -57,14 +57,6 @@ export default function AdminGroups() {
   const [accountImportStep, setAccountImportStep] = useState<"select" | "choose" | "done">("select");
   const [accountImportResult, setAccountImportResult] = useState<{ added: number; skipped: number } | null>(null);
 
-  // 一键加群状态
-  const [joinGroupDialog, setJoinGroupDialog] = useState(false);
-  const [joinSelectedAccountIds, setJoinSelectedAccountIds] = useState<Set<number>>(new Set());
-  const [joinIntervalMin, setJoinIntervalMin] = useState(30);
-  const [joinIntervalMax, setJoinIntervalMax] = useState(60);
-  const [joinRunning, setJoinRunning] = useState(false);
-  const [joinResult, setJoinResult] = useState<{ joined: number; failed: number; skipped: number; results: Array<{ account_id: number; group_id: string; status: string; reason?: string }> } | null>(null);
-  const [joinProgress, setJoinProgress] = useState<{ current: number; total: number; currentGroup: string } | null>(null);
 
   // 导出状态
   const [onlyActive, setOnlyActive] = useState(true);
@@ -119,13 +111,6 @@ export default function AdminGroups() {
     onError: (err: any) => toast.error('批量导入失败: ' + err.message),
   });
 
-  const distributeGroupsMut = trpc.sysConfig.distributeGroups.useMutation({
-    onSuccess: (data) => {
-      toast.success(`按配额分配完成：共分配 ${data.assigned} 条`);
-      refetch();
-    },
-    onError: (err: any) => toast.error("按配额分配失败: " + err.message),
-  });
 
   const removeGroup = trpc.sysConfig.removePublicGroup.useMutation({
     onSuccess: () => {
@@ -143,63 +128,19 @@ export default function AdminGroups() {
     onError: (e: { message: string }) => toast.error(e.message),
   });
 
-  const syncPrivate = trpc.sysConfig.syncPrivateToPublic.useMutation({
-    onSuccess: (res: { added: number; skipped: number }) => {
-      utils.sysConfig.getPublicGroups.invalidate();
-      if (res.added > 0) {
-        toast.success(`同步完成：新增 ${res.added} 个群组，跳过 ${res.skipped} 个（已存在）`);
+  // 批量同步群组 realId
+  const syncRealIdsMut = trpc.groupScrape.syncGroupRealIds.useMutation({
+    onSuccess: (res) => {
+      if (res.success) {
+        toast.success(res.message);
       } else {
-        toast.info(`没有新群组需要同步（${res.skipped} 个已存在）`);
+        toast.error(res.message);
       }
     },
-    onError: (e: { message: string }) => toast.error(e.message),
+    onError: (e) => toast.error(e.message),
   });
 
-  const batchJoinMut = trpc.engine.batchJoinGroups.useMutation();
-  const [scanRunning, setScanRunning] = useState(false);
-  const scanJoinedMut = trpc.engine.scanJoinedGroups.useMutation();
-  async function handleScanJoined() {
-    setScanRunning(true);
-    try {
-      const res = await scanJoinedMut.mutateAsync({});
-      toast.success(`扫描已在后台开始（${res.scannedAccounts} 个账号），请 1-2 分钟后刷新页面查看结果`);
-      utils.sysConfig.getPublicGroups.invalidate();
-    } catch (e: any) {
-      toast.error("扫描失败: " + e.message);
-    } finally {
-      setScanRunning(false);
-    }
-  }
 
-  async function handleBatchJoin() {
-    if (joinSelectedAccountIds.size === 0) { toast.error("请至少选择一个账号"); return; }
-    setJoinRunning(true);
-    setJoinResult(null);
-    setJoinProgress({ current: 0, total: 0, currentGroup: '正在连接引擎，执行加群操作...' });
-    try {
-      const res = await batchJoinMut.mutateAsync({
-        accountIds: Array.from(joinSelectedAccountIds),
-        intervalMin: joinIntervalMin,
-        intervalMax: joinIntervalMax,
-      });
-      setJoinProgress(null);
-      setJoinResult(res);
-      toast.success(`加群完成：成功 ${res.joined}，跳过 ${res.skipped}，失败 ${res.failed}`);
-    } catch (e: any) {
-      setJoinProgress(null);
-      toast.error("加群失败: " + e.message);
-    } finally {
-      setJoinRunning(false);
-    }
-  }
-
-  function closeJoinGroupDialog() {
-    setJoinGroupDialog(false);
-    setJoinSelectedAccountIds(new Set());
-    setJoinResult(null);
-    setJoinRunning(false);
-    setJoinProgress(null);
-  }
 
   const triggerSync = trpc.sysConfig.triggerEngineSync.useMutation({
     onSuccess: () => {
@@ -257,7 +198,7 @@ export default function AdminGroups() {
   const inactiveGroups = groups.filter((g: { isActive: boolean }) => !g.isActive);
 
   // 加入状态筛选 & 搜索
-  const [joinFilter, setJoinFilter] = useState<"all" | "joined" | "not_joined" | "failed">("all");
+  const [joinFilter, setJoinFilter] = useState<"all" | "joined" | "not_joined" | "failed" | "assigned" | "invalid">("all");
   const [groupSearch, setGroupSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 50;
@@ -271,9 +212,14 @@ export default function AdminGroups() {
     const accounts: Array<{ accountId: number; accountName: string; status: string }> = g.joinedAccounts || [];
     const isJoined = (s: string) => s === "joined" || s === "subscribed";
     const isFailed = (s: string) => s === "failed" || s === "not_found";
+    const isAssigned = (s: string) => s === "joined" || s === "subscribed" || s === "assigned";
+    const isInvalid = (s: string) => s === "not_found" || s === "invalid" || !s;
+    
     if (joinFilter === "joined") return accounts.some((a: any) => isJoined(a.status));
     if (joinFilter === "failed") return accounts.some((a: any) => isFailed(a.status)) && !accounts.some((a: any) => isJoined(a.status));
     if (joinFilter === "not_joined") return accounts.length === 0 || accounts.every((a: any) => !isJoined(a.status) && !isFailed(a.status));
+    if (joinFilter === "assigned") return accounts.some((a: any) => isAssigned(a.status));
+    if (joinFilter === "invalid") return accounts.every((a: any) => isInvalid(a.status)) || accounts.length === 0;
     return true;
   }), [groups, groupSearch, joinFilter]);
 
@@ -420,19 +366,7 @@ export default function AdminGroups() {
               <RefreshCw className={`w-4 h-4 mr-1 ${isRefetching ? 'animate-spin' : ''}`} />
               刷新
             </Button>
-              <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (confirm("按各 TG 账号剩余配额，将未分配的公共群组分配给账号？")) {
-                  distributeGroupsMut.mutate();
-                }
-              }}
-              disabled={distributeGroupsMut.isPending}
-              className="border-green-500/50 text-green-400 hover:bg-green-500/10"
-            >
-              {distributeGroupsMut.isPending ? "分配中..." : "按配额分配"}
-            </Button>
+
             <Button
               variant="outline"
               size="sm"
@@ -441,19 +375,7 @@ export default function AdminGroups() {
               <Download className="w-4 h-4 mr-1" />
               导出群组链接
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (confirm("将「群组监控」中的所有私有群组一键同步到公共群组池？\n已存在的群组将自动跳过。")) {
-                  syncPrivate.mutate();
-                }
-              }}
-              disabled={syncPrivate.isPending}
-            >
-              <ArrowUpFromLine className="w-4 h-4 mr-1" />
-              {syncPrivate.isPending ? "同步中..." : "同步私有群组"}
-            </Button>
+
             <Button
               variant="outline"
               size="sm"
@@ -464,6 +386,17 @@ export default function AdminGroups() {
               <Zap className="w-4 h-4 mr-1" />
               {triggerSync.isPending ? "同步中..." : "立即同步引擎"}
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => syncRealIdsMut.mutate()}
+              disabled={syncRealIdsMut.isPending}
+              title="从引擎已加入群组中批量回写数字 ID，修复命中记录群组显示为 ID 的问题"
+              className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+            >
+              <DatabaseZap className={`w-4 h-4 mr-1 ${syncRealIdsMut.isPending ? "animate-pulse" : ""}`} />
+              {syncRealIdsMut.isPending ? "同步中..." : "同步群组 ID"}
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setBatchDialog(true)}>
               <Upload className="w-4 h-4 mr-1" />
               批量导入
@@ -472,25 +405,7 @@ export default function AdminGroups() {
               <Smartphone className="w-4 h-4 mr-1" />
               从TG账号导入
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setJoinGroupDialog(true)}
-              className="border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
-            >
-              <UserPlus className="w-4 h-4 mr-1" />
-              一键加群
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleScanJoined}
-              disabled={scanRunning}
-              className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
-            >
-              {scanRunning ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
-              {scanRunning ? "扫描中..." : "重新扫描"}
-            </Button>
+
             <Button size="sm" onClick={() => setAddDialog(true)}>
               <Plus className="w-4 h-4 mr-1" />
               添加群组
@@ -562,8 +477,10 @@ export default function AdminGroups() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">全部</SelectItem>
-                    <SelectItem value="joined">已有账号加入</SelectItem>
+                    <SelectItem value="joined">已加入</SelectItem>
                     <SelectItem value="not_joined">未加入</SelectItem>
+                    <SelectItem value="assigned">已分配</SelectItem>
+                    <SelectItem value="invalid">无效</SelectItem>
                     <SelectItem value="failed">加入失败</SelectItem>
                   </SelectContent>
                 </Select>
@@ -623,10 +540,10 @@ export default function AdminGroups() {
                   <TableRow>
                     <TableHead className="w-10">
                       <Checkbox
-                        checked={groups.length > 0 && selectedIds.length === groups.length}
+                        checked={filteredGroups.length > 0 && selectedIds.length === filteredGroups.length}
                         onCheckedChange={(checked) => {
                           if (checked) {
-                            setSelectedIds(groups.map((g: any) => g.id));
+                            setSelectedIds(filteredGroups.map((g: any) => g.id));
                           } else {
                             setSelectedIds([]);
                           }
@@ -634,6 +551,7 @@ export default function AdminGroups() {
                       />
                     </TableHead>
                     <TableHead>群组 ID</TableHead>
+                    <TableHead>群组用户名</TableHead>
                     <TableHead>群组名称</TableHead>
                     <TableHead>备注</TableHead>
                     <TableHead>状态</TableHead>
@@ -657,8 +575,11 @@ export default function AdminGroups() {
                           }}
                         />
                       </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {group.groupId}
+                      <TableCell className="font-mono text-sm text-foreground">
+                        {group.realId || "-"}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm text-foreground">
+                        {group.groupId ? `@${group.groupId}` : "-"}
                       </TableCell>
                       <TableCell>{group.groupTitle || "-"}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">
@@ -1303,189 +1224,9 @@ export default function AdminGroups() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      {/* 一键加群 Dialog */}
-      <Dialog open={joinGroupDialog} onOpenChange={(open) => { if (!open) closeJoinGroupDialog(); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-orange-400" />
-              一键加群
-            </DialogTitle>
-            <DialogDescription>
-              选择要执行加群的 TG 账号，系统将自动让这些账号加入所有尚未加入的公共群组。
-              加群间隔遵循防封配置，请耐心等待。
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* 加群中进度显示 */}
-          {joinRunning && (
-            <div className="bg-muted/30 rounded-lg p-4 space-y-3">
-              <div className="flex items-center gap-3">
-                <Loader2 className="w-5 h-5 animate-spin text-orange-400 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium">{joinProgress?.currentGroup || '正在执行加群操作...'}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">引擎正在处理，请耐心等待（每次加群间隔 {joinIntervalMin}–{joinIntervalMax} 秒）</p>
-                </div>
-              </div>
-              {/* 连续动画进度条 */}
-              <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                <div className="bg-orange-500 h-1.5 rounded-full animate-[progress-indeterminate_1.5s_ease-in-out_infinite]" style={{ width: '40%', animation: 'indeterminate 1.5s ease-in-out infinite' }} />
-              </div>
-              <style>{`@keyframes indeterminate { 0% { transform: translateX(-100%); width: 40%; } 50% { width: 60%; } 100% { transform: translateX(300%); width: 40%; } }`}</style>
-            </div>
-          )}
-
-          {!joinResult ? (
-            <div className="space-y-4">
-              {/* 账号选择 */}
-              <div>
-                <p className="text-sm font-medium mb-2">选择执行账号（可多选）</p>
-                <div className="max-h-48 overflow-y-auto border border-border rounded-lg divide-y divide-border">
-                  {tgAccounts.length === 0 ? (
-                    <div className="text-center py-4 text-sm text-muted-foreground">暂无可用账号</div>
-                  ) : (
-                    tgAccounts.map((acc: any) => (
-                      <label key={acc.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/50">
-                        <Checkbox
-                          checked={joinSelectedAccountIds.has(acc.id)}
-                          onCheckedChange={(checked) => {
-                            const next = new Set(joinSelectedAccountIds);
-                            if (checked) next.add(acc.id); else next.delete(acc.id);
-                            setJoinSelectedAccountIds(next);
-                          }}
-                          disabled={joinRunning}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{acc.phone || acc.tgUsername || `ID:${acc.id}`}</p>
-                          {acc.tgUsername && <p className="text-xs text-muted-foreground">@{acc.tgUsername}</p>}
-                        </div>
-                        <Badge variant={acc.sessionStatus === 'active' ? 'default' : 'secondary'} className="text-xs shrink-0">
-                          {acc.sessionStatus === 'active' ? '在线' : '离线'}
-                        </Badge>
-                      </label>
-                    ))
-                  )}
-                </div>
-                <div className="flex gap-2 mt-1">
-                  <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setJoinSelectedAccountIds(new Set(tgAccounts.map((a: any) => a.id)))} disabled={joinRunning}>全选</Button>
-                  <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setJoinSelectedAccountIds(new Set())} disabled={joinRunning}>取消全选</Button>
-                  <span className="text-xs text-muted-foreground ml-auto self-center">已选 {joinSelectedAccountIds.size} 个账号</span>
-                </div>
-              </div>
-
-              {/* 加群间隔 */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">最小间隔（秒）</p>
-                  <input
-                    type="number"
-                    min={5}
-                    max={300}
-                    value={joinIntervalMin}
-                    onChange={(e) => setJoinIntervalMin(Number(e.target.value))}
-                    disabled={joinRunning}
-                    className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
-                  />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">最大间隔（秒）</p>
-                  <input
-                    type="number"
-                    min={5}
-                    max={600}
-                    value={joinIntervalMax}
-                    onChange={(e) => setJoinIntervalMax(Number(e.target.value))}
-                    disabled={joinRunning}
-                    className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
-                <p>⚠️ 注意事项：</p>
-                <ul className="mt-1 space-y-1 list-disc list-inside">
-                  <li>已加入的群组将自动跳过，不会重复加入</li>
-                  <li>私密群（邀请链接）需要有效的邀请链接才能加入</li>
-                  <li>加群间隔建议设置 30-60 秒，避免账号被限制</li>
-                  <li>群组数量较多时，此操作可能需要较长时间</li>
-                </ul>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="text-center p-3 bg-green-500/10 rounded-lg">
-                  <p className="text-2xl font-bold text-green-400">{joinResult.joined}</p>
-                  <p className="text-xs text-muted-foreground mt-1">成功加入</p>
-                </div>
-                <div className="text-center p-3 bg-yellow-500/10 rounded-lg">
-                  <p className="text-2xl font-bold text-yellow-400">{joinResult.skipped}</p>
-                  <p className="text-xs text-muted-foreground mt-1">已跳过</p>
-                </div>
-                <div className="text-center p-3 bg-red-500/10 rounded-lg">
-                  <p className="text-2xl font-bold text-red-400">{joinResult.failed}</p>
-                  <p className="text-xs text-muted-foreground mt-1">失败</p>
-                </div>
-              </div>
-              {joinResult.results.length > 0 && (
-                <div className="max-h-48 overflow-y-auto border border-border rounded-lg">
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted/50 sticky top-0">
-                      <tr>
-                        <th className="text-left px-3 py-2">账号</th>
-                        <th className="text-left px-3 py-2">群组</th>
-                        <th className="text-left px-3 py-2">结果</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {joinResult.results.map((r, i) => (
-                        <tr key={i}>
-                          <td className="px-3 py-1.5 text-muted-foreground">
-                            {tgAccounts.find((a: any) => a.id === r.account_id)?.phone || `ID:${r.account_id}`}
-                          </td>
-                          <td className="px-3 py-1.5 font-mono truncate max-w-[120px]">{r.group_id}</td>
-                          <td className="px-3 py-1.5">
-                            {r.status === 'joined' ? (
-                              <span className="text-green-400">✓ 已加入</span>
-                            ) : r.status === 'skipped' ? (
-                              <span className="text-yellow-400">→ 跳过</span>
-                            ) : (
-                              <span className="text-red-400" title={r.reason}>✗ 失败</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          <DialogFooter>
-            {!joinResult ? (
-              <>
-                <Button variant="outline" onClick={closeJoinGroupDialog}>{joinRunning ? '关闭（后台继续）' : '取消'}</Button>
-                <Button
-                  onClick={handleBatchJoin}
-                  disabled={joinRunning || joinSelectedAccountIds.size === 0}
-                  className="bg-orange-500 hover:bg-orange-600 text-white"
-                >
-                  {joinRunning ? (
-                    <><Loader2 className="w-4 h-4 mr-1 animate-spin" />加群中...</>
-                  ) : (
-                    <><UserPlus className="w-4 h-4 mr-1" />开始加群</>
-                  )}
-                </Button>
-              </>
-            ) : (
-              <Button onClick={closeJoinGroupDialog}>关闭</Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       </div>
     </AdminLayout>
   );
 }
+

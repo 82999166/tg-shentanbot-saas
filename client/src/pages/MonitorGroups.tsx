@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Monitor, Plus, Trash2, Play, Pause, Users, Hash, Pencil, RefreshCw, Search, Wifi, WifiOff, Activity } from "lucide-react";
+import { Monitor, Plus, Trash2, Play, Pause, Users, Hash, Pencil, RefreshCw, Search, Wifi, WifiOff, Activity, DatabaseZap } from "lucide-react";
 import { useState, useMemo } from "react";
 
 type TgDialog = {
@@ -94,6 +94,18 @@ export default function MonitorGroups() {
   const toggleMut = trpc.monitorGroups.toggleStatus.useMutation({
     onSuccess: () => utils.monitorGroups.list.invalidate(),
     onError: (err: any) => toast.error(err.message),
+  });
+
+  // 批量同步群组 realId
+  const syncRealIdsMut = trpc.groupScrape.syncGroupRealIds.useMutation({
+    onSuccess: (res) => {
+      if (res.success) {
+        toast.success(res.message);
+      } else {
+        toast.error(res.message);
+      }
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   // ─── 添加对话框状态 ───────────────────────────────────────────────────────
@@ -241,6 +253,17 @@ export default function MonitorGroups() {
         <div className="flex items-center justify-between mb-4">
           <p className="text-sm text-muted-foreground">配置需要监控的 Telegram 群组</p>
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-border text-xs"
+              onClick={() => syncRealIdsMut.mutate()}
+              disabled={syncRealIdsMut.isPending}
+              title="从引擎已加入群组中批量回写数字 ID，修复命中记录群组显示为 ID 的问题"
+            >
+              <DatabaseZap className={`w-3.5 h-3.5 mr-1.5 ${syncRealIdsMut.isPending ? "animate-pulse" : ""}`} />
+              {syncRealIdsMut.isPending ? "同步中...’" : "同步群组 ID"}
+            </Button>
             <Button size="sm" variant="outline" className="border-border text-xs" onClick={() => setEngineCheckOpen(true)}>
               <Activity className="w-3.5 h-3.5 mr-1.5" /> 引擎状态检测
             </Button>

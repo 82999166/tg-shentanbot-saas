@@ -4,8 +4,11 @@
  * 使用 ENGINE_SECRET 鉴权（非 JWT，引擎专用）
  */
 import { z } from "zod";
+
+// 引擎 HTTP 端口基址（端口 = ENGINE_HTTP_PORT_BASE + accountId），从环境变量读取
+const ENGINE_HTTP_PORT_BASE = parseInt(process.env.ENGINE_HTTP_PORT_BASE || "7100", 10);
 import { publicProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, createMonitorGroup, getAllPlans, countMonitorGroupsByUserId } from "../db";
 import {
   tgAccounts,
   monitorGroups,
@@ -39,6 +42,11 @@ const engineProcedure = publicProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+// 用户鉴权 procedure（供前端调用的接口使用）
+const userProcedure = publicProcedure.use(({ ctx, next }) => {
+  if (!ctx.user) throw new TRPCError({ code: "UNAUTHORIZED", message: "请先登录" });
+  return next({ ctx: { ...ctx, user: ctx.user } });
+});
 export const engineRouter = router({
   // ── 获取完整监控配置 ─────────────────────────────────────
   config: engineRouter_config(),
@@ -63,10 +71,31 @@ export const engineRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-      await db.insert(hitRecords).values({
+      // 动态解析 monitorGroupId：先按 groupId 字段匹配，再按 realId 字段匹配
+      let resolvedMonitorGroupId = 0;
+      const normalizedGroupId = String(input.tgGroupId).replace(/^@/, "");
+      const groupByGroupId = await db
+        .select({ id: publicMonitorGroups.id })
+        .from(publicMonitorGroups)
+        .where(eq(publicMonitorGroups.groupId, normalizedGroupId))
+        .limit(1);
+      if (groupByGroupId.length > 0) {
+        resolvedMonitorGroupId = groupByGroupId[0].id;
+      } else {
+        const groupByRealId = await db
+          .select({ id: publicMonitorGroups.id })
+          .from(publicMonitorGroups)
+          .where(eq(publicMonitorGroups.realId, normalizedGroupId))
+          .limit(1);
+        if (groupByRealId.length > 0) {
+          resolvedMonitorGroupId = groupByRealId[0].id;
+        }
+      }
+
+      const result = await db.insert(hitRecords).values({
         userId: input.userId,
         tgAccountId: input.monitorAccountId,
-        monitorGroupId: 0,
+        monitorGroupId: resolvedMonitorGroupId,
         keywordId: 0,
         senderTgId: input.senderTgId,
         senderUsername: input.senderUsername || null,
@@ -78,7 +107,7 @@ export const engineRouter = router({
         messageDate: new Date(),
       });
 
-      return { success: true };
+      return { success: true, id: Number((result[0] as any).insertId) };
     }),
 
   // ── 获取待发私信队列 ─────────────────────────────────────
@@ -1729,6 +1758,119 @@ export const engineRouter = router({
       }
       return result;
     }),
+
+  // ── 导入群组：调用引擎 HTTP 接口加群，成功后写入 monitorGroups 表 ─────────────────
+  importGroup: userProcedure
+    .input(z.object({
+      tgAccountId: z.number(),
+      groupInput: z.string().min(1, "群组链接或用户名不能为空"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库不可用" });
+
+      // 检查套餐配额（管理员不受限）
+      if (ctx.user.role !== "admin") {
+        const plans = await getAllPlans();
+        const userPlan = plans.find((p: any) => p.id === ctx.user.planId) ?? plans.find((p: any) => p.id === "free");
+        const count = await countMonitorGroupsByUserId(ctx.user.id);
+        if (userPlan && count >= (userPlan as any).maxMonitorGroups) {
+          throw new TRPCError({ code: "FORBIDDEN", message: `当前套餐最多支持 ${(userPlan as any).maxMonitorGroups} 个监控群组，请升级套餐` });
+        }
+      }
+
+      // 调用引擎 HTTP 接口加群（端口 = ENGINE_HTTP_PORT_BASE + accountId）
+      const engineHttpPort = ENGINE_HTTP_PORT_BASE + input.tgAccountId;
+      const engineHttpUrl = `http://127.0.0.1:${engineHttpPort}/join-group`;
+      let joinResult: any = null;
+      try {
+        const resp = await fetch(engineHttpUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ group: input.groupInput }),
+          // @ts-ignore
+          signal: AbortSignal.timeout(30000),
+        });
+        joinResult = await resp.json();
+      } catch (e: any) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `引擎加群接口调用失败：${e.message}` });
+      }
+
+      if (!joinResult?.success) {
+        const errMsg = joinResult?.error || "加群失败";
+        if (joinResult?.floodWait) {
+          throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: `请求过于频繁，请 ${joinResult.floodWait} 秒后重试` });
+        }
+        throw new TRPCError({ code: "BAD_REQUEST", message: errMsg });
+      }
+
+      // 加群成功，写入 monitorGroups 表
+      const chatId = joinResult.chatId;
+      const chatTitle = joinResult.chatTitle || input.groupInput;
+      const chatUsername = joinResult.chatUsername || "";
+      const memberCount = joinResult.memberCount || null;
+
+      // 检查是否已存在（防止重复添加）
+      const existing = await db.select({ id: monitorGroups.id })
+        .from(monitorGroups)
+        .where(and(
+          eq(monitorGroups.userId, ctx.user.id),
+          eq(monitorGroups.tgAccountId, input.tgAccountId),
+          eq(monitorGroups.groupId, chatId),
+        ))
+        .limit(1);
+
+      let monitorGroupId: number;
+      if (existing.length > 0) {
+        monitorGroupId = existing[0].id;
+        await db.update(monitorGroups)
+          .set({ groupTitle: chatTitle, groupUsername: chatUsername, memberCount, isActive: true, monitorStatus: "active", updatedAt: new Date() })
+          .where(eq(monitorGroups.id, monitorGroupId));
+      } else {
+        monitorGroupId = await createMonitorGroup({
+          userId: ctx.user.id,
+          tgAccountId: input.tgAccountId,
+          groupId: chatId,
+          groupTitle: chatTitle,
+          groupUsername: chatUsername,
+          groupType: "supergroup",
+          memberCount,
+          keywordIds: [],
+          monitorStatus: "active",
+        });
+      }
+
+      return {
+        success: true,
+        alreadyJoined: joinResult.alreadyJoined || false,
+        monitorGroupId,
+        chatId,
+        chatTitle,
+        chatUsername,
+        memberCount,
+        message: joinResult.alreadyJoined ? "账号已在该群组中，已添加到监控列表" : "加群成功，已开始实时监控",
+      };
+    }),
+
+  // ── 获取账号已加入的群组列表（来自引擎 HTTP 接口）─────────────────────────────
+  getAccountDialogs: userProcedure
+    .input(z.object({ tgAccountId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const engineHttpPort = ENGINE_HTTP_PORT_BASE + input.tgAccountId;
+      const engineHttpUrl = `http://127.0.0.1:${engineHttpPort}/dialogs`;
+      try {
+        const resp = await fetch(engineHttpUrl, {
+          // @ts-ignore
+          signal: AbortSignal.timeout(60000),
+        });
+        const data = await resp.json() as any;
+        return { success: true, groups: data.groups || [], count: data.count || 0 };
+      } catch (e: any) {
+        return { success: false, groups: [], count: 0, error: e.message };
+      }
+    }),
+
+
 });
 
 // ── 配置查询（独立函数，避免循环引用） ──────────────────────────────────────────────────────────────

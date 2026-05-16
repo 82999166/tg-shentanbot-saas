@@ -38,6 +38,7 @@ import PushSettings from "./pages/PushSettings";
 import AdminUsers from "./pages/AdminUsers";
 import AdminChangePassword from "./pages/AdminChangePassword";
 import GroupScrape from "./pages/GroupScrape";
+import AdminDashboard from "./pages/AdminDashboard";
 
 function Router() {
   return (
@@ -82,6 +83,7 @@ function Router() {
       <Route path={"/admin-redeem-codes"} component={RedeemCodes} />
       <Route path={"/admin-group-scrape"} component={GroupScrape} />
       <Route path={"/admin-join-config"} component={JoinConfig} />
+      <Route path={"/admin-dashboard"} component={AdminDashboard} />
       <Route path={"/login"} component={Login} />
       <Route path={"/register"} component={Register} />
       <Route path={"/verify-email"} component={VerifyEmail} />

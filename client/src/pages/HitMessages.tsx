@@ -74,20 +74,21 @@ export default function HitMessages() {
   const utils = trpc.useUtils();
 
   const [location] = useLocation();
-  const isAdmin = location.startsWith("/admin") || user?.role === "admin";
+  const isAdmin = user?.role === "admin";
   // 管理员使用 adminList 查全平台数据，普通用户使用 list 查自己的数据
-  const { data: adminData, isLoading: adminLoading, isRefetching: adminRefetching, refetch: adminRefetch } = trpc.hitMessages.adminList.useQuery({
+  const { data: adminData, isLoading: adminLoading, isRefetching: adminRefetching, refetch: adminRefetch, error: adminError } = trpc.hitMessages.adminList.useQuery({
     page,
     pageSize: 20,
     isProcessed: filterProcessed === "all" ? undefined : filterProcessed === "processed",
-  }, { enabled: isAdmin });
+  }, { enabled: !!user && isAdmin, retry: false });
   const { data: userData, isLoading: userLoading, isRefetching: userRefetching, refetch: userRefetch } = trpc.hitMessages.list.useQuery({
     page,
     pageSize: 20,
     isProcessed: filterProcessed === "all" ? undefined : filterProcessed === "processed",
-  }, { enabled: !isAdmin });
+  }, { enabled: !!user && !isAdmin });
   const data = isAdmin ? adminData : userData;
   const isLoading = isAdmin ? adminLoading : userLoading;
+  const queryError = isAdmin ? adminError : null;
   const isRefetching = isAdmin ? adminRefetching : userRefetching;
   const refetch = isAdmin ? adminRefetch : userRefetch;
 
@@ -254,7 +255,13 @@ export default function HitMessages() {
         </CardHeader>
 
         <CardContent className="p-0">
-          {isLoading ? (
+          {!user ? (
+            <div className="text-center py-12 text-muted-foreground">正在验证身份...</div>
+          ) : queryError ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <p className="text-red-500">加载失败：{(queryError as any)?.message || '权限不足或服务异常'}</p>
+            </div>
+          ) : isLoading ? (
             <div className="text-center py-12 text-muted-foreground">加载中...</div>
           ) : rows.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">

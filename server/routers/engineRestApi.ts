@@ -297,7 +297,7 @@ export function registerEngineRestRoutes(app: Router) {
       // onDuplicateKeyUpdate: 幂等插入，避免唯一索引冲突
       const result = await db.insert(hitRecords).values({
         userId: input.userId,
-        tgAccountId: input.monitorAccountId || input.accountId || 0,
+        tgAccountId: input.accountId,
         monitorGroupId: resolvedMonitorGroupId,
         keywordId: input.keywordId || 0,
         senderTgId: input.senderTgId,

@@ -492,6 +492,107 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     data = q.data
+
+    # 管理员操作按鈕：直接处理，不需要验证点击者身份
+    if data.startswith("done:") or data.startswith("block:") or data.startswith("delete:") or data.startswith("dm:") or data.startswith("dm_user:"):
+        # 尝试获取 uid（可能为 None），不阻断执行
+        uid = context.user_data.get("user_id") or 0
+        if not uid:
+            try:
+                tg = update.effective_user
+                reg = await api_post("engine.botAutoRegister", {
+                    "tgUserId": str(tg.id),
+                    "tgUsername": tg.username,
+                    "tgFirstName": tg.first_name,
+                    "tgLastName": tg.last_name,
+                })
+                if reg:
+                    uid = reg.get("id", 0)
+                    context.user_data["user_id"] = uid
+            except Exception:
+                pass
+        if data.startswith("done:"):
+            parts = data.split(":")
+            hit_id_str = parts[1] if len(parts) > 1 else "0"
+            try:
+                hit_id = int(hit_id_str)
+                result = await api_post("engine.botMarkProcessed", {"hitRecordId": hit_id, "userId": uid})
+                if result and result.get("success"):
+                    await q.answer("✅ 已标记为已处理", show_alert=False)
+                    try:
+                        original_markup = q.message.reply_markup
+                        if original_markup:
+                            new_rows = []
+                            for row in original_markup.inline_keyboard:
+                                new_row = []
+                                for btn in row:
+                                    cd = getattr(btn, "callback_data", None)
+                                    if cd and cd.startswith("done:"):
+                                        new_row.append(InlineKeyboardButton("✅ 已处理", callback_data=f"done:{hit_id}"))
+                                    else:
+                                        new_row.append(btn)
+                                if new_row:
+                                    new_rows.append(new_row)
+                            await q.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(new_rows))
+                    except Exception:
+                        pass
+                else:
+                    await q.answer("❌ 操作失败，请重试", show_alert=True)
+            except Exception as e:
+                await q.answer(f"❌ 操作失败: {e}", show_alert=True)
+            return
+        elif data.startswith("block:"):
+            parts = data.split(":")
+            sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
+            owner_uid = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else uid
+            try:
+                result = await api_post("engine.botBlockUser", {"userId": owner_uid, "targetTgId": sender_tg_id_str})
+                if result and result.get("success"):
+                    await q.answer(f"🚫 已屏蔽用户 {sender_tg_id_str}", show_alert=True)
+                else:
+                    await q.answer("❌ 屏蔽失败，请重试", show_alert=True)
+            except Exception as e:
+                await q.answer(f"❌ 操作失败: {e}", show_alert=True)
+            return
+        elif data.startswith("delete:"):
+            parts = data.split(":")
+            hit_id_str = parts[1] if len(parts) > 1 else "0"
+            try:
+                hit_id = int(hit_id_str)
+                result = await api_post("engine.botDeleteHit", {"hitRecordId": hit_id, "userId": uid})
+                if result and result.get("success"):
+                    await q.answer("🗑️ 记录已删除", show_alert=False)
+                    try:
+                        await q.message.delete()
+                    except Exception:
+                        await q.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🗑️ 已删除", callback_data="noop")]]))
+                else:
+                    await q.answer("❌ 删除失败，请重试", show_alert=True)
+            except Exception as e:
+                await q.answer(f"❌ 操作失败: {e}", show_alert=True)
+            return
+        elif data.startswith("dm:") or data.startswith("dm_user:"):
+            parts = data.split(":")
+            sender_tg_id_str = parts[2] if len(parts) > 2 else "0"
+            await q.answer()
+            try:
+                if sender_tg_id_str and sender_tg_id_str.isdigit() and int(sender_tg_id_str) > 0:
+                    orig_text = q.message.text or q.message.caption or ""
+                    dm_link = f'<a href="tg://user?id={sender_tg_id_str}">💬 点此发起私聊</a>'
+                    if "点此发起私聊" not in orig_text:
+                        new_text = dm_link + "\n" + orig_text
+                    else:
+                        new_text = orig_text
+                    try:
+                        await q.message.edit_text(text=new_text, parse_mode="HTML", reply_markup=q.message.reply_markup)
+                    except Exception:
+                        pass
+                else:
+                    await q.answer("该用户未设置用户名且隐藏了身份，无法发起私聊", show_alert=True)
+            except Exception:
+                pass
+            return
+
     uid = await ensure_user(update, context)
     if not uid:
         await q.answer()

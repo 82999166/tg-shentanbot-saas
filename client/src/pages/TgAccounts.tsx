@@ -830,6 +830,7 @@ export default function TgAccounts() {
                 <TabsTrigger value="info" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">基本信息</TabsTrigger>
                 <TabsTrigger value="groups" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">已加入群组</TabsTrigger>
                 <TabsTrigger value="pending" className="data-[state=active]:bg-yellow-600 data-[state=active]:text-white">待加入群组</TabsTrigger>
+                <TabsTrigger value="monitor" className="data-[state=active]:bg-green-600 data-[state=active]:text-white">导入监控群组</TabsTrigger>
                 <TabsTrigger value="joinconfig" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white" onClick={() => {
                   if (!joinCfgLoaded && joinConfig) {
                     setJoinCfgMin(joinConfig.joinIntervalMin);
@@ -917,6 +918,10 @@ export default function TgAccounts() {
                 <AccountPendingGroupsTab accountId={editAccount.id} />
               </TabsContent>
 
+              {/* ── 导入监控群组 Tab ── */}
+              <TabsContent value="monitor" className="flex-1 flex flex-col min-h-0">
+                <AccountMonitorGroupsTab accountId={editAccount.id} />
+              </TabsContent>
               {/* ── 加群配置 Tab ── */}
               <TabsContent value="joinconfig" className="flex-1 overflow-y-auto">
                 <div className="space-y-4 py-2">
@@ -1419,3 +1424,140 @@ function AccountPendingGroupsTab({ accountId }: { accountId: number }) {
     </div>
   );
 }
+
+// ─── 导入监控群组 Tab 组件 ──────────────────────────────────────────────────────
+function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
+  const [groupInput, setGroupInput] = useState("");
+  const [joining, setJoining] = useState(false);
+  const [search, setSearch] = useState("");
+  const { data: monitorData, isLoading, refetch: refetchMonitor } = trpc.monitorGroups.list.useQuery();
+  const importGroup = trpc.engine.importGroup.useMutation();
+  const deleteGroup = trpc.monitorGroups.delete.useMutation();
+
+  // 只显示当前账号的监控群组
+  const myGroups = (monitorData ?? []).filter((g: any) => g.tgAccountId === accountId);
+  const filtered = myGroups.filter((g: any) => {
+    const kw = search.toLowerCase();
+    return !kw || (g.groupTitle || "").toLowerCase().includes(kw) || (g.groupId || "").toLowerCase().includes(kw);
+  });
+
+  const handleJoin = async () => {
+    if (!groupInput.trim()) return;
+    setJoining(true);
+    try {
+      const res = await importGroup.mutateAsync({ tgAccountId: accountId, groupInput: groupInput.trim() });
+      toast.success(res.message);
+      setGroupInput("");
+      refetchMonitor();
+    } catch (e: any) {
+      toast.error(e.message ?? "加群失败");
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteGroup.mutateAsync({ id });
+      toast.success("已移除监控群组");
+      refetchMonitor();
+    } catch (e: any) {
+      toast.error(e.message ?? "删除失败");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 py-2 h-full">
+      {/* 说明 */}
+      <div className="p-3 bg-green-900/20 border border-green-700/40 rounded-lg text-xs text-green-300">
+        <strong>实时监控模式</strong>：输入群组链接或用户名，账号将自动加入并开始实时监控（延迟 &lt;1 秒）。
+        支持格式：<code>@groupname</code>、<code>https://t.me/groupname</code>、<code>https://t.me/+invitelink</code>
+      </div>
+      {/* 输入框 + 按钮 */}
+      <div className="flex gap-2 shrink-0">
+        <Input
+          placeholder="输入群组链接或用户名..."
+          value={groupInput}
+          onChange={(e) => setGroupInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && !joining && handleJoin()}
+          className="bg-slate-800 border-slate-600 text-white placeholder-slate-500 flex-1"
+        />
+        <Button
+          onClick={handleJoin}
+          disabled={joining || !groupInput.trim()}
+          className="bg-green-600 hover:bg-green-700 shrink-0"
+        >
+          {joining ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <PackagePlus className="w-4 h-4 mr-1" />}
+          加群并监控
+        </Button>
+      </div>
+      {/* 搜索 + 统计 */}
+      <div className="flex items-center gap-2 shrink-0">
+        <Input
+          placeholder="搜索已监控群组..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="bg-slate-800 border-slate-600 text-white placeholder-slate-500 h-8 text-sm flex-1"
+        />
+        <span className="text-xs text-slate-400 shrink-0">
+          共 <span className="text-white font-bold">{myGroups.length}</span> 个
+        </span>
+      </div>
+      {/* 列表 */}
+      <div className="flex-1 overflow-y-auto min-h-0 rounded border border-slate-700">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="w-5 h-5 animate-spin text-blue-400 mr-2" />
+            <span className="text-slate-400 text-sm">加载中...</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-slate-500 text-sm">
+            <Shield className="w-8 h-8 mb-2 opacity-40" />
+            {search ? "没有匹配的群组" : "暂无监控群组，请在上方输入群组链接添加"}
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-slate-800 text-slate-400 text-xs">
+              <tr>
+                <th className="text-left px-3 py-2">群组</th>
+                <th className="text-left px-3 py-2 w-20">状态</th>
+                <th className="text-center px-3 py-2 w-16">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((g: any) => (
+                <tr key={g.id} className="border-t border-slate-700/50 hover:bg-slate-800/50">
+                  <td className="px-3 py-2">
+                    <div className="font-medium text-white truncate max-w-[220px]" title={g.groupTitle}>{g.groupTitle || g.groupId}</div>
+                    <div className="text-slate-500 text-xs">{g.groupId}</div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                      g.monitorStatus === "active" ? "bg-green-900/50 text-green-300" :
+                      g.monitorStatus === "paused" ? "bg-yellow-900/50 text-yellow-300" :
+                      "bg-red-900/50 text-red-300"
+                    }`}>
+                      {g.monitorStatus === "active" ? "监控中" : g.monitorStatus === "paused" ? "已暂停" : "异常"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="w-6 h-6 text-slate-400 hover:text-red-400"
+                      title="移除监控"
+                      onClick={() => handleDelete(g.id)}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
