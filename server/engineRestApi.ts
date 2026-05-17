@@ -225,6 +225,7 @@ export function registerEngineRestRoutes(app: Router) {
       return res.json({
         accounts: accounts.map((a) => ({
           id: a.id,
+          phone: a.phone,
           userId: a.userId,
           sessionString: a.sessionString,
           isActive: a.isActive,

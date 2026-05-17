@@ -1,0 +1,23 @@
+[Unit]
+Description=神探监控引擎 v5.0 (TDLib) - Master
+After=network.target
+Wants=shentanbot-login.service
+
+[Service]
+Type=simple
+User=hjroot
+Group=hjroot
+WorkingDirectory=/home/hjroot/shentanbot/engine
+ExecStart=/usr/bin/python3 main.py --master
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/hjroot/shentanbot/engine/logs/master.log
+StandardError=append:/home/hjroot/shentanbot/engine/logs/master.log
+Environment=PYTHONUNBUFFERED=1
+
+# 资源限制
+LimitNOFILE=65536
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target

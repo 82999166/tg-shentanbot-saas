@@ -1,0 +1,18 @@
+[Unit]
+Description=神探监控引擎 - TDLib 登录服务
+After=network.target
+
+[Service]
+Type=simple
+User=hjroot
+Group=hjroot
+WorkingDirectory=/home/hjroot/shentanbot/engine
+ExecStart=/usr/bin/python3 login_service.py
+Restart=always
+RestartSec=3
+StandardOutput=append:/home/hjroot/shentanbot/engine/logs/login_service.log
+StandardError=append:/home/hjroot/shentanbot/engine/logs/login_service.log
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
