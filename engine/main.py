@@ -256,8 +256,14 @@ class AccountWorker:
 
             # 3. 初始同步全量对话到缓存
             logger.info(f"[Account {self.account_id}] 正在同步全量对话缓存...")
-            async for dialog in self.client.get_dialogs(limit=0):
-                await self._update_cache_from_chat(dialog.chat)
+            try:
+                async for dialog in self.client.get_dialogs(limit=0):
+                    try:
+                        await self._update_cache_from_chat(dialog.chat)
+                    except Exception as e:
+                        logger.warning(f"[Account {self.account_id}] 缓存单个对话失败: {e}")
+            except Exception as e:
+                logger.warning(f"[Account {self.account_id}] get_dialogs遍历中断: {e}，已缓存 {len(self._dialog_cache)} 个对话，继续启动")
             logger.info(f"[Account {self.account_id}] 缓存同步完成，共 {len(self._dialog_cache)} 个对话")
 
             await self._start_http_server()
