@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
 """
-神探监控机器人 - 引擎 v4.1 (重构版)
-重构重点：
+神探监控机器人 - 引擎 v4.2 (架构加固版)
+v4.2 变更：
 1. 对话内存缓存 (Dialog Cache)：启动时同步，监听 Update 实时更新。
 2. 零延迟 API：/dialogs 接口直接返回缓存，不请求 Telegram。
 3. 稳定性增强：处理加群/退群事件，确保缓存与实际一致。
+4. [v4.2] PID 文件锁：防止同一账号多次启动。
+5. [v4.2] HTTP 端口冲突自愈：启动前检测并清理旧进程。
+6. [v4.2] 启动失败时完整清理 Pyrogram 客户端，防止僵尸连接。
+7. [v4.2] 缓存 me 信息，避免 on_chat_member_updated 重复网络请求。
+8. [v4.2] 使用 OrderedDict 替代 set 管理已处理消息ID，保证清理顺序。
+9. [v4.2] 添加 /health 端点，支持健康检查。
+10. [v4.2] 添加定时缓存刷新机制，每30分钟增量刷新对话缓存。
 """
 import asyncio
 import json
 import logging
 import os
 import re
+import sys
+import signal
 import time
 import argparse
 import subprocess
+import socket
+from collections import OrderedDict
 from typing import Optional, Dict, List, Any
 
 from aiohttp import web
@@ -40,7 +51,7 @@ from pyrogram.errors import (
 import jieba
 
 # ─── 命令行参数 ──────────────────────────────────────────────
-parser = argparse.ArgumentParser(description="神探监控引擎 v4.1")
+parser = argparse.ArgumentParser(description="神探监控引擎 v4.2")
 parser.add_argument("--account_id", type=int, help="启动特定账号的监控进程")
 parser.add_argument("--master", action="store_true", help="以主控模式启动")
 args = parser.parse_args()
@@ -68,8 +79,13 @@ SESSIONS_DIR    = os.getenv("SESSIONS_DIR", os.path.join(_BASE_DIR, "sessions"))
 HTTP_PORT_BASE  = int(os.getenv("ENGINE_HTTP_PORT_BASE", "7100"))
 POLL_INTERVAL   = int(os.getenv("POLL_INTERVAL", "30"))
 MASTER_CHECK_INTERVAL = int(os.getenv("MASTER_CHECK_INTERVAL", "10"))
+CACHE_REFRESH_INTERVAL = int(os.getenv("CACHE_REFRESH_INTERVAL", "1800"))  # 30分钟刷新缓存
 
 os.makedirs(SESSIONS_DIR, exist_ok=True)
+
+# ─── PID 文件目录 ──────────────────────
+_PID_DIR = os.path.join(_BASE_DIR, "pids")
+os.makedirs(_PID_DIR, exist_ok=True)
 
 # ─── 全局状态 ──────────────────────────────────────────────
 _dedup_cache: Dict[str, float] = {}
@@ -88,6 +104,96 @@ _PM2_ENV = {
     "PM2_HOME": os.getenv("PM2_HOME", "/home/hjroot/.pm2"),
     "PATH": os.getenv("PATH", "/usr/bin:/bin:/home/hjroot/.local/bin"),
 }
+
+# ─── PID 文件管理 ──────────────────
+def _pid_file_path(account_id: int) -> str:
+    return os.path.join(_PID_DIR, f"engine-acc{account_id}.pid")
+
+def _acquire_pid_lock(account_id: int) -> bool:
+    """尝试获取 PID 文件锁。如果已有同账号进程在运行，先尝试清理。
+    返回 True 表示成功获取锁，False 表示失败。
+    """
+    pid_file = _pid_file_path(account_id)
+    if os.path.exists(pid_file):
+        try:
+            with open(pid_file, "r") as f:
+                old_pid = int(f.read().strip())
+            # 检查旧进程是否还在运行
+            os.kill(old_pid, 0)  # 不发送信号，只检查进程是否存在
+            # 旧进程还在运行，尝试优雅终止
+            logger.warning(f"[Account {account_id}] 检测到旧进程 PID={old_pid} 仍在运行，发送 SIGTERM...")
+            os.kill(old_pid, signal.SIGTERM)
+            # 等待最多5秒
+            for _ in range(10):
+                time.sleep(0.5)
+                try:
+                    os.kill(old_pid, 0)
+                except OSError:
+                    break  # 进程已退出
+            else:
+                # 5秒后仍未退出，强制杀掉
+                logger.warning(f"[Account {account_id}] 旧进程 PID={old_pid} 未响应 SIGTERM，发送 SIGKILL...")
+                try:
+                    os.kill(old_pid, signal.SIGKILL)
+                    time.sleep(0.5)
+                except OSError:
+                    pass
+        except (ValueError, OSError):
+            # PID 文件内容无效或进程已不存在，可以安全覆盖
+            pass
+    # 写入当前 PID
+    try:
+        with open(pid_file, "w") as f:
+            f.write(str(os.getpid()))
+        return True
+    except Exception as e:
+        logger.error(f"[Account {account_id}] 无法写入 PID 文件: {e}")
+        return False
+
+def _release_pid_lock(account_id: int):
+    """释放 PID 文件锁"""
+    pid_file = _pid_file_path(account_id)
+    try:
+        if os.path.exists(pid_file):
+            with open(pid_file, "r") as f:
+                stored_pid = int(f.read().strip())
+            if stored_pid == os.getpid():
+                os.remove(pid_file)
+    except Exception:
+        pass
+
+def _check_port_available(port: int) -> bool:
+    """检查端口是否可用"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+def _kill_port_occupant(port: int) -> bool:
+    """尝试杀掉占用指定端口的进程"""
+    try:
+        result = subprocess.run(
+            ["fuser", f"{port}/tcp"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.stdout.strip():
+            pids = result.stdout.strip().split()
+            my_pid = str(os.getpid())
+            for pid in pids:
+                pid = pid.strip()
+                if pid and pid != my_pid:
+                    logger.warning(f"端口 {port} 被 PID={pid} 占用，尝试终止...")
+                    try:
+                        os.kill(int(pid), signal.SIGTERM)
+                    except OSError:
+                        pass
+            time.sleep(1)
+            return _check_port_available(port)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return False
 
 # ─── REST API 客户端 ──────────────
 class ApiClient:
@@ -185,9 +291,14 @@ class AccountWorker:
         self._running = False
         self._http_runner: Optional[web.AppRunner] = None
         self._http_site = None
+        self._me = None  # [v4.2] 缓存 me 信息
+        self._start_time = time.time()
         # 对话缓存: chatId -> { chatId, title, username, memberCount, type }
         self._dialog_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_lock = asyncio.Lock()
+        # [v4.2] 使用 OrderedDict 管理已处理消息ID，保证清理顺序正确
+        self._processed_msg_ids: OrderedDict = OrderedDict()
+        self._processed_msg_ids_max = 10000
 
     async def _update_cache_from_chat(self, chat: Chat):
         """从 Chat 对象更新缓存"""
@@ -208,7 +319,8 @@ class AccountWorker:
     async def start(self):
         if self._running: return
         self._running = True
-        logger.info(f"[Account {self.account_id}] 正在启动客户端...")
+        self._start_time = time.time()
+        logger.info(f"[Account {self.account_id}] 正在启动客户端... (PID={os.getpid()})")
         try:
             self.client = Client(
                 name=f"acc_{self.account_id}",
@@ -217,18 +329,15 @@ class AccountWorker:
                 workdir=SESSIONS_DIR, in_memory=True,
             )
 
-            # ─── 已处理消息ID集合（用于 RawUpdateHandler 去重）───
-            self._processed_msg_ids: set = set()
-            self._processed_msg_ids_max = 10000  # 最多保留1万条，防止内存泄漏
-
             # 1. 实时消息监听（高层 Handler，优先处理）
             @self.client.on_message(filters.group & (filters.incoming | filters.outgoing))
             async def on_message_handler(client, message):
                 # 标记为已处理，防止 RawUpdateHandler 重复处理
-                self._processed_msg_ids.add((message.chat.id, message.id))
-                if len(self._processed_msg_ids) > self._processed_msg_ids_max:
-                    # 清理旧记录，保留最近的一半
-                    self._processed_msg_ids = set(list(self._processed_msg_ids)[self._processed_msg_ids_max // 2:])
+                msg_key = (message.chat.id, message.id)
+                self._processed_msg_ids[msg_key] = True
+                # [v4.2] OrderedDict 清理：删除最旧的条目
+                while len(self._processed_msg_ids) > self._processed_msg_ids_max:
+                    self._processed_msg_ids.popitem(last=False)
                 await self._process_message(message)
 
             # 1b. Monkey-patch dispatcher 的 handler_worker，确保 parser 异常时消息不丢失
@@ -237,13 +346,14 @@ class AccountWorker:
             # 2. 实时对话状态监听 (加群/退群/信息变更)
             @self.client.on_chat_member_updated()
             async def on_chat_member_updated_handler(client, update):
-                # 如果是我们自己(me)加入了新群
-                me = await client.get_me()
-                if update.new_chat_member and update.new_chat_member.user.id == me.id:
+                # [v4.2] 使用缓存的 me 信息，避免每次都发网络请求
+                if not self._me:
+                    self._me = await client.get_me()
+                me_id = self._me.id
+                if update.new_chat_member and update.new_chat_member.user.id == me_id:
                     logger.info(f"[Account {self.account_id}] 检测到加入新群组: {update.chat.title}")
                     await self._update_cache_from_chat(update.chat)
-                # 如果是我们退出了群
-                elif update.old_chat_member and update.old_chat_member.user.id == me.id and not update.new_chat_member:
+                elif update.old_chat_member and update.old_chat_member.user.id == me_id and not update.new_chat_member:
                     cid = str(update.chat.id)
                     async with self._cache_lock:
                         if cid in self._dialog_cache:
@@ -251,8 +361,8 @@ class AccountWorker:
                             logger.info(f"[Account {self.account_id}] 检测到退出群组，移除缓存: {update.chat.title}")
 
             await self.client.start()
-            me = await self.client.get_me()
-            logger.info(f"[Account {self.account_id}] 客户端启动成功: @{me.username or me.id}")
+            self._me = await self.client.get_me()
+            logger.info(f"[Account {self.account_id}] 客户端启动成功: @{self._me.username or self._me.id}")
 
             # 3. 初始同步全量对话到缓存
             logger.info(f"[Account {self.account_id}] 正在同步全量对话缓存...")
@@ -266,18 +376,68 @@ class AccountWorker:
                 logger.warning(f"[Account {self.account_id}] get_dialogs遍历中断: {e}，已缓存 {len(self._dialog_cache)} 个对话，继续启动")
             logger.info(f"[Account {self.account_id}] 缓存同步完成，共 {len(self._dialog_cache)} 个对话")
 
-            await self._start_http_server()
+            # 4. [v4.2] 启动 HTTP 服务器（带端口冲突自愈）
+            await self._start_http_server_safe()
+
+            # 5. [v4.2] 启动定时缓存刷新任务
+            asyncio.create_task(self._periodic_cache_refresh())
+
         except Exception as e:
             logger.error(f"[Account {self.account_id}] 启动失败: {e}", exc_info=True)
-            self._running = False
+            # [v4.2] 启动失败时完整清理，防止僵尸连接
+            await self._cleanup_on_failure()
+
+    async def _cleanup_on_failure(self):
+        """启动失败时的完整清理"""
+        self._running = False
+        if self._http_runner:
+            try:
+                await self._http_runner.cleanup()
+            except Exception:
+                pass
+            self._http_runner = None
+        if self.client:
+            try:
+                if self.client.is_connected:
+                    await self.client.stop()
+            except Exception:
+                pass
+            self.client = None
+        logger.info(f"[Account {self.account_id}] 启动失败后已完成清理")
 
     async def stop(self):
         self._running = False
-        if self._http_runner: await self._http_runner.cleanup()
+        if self._http_runner:
+            try:
+                await self._http_runner.cleanup()
+            except Exception:
+                pass
         if self.client:
-            try: await self.client.stop()
-            except: pass
+            try:
+                await self.client.stop()
+            except Exception:
+                pass
+        _release_pid_lock(self.account_id)
         logger.info(f"[Account {self.account_id}] 客户端已停止")
+
+    async def _periodic_cache_refresh(self):
+        """[v4.2] 定时增量刷新对话缓存，确保长时间运行后缓存不过期"""
+        while self._running:
+            await asyncio.sleep(CACHE_REFRESH_INTERVAL)
+            if not self._running or not self.client or not self.client.is_connected:
+                continue
+            try:
+                logger.info(f"[Account {self.account_id}] 定时刷新对话缓存...")
+                count_before = len(self._dialog_cache)
+                async for dialog in self.client.get_dialogs(limit=0):
+                    try:
+                        await self._update_cache_from_chat(dialog.chat)
+                    except Exception:
+                        pass
+                count_after = len(self._dialog_cache)
+                logger.info(f"[Account {self.account_id}] 缓存刷新完成: {count_before} -> {count_after} 个对话")
+            except Exception as e:
+                logger.warning(f"[Account {self.account_id}] 定时缓存刷新失败: {e}")
 
     def _patch_dispatcher(self):
         """Monkey-patch Pyrogram 的 dispatcher.handler_worker，
@@ -356,8 +516,6 @@ class AccountWorker:
                     logging.getLogger(__name__).exception(e)
 
         # 替换所有 handler_worker 任务
-        # 注意：这里不能直接替换已运行的 task，而是替换方法引用
-        # 引擎启动时 dispatcher 还没开始工作，所以直接替换方法即可
         dispatcher.handler_worker = patched_handler_worker
         logger.info(f"[Account {self.account_id}] Dispatcher handler_worker 已补丁，启用消息兜底机制")
 
@@ -383,6 +541,11 @@ class AccountWorker:
                 chat_id = -peer.chat_id
             else:
                 return  # 私聊消息不处理
+
+            # 检查是否已被高层 handler 处理过
+            msg_key = (chat_id, msg.id)
+            if msg_key in self._processed_msg_ids:
+                return
 
             logger.warning(
                 f"[Account {self.account_id}] [RAW_FALLBACK] "
@@ -526,9 +689,27 @@ class AccountWorker:
         }
         await api.report_hit(payload)
 
-    async def _start_http_server(self):
+    async def _start_http_server_safe(self):
+        """[v4.2] 安全启动 HTTP 服务器，带端口冲突自愈"""
         port = HTTP_PORT_BASE + self.account_id
+
+        # 检查端口是否可用
+        if not _check_port_available(port):
+            logger.warning(f"[Account {self.account_id}] 端口 {port} 被占用，尝试清理...")
+            if _kill_port_occupant(port):
+                logger.info(f"[Account {self.account_id}] 端口 {port} 已清理成功")
+            else:
+                # 等待2秒后重试
+                await asyncio.sleep(2)
+                if not _check_port_available(port):
+                    logger.error(f"[Account {self.account_id}] 端口 {port} 仍被占用，HTTP 服务器启动失败。消息监控仍正常运行。")
+                    return  # [v4.2] 不再抛异常，消息监控仍然正常工作
+
+        await self._start_http_server(port)
+
+    async def _start_http_server(self, port: int):
         app = web.Application()
+        app.router.add_get("/health", self._http_health)  # [v4.2] 新增 health 端点
         app.router.add_post("/join-group", self._http_join_group)
         app.router.add_post("/leave-group", self._http_leave_group)
         app.router.add_post("/scrape-members", self._http_scrape_members)
@@ -541,6 +722,19 @@ class AccountWorker:
         self._http_site = web.TCPSite(self._http_runner, "127.0.0.1", port)
         await self._http_site.start()
         logger.info(f"[Account {self.account_id}] HTTP 服务已启动，端口: {port}")
+
+    async def _http_health(self, request: web.Request) -> web.Response:
+        """[v4.2] 健康检查端点"""
+        uptime = int(time.time() - self._start_time)
+        return web.json_response({
+            "status": "ok",
+            "accountId": self.account_id,
+            "connected": self.client and self.client.is_connected,
+            "cacheSize": len(self._dialog_cache),
+            "uptime": uptime,
+            "version": "v4.2",
+            "pid": os.getpid(),
+        })
 
     async def _http_join_group(self, request: web.Request) -> web.Response:
         try:
@@ -605,7 +799,14 @@ class AccountWorker:
 
     async def _http_status(self, request: web.Request) -> web.Response:
         async with _config_lock: cfg = dict(_monitor_config)
-        return web.json_response({"accountId": self.account_id, "connected": self.client and self.client.is_connected, "cacheSize": len(self._dialog_cache), "version": "v4.1"})
+        return web.json_response({
+            "accountId": self.account_id,
+            "connected": self.client and self.client.is_connected,
+            "cacheSize": len(self._dialog_cache),
+            "version": "v4.2",
+            "pid": os.getpid(),
+            "uptime": int(time.time() - self._start_time),
+        })
 
     async def _http_check_group_health(self, request: web.Request) -> web.Response:
         try:
@@ -622,14 +823,14 @@ class AccountWorker:
 
 # ─── 主控模式 ──────────────────────────────────
 async def master_loop():
-    logger.info("神探监控主控模式 v4.1 启动...")
+    logger.info("神探监控主控模式 v4.2 启动...")
     script_path = os.path.abspath(__file__)
     while True:
         try:
             config = await api.fetch_config()
             if config:
                 accounts = config.get("accounts", [])
-                await api.report_heartbeat({"activeAccounts": len(accounts), "version": "v4.1"})
+                await api.report_heartbeat({"activeAccounts": len(accounts), "version": "v4.2"})
                 jlist_result = subprocess.run([_NODE_BIN, _PM2_SCRIPT, "jlist"], capture_output=True, text=True, env=_PM2_ENV)
                 running_names = {p.get("name") for p in json.loads(jlist_result.stdout)} if jlist_result.returncode == 0 else set()
                 expected_names = {f"神探-引擎-Acc{acc.get('id')}" for acc in accounts if acc.get('id')}
@@ -645,6 +846,11 @@ async def master_loop():
         except Exception as e: logger.error(f"主控异常: {e}"); await asyncio.sleep(5)
 
 async def account_worker_main(account_id: int):
+    # [v4.2] PID 文件锁：防止同一账号多次启动
+    if not _acquire_pid_lock(account_id):
+        logger.error(f"[Account {account_id}] 无法获取 PID 锁，退出")
+        return
+
     async def config_sync():
         global _monitor_config
         while True:
@@ -659,12 +865,18 @@ async def account_worker_main(account_id: int):
         await asyncio.sleep(5)
         async with _config_lock:
             if _monitor_config: break
-    else: return
+    else:
+        _release_pid_lock(account_id)
+        return
     acc_data = next((a for a in _monitor_config.get("accounts", []) if a["id"] == account_id), None)
-    if not acc_data: return
+    if not acc_data:
+        _release_pid_lock(account_id)
+        return
     worker = AccountWorker(acc_data["id"], acc_data.get("phone", ""), acc_data["sessionString"])
     await worker.start()
     if worker._running: await idle()
+    # 清理
+    _release_pid_lock(account_id)
 
 async def main():
     if args.master: await master_loop()
