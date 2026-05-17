@@ -580,29 +580,55 @@ export const tgAccountsRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       // 直接从账号引擎 HTTP 接口获取（端口 = 7100 + accountId）
-      // 引擎不在线则快速报错，不做降级等待
       const engineHttpPort = ENGINE_HTTP_PORT_BASE + input.id;
       const engineHttpUrl = `http://127.0.0.1:${engineHttpPort}/dialogs`;
-      let resp: Response;
-      try {
-        resp = await fetch(engineHttpUrl);
-        // 不设置超时，以引擎返回结果为准（网络慢或TG响应慢时也能正常获取）
-      } catch (e: any) {
+
+      // 轮询策略：首次请求触发后台加载，然后每 3 秒重试，最多等待 90 秒
+      const MAX_WAIT_MS = 90_000;
+      const POLL_INTERVAL_MS = 3_000;
+      const startTime = Date.now();
+      let lastData: any = null;
+
+      while (Date.now() - startTime < MAX_WAIT_MS) {
+        let resp: Response;
+        try {
+          resp = await fetch(engineHttpUrl);
+        } catch (e: any) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `账号引擎未运行（端口 ${engineHttpPort}），请先在引擎管理中启动该账号`,
+          });
+        }
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({})) as any;
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: errData.error || `引擎响应 ${resp.status}`,
+          });
+        }
+        const data = await resp.json() as any;
+        lastData = data;
+
+        // 如果没有 pending 或已有足够数据，直接返回
+        if (!data.pending || data.pending === 0) {
+          break;
+        }
+        // 如果已有部分数据且等待超过 30 秒，返回已有的（避免前端超时）
+        if ((data.dialogs?.length || 0) > 0 && Date.now() - startTime > 30_000) {
+          break;
+        }
+        // 等待后重试
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+      }
+
+      if (!lastData) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: `账号引擎未运行（端口 ${engineHttpPort}），请先在引擎管理中启动该账号`,
+          message: '获取群组列表超时',
         });
       }
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({})) as any;
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: errData.error || `引擎响应 ${resp.status}`,
-        });
-      }
-      const data = await resp.json() as any;
-      // /dialogs 返回格式：{ dialogs: [...], total: N }
-      const rawList = data.dialogs ?? data.groups ?? [];
+
+      const rawList = lastData.dialogs ?? lastData.groups ?? [];
       const chats = rawList.map((g: any) => ({
         chatId: g.chatId || String(g.id || ''),
         title: g.title || '',
@@ -610,7 +636,13 @@ export const tgAccountsRouter = router({
         type: g.type || 'supergroup',
         memberCount: g.memberCount || 0,
       }));
-      return { success: true, chats, total: data.total ?? data.count ?? chats.length, source: 'engine' };
+      return {
+        success: true,
+        chats,
+        total: lastData.total ?? lastData.count ?? chats.length,
+        pending: lastData.pending || 0,
+        source: 'engine',
+      };
     }),
   // ─── 批量导入群组到公共群组池 ──────────────────────────────────────────────
   importChatsToPublic: adminProcedure
