@@ -19,10 +19,10 @@ import { systemSettings, tgAccounts, users, monitorGroups, publicMonitorGroups, 
 import { sql, eq, desc, count, inArray } from "drizzle-orm";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 
-// ─── Pyrogram 登录服务地址（本地 Python HTTP 服务）─────────────────────────
+// ─── TDLib 登录服务地址（本地 Python HTTP 服务）─────────────────────────
 const LOGIN_SERVICE_URL = process.env.LOGIN_SERVICE_URL ?? "http://127.0.0.1:7002";
 
-// ─── 调用 Pyrogram 登录服务的辅助函数（使用内置 http 模块）──────────────────
+// ─── 调用 TDLib 登录服务的辅助函数（使用内置 http 模块）──────────────────
 function callLoginService(path: string, body: Record<string, any>): Promise<any> {
   return new Promise((resolve, reject) => {
     const url = new URL(`${LOGIN_SERVICE_URL}${path}`);
@@ -228,10 +228,17 @@ export const tgAccountsRouter = router({
         return { success: true, needs2FA: true, message: "该账号已开启二步验证，请输入密码" };
       }
 
-      // 登录成功，保存 Pyrofork session_string
+      // 登录成功，保存 TDLib session 标记
       const sessionVal = data.session_string ?? "";
       if (!sessionVal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "登录服务未返回 session_string" });
-      return await saveAccount(ctx.user, phone, sessionVal);
+      const result = await saveAccount(ctx.user, phone, sessionVal);
+      // TDLib: 将登录 session 移动到正式账号目录
+      try {
+        await callLoginService("/finalize_login", { phone, account_id: result.accountId });
+      } catch (e) {
+        console.error("[verifyCode] finalize_login failed:", e);
+      }
+      return result;
     }),
 
   // ─── 手机号登录：第三步 - 二步验证密码──────────────────────────────────
@@ -247,10 +254,17 @@ export const tgAccountsRouter = router({
         password: input.password,
       });
 
-      // 二步验证成功，保存 Pyrofork session_string
+      // 二步验证成功，保存 TDLib session 标记
       const sessionVal = data.session_string ?? "";
       if (!sessionVal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "登录服务未返回 session_string" });
-      return await saveAccount(ctx.user, phone, sessionVal);
+      const result = await saveAccount(ctx.user, phone, sessionVal);
+      // TDLib: 将登录 session 移动到正式账号目录
+      try {
+        await callLoginService("/finalize_login", { phone, account_id: result.accountId });
+      } catch (e) {
+        console.error("[verify2FA] finalize_login failed:", e);
+      }
+      return result;
     }),
 
   // ─── Session 批量导入 ─────────────────────────────────────────────────────
@@ -449,15 +463,8 @@ export const tgAccountsRouter = router({
         // 判断 sessionString 类型：
         // - TDLib 模式：sessionString 是文件路径（以 / 开头）
         // - Pyrogram 模式：sessionString 是 base64 session 字符串
-        const isTdlibPath = account.sessionString.startsWith("/");
-        let requestBody: Record<string, string>;
-        if (isTdlibPath) {
-          // TDLib 模式：传 account_id 给 login_service
-          requestBody = { account_id: String(input.id) };
-        } else {
-          // Pyrogram 模式：传 session_string
-          requestBody = { session_string: account.sessionString };
-        }
+        // v5.0: 统一使用 account_id 模式（TDLib 引擎）
+        const requestBody: Record<string, string> = { account_id: String(input.id), phone: account.phone ?? "" };
         const res = await fetch(`${LOGIN_SERVICE_URL}/test_session`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -496,7 +503,7 @@ export const tgAccountsRouter = router({
       if (!account.sessionString) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "账号无有效 Session，请重新登录" });
       }
-      const data = await callLoginService("/get_dialogs", { session_string: account.sessionString });
+      const data = await callLoginService("/get_dialogs", { account_id: String(input.id) });
       return { success: true, dialogs: data.dialogs as Array<{
         id: string;
         title: string;
