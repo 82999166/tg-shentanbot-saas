@@ -601,14 +601,16 @@ export const tgAccountsRouter = router({
         });
       }
       const data = await resp.json() as any;
-      // /dialogs 返回格式：{ success: true, groups: [...], count: N }
-      const chats = (data.groups ?? []).map((g: any) => ({
-        chatId: g.chatId,
+      // /dialogs 返回格式：{ dialogs: [...], total: N }
+      const rawList = data.dialogs ?? data.groups ?? [];
+      const chats = rawList.map((g: any) => ({
+        chatId: g.chatId || String(g.id || ''),
         title: g.title || '',
         username: g.username || '',
         type: g.type || 'supergroup',
+        memberCount: g.memberCount || 0,
       }));
-      return { success: true, chats, total: data.count ?? chats.length, source: 'engine' };
+      return { success: true, chats, total: data.total ?? data.count ?? chats.length, source: 'engine' };
     }),
   // ─── 批量导入群组到公共群组池 ──────────────────────────────────────────────
   importChatsToPublic: adminProcedure
@@ -890,6 +892,7 @@ export const tgAccountsRouter = router({
         }
       }
       const successCount = results.filter(r => r.success).length;
+      const failCount = results.length - successCount;
       return { success: true, successCount, failCount, results };
     }),
 
@@ -1030,12 +1033,13 @@ async function autoSyncChatsToPublic(
     });
     if (chatResp.ok) {
       const chatData = await chatResp.json() as any;
-      // /dialogs 返回 { groups: [...], count: N }，转换为 chats 格式
-      chats = (chatData.groups ?? []).map((g: any) => ({
-        chatId: g.chatId,
+      // /dialogs 返回 { dialogs: [...], total: N }，转换为 chats 格式
+      const rawList = chatData.dialogs ?? chatData.groups ?? [];
+      chats = rawList.map((g: any) => ({
+        chatId: g.chatId || String(g.id || ''),
         title: g.title || '',
         username: g.username || '',
-        type: 'supergroup',
+        type: g.type || 'supergroup',
       }));
     }
   } catch (_) { return; }
