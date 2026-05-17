@@ -77,6 +77,11 @@ def _get_or_create_session(phone: str, api_id: int = 0, api_hash: str = "") -> d
         # 使用 phone 作为目录名（临时的，登录成功后会移动到正式目录）
         safe_phone = phone.replace('+', '').replace(' ', '')
         session_dir = os.path.join(TDLIB_DATA_DIR, f"login_{safe_phone}")
+        # 关键修复：清空旧的登录目录，防止 TDLib 加载过期 session 导致状态不一致
+        if os.path.exists(session_dir):
+            import shutil
+            shutil.rmtree(session_dir)
+            logger.info(f"[{phone}] 清理旧的登录目录: {session_dir}")
         os.makedirs(session_dir, exist_ok=True)
 
         tg = Telegram(
@@ -221,45 +226,64 @@ def handle_verify_code(body: dict) -> dict:
     try:
         tg = session['tg']
 
-        # 发送验证码到 TDLib
-        result = tg.send_code(code)
-        result.wait(timeout=30)
+        # python-telegram 的 send_code() 是同步阻塞的，
+        # 成功时直接返回新的 AuthorizationState，失败时抛出 RuntimeError
+        new_state = tg.send_code(code)
+        logger.info(f"[{phone}] send_code 返回状态: {new_state}")
 
-        if result.error:
-            error_msg = str(result.error_info)
-            if 'PHONE_CODE_INVALID' in error_msg:
-                return {"success": False, "error": "验证码错误，请重新输入"}
-            elif 'PHONE_CODE_EXPIRED' in error_msg:
-                _cleanup_session(phone)
-                return {"success": False, "error": "验证码已过期，请重新发送"}
-            return {"success": False, "error": f"验证失败: {error_msg}"}
+        # send_code 成功后，检查当前 authorization_state
+        auth_state = tg.authorization_state
+        if auth_state == AuthorizationState.WAIT_PASSWORD:
+            session['state'] = 'wait_2fa'
+            return {
+                "success": True,
+                "needs_2fa": True,
+                "next_step": "verify_2fa",
+                "message": "该账号已开启二步验证，请输入密码",
+            }
+        elif auth_state == AuthorizationState.READY:
+            session['state'] = 'ready'
+            logger.info(f"[{phone}] 登录成功！")
+            return {
+                "success": True,
+                "session_string": f"tdlib_session_{phone}",
+                "message": "登录成功",
+            }
+        else:
+            # 可能还在过渡中，等待一下
+            max_wait = 5
+            waited = 0
+            while waited < max_wait:
+                time.sleep(0.5)
+                waited += 0.5
+                auth_state = tg.authorization_state
+                if auth_state == AuthorizationState.WAIT_PASSWORD:
+                    session['state'] = 'wait_2fa'
+                    return {
+                        "success": True,
+                        "needs_2fa": True,
+                        "next_step": "verify_2fa",
+                        "message": "该账号已开启二步验证，请输入密码",
+                    }
+                elif auth_state == AuthorizationState.READY:
+                    session['state'] = 'ready'
+                    logger.info(f"[{phone}] 登录成功！")
+                    return {
+                        "success": True,
+                        "session_string": f"tdlib_session_{phone}",
+                        "message": "登录成功",
+                    }
+            return {"success": False, "error": f"验证码验证后状态异常: {auth_state}"}
 
-        # 检查验证后的状态
-        max_wait = 10
-        waited = 0
-        while waited < max_wait:
-            auth_state = tg.authorization_state
-            if auth_state == AuthorizationState.WAIT_PASSWORD:
-                session['state'] = 'wait_2fa'
-                return {
-                    "success": True,
-                    "needs_2fa": True,
-                    "next_step": "verify_2fa",
-                    "message": "该账号已开启二步验证，请输入密码",
-                }
-            elif auth_state == AuthorizationState.READY:
-                session['state'] = 'ready'
-                logger.info(f"[{phone}] 登录成功！")
-                return {
-                    "success": True,
-                    "session_string": f"tdlib_session_{phone}",
-                    "message": "登录成功",
-                }
-            time.sleep(0.5)
-            waited += 0.5
-
-        return {"success": False, "error": f"验证码验证后状态异常: {tg.authorization_state}"}
-
+    except RuntimeError as e:
+        error_msg = str(e)
+        logger.error(f"[{phone}] 验证码验证失败: {error_msg}")
+        if 'PHONE_CODE_INVALID' in error_msg:
+            return {"success": False, "error": "验证码错误，请重新输入"}
+        elif 'PHONE_CODE_EXPIRED' in error_msg:
+            _cleanup_session(phone)
+            return {"success": False, "error": "验证码已过期，请重新发送"}
+        return {"success": False, "error": f"验证失败: {error_msg}"}
     except Exception as e:
         logger.error(f"[{phone}] 验证码验证失败: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
@@ -289,20 +313,28 @@ def handle_verify_2fa(body: dict) -> dict:
     try:
         tg = session['tg']
 
-        # 发送二步验证密码
-        result = tg.send_password(password)
-        result.wait(timeout=30)
+        # python-telegram 的 send_password() 同样是同步阻塞的
+        # 成功时直接返回新的 AuthorizationState，失败时抛出 RuntimeError
+        new_state = tg.send_password(password)
+        logger.info(f"[{phone}] send_password 返回状态: {new_state}")
 
-        if result.error:
-            error_msg = str(result.error_info)
-            if 'PASSWORD_HASH_INVALID' in error_msg:
-                return {"success": False, "error": "二步验证密码错误"}
-            return {"success": False, "error": f"二步验证失败: {error_msg}"}
+        # 检查当前状态
+        auth_state = tg.authorization_state
+        if auth_state == AuthorizationState.READY:
+            session['state'] = 'ready'
+            logger.info(f"[{phone}] 二步验证成功，登录完成！")
+            return {
+                "success": True,
+                "session_string": f"tdlib_session_{phone}",
+                "message": "登录成功",
+            }
 
-        # 等待登录完成
-        max_wait = 10
+        # 可能还在过渡中，等待一下
+        max_wait = 5
         waited = 0
         while waited < max_wait:
+            time.sleep(0.5)
+            waited += 0.5
             if tg.authorization_state == AuthorizationState.READY:
                 session['state'] = 'ready'
                 logger.info(f"[{phone}] 二步验证成功，登录完成！")
@@ -311,11 +343,15 @@ def handle_verify_2fa(body: dict) -> dict:
                     "session_string": f"tdlib_session_{phone}",
                     "message": "登录成功",
                 }
-            time.sleep(0.5)
-            waited += 0.5
 
         return {"success": False, "error": f"二步验证后状态异常: {tg.authorization_state}"}
 
+    except RuntimeError as e:
+        error_msg = str(e)
+        logger.error(f"[{phone}] 二步验证失败: {error_msg}")
+        if 'PASSWORD_HASH_INVALID' in error_msg:
+            return {"success": False, "error": "二步验证密码错误"}
+        return {"success": False, "error": f"二步验证失败: {error_msg}"}
     except Exception as e:
         logger.error(f"[{phone}] 二步验证失败: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
@@ -374,7 +410,7 @@ def handle_check_session(body: dict) -> dict:
         return {"success": False, "error": "缺少 account_id 参数"}
 
     session_dir = os.path.join(TDLIB_DATA_DIR, f"account_{account_id}")
-    td_db = os.path.join(session_dir, "td.binlog")
+    td_db = os.path.join(session_dir, "database", "td.binlog")
     exists = os.path.exists(td_db)
 
     return {
@@ -389,28 +425,55 @@ def handle_test_session(body: dict) -> dict:
 
     - 输入: {session_string} 或 {account_id}
     - 输出: {success, user_id, username, first_name}
+
+    优先通过 Worker HTTP 接口检查（避免 td.binlog 锁冲突），
+    Worker 不在线时回退到直接打开 TDLib 实例验证。
     """
+    import urllib.request
+    import urllib.error
+
     account_id = body.get("account_id")
     session_string = body.get("session_string", "")
+    phone = body.get("phone", "")
 
     # TDLib 模式：通过 account_id 测试
     if account_id or (session_string and session_string.startswith("tdlib_session_")):
         if not account_id:
-            # 从 session_string 推断（兼容旧逻辑）
             return {"success": False, "error": "TDLib 模式需要 account_id 参数"}
 
         session_dir = os.path.join(TDLIB_DATA_DIR, f"account_{account_id}")
-        td_db = os.path.join(session_dir, "td.binlog")
+        td_db = os.path.join(session_dir, "database", "td.binlog")
 
         if not os.path.exists(td_db):
             return {"success": False, "error": "Session 文件不存在，请重新登录"}
 
+        # 方式1：优先通过 Worker HTTP 接口检查（Worker 运行时 td.binlog 被锁定）
+        engine_port_base = int(os.environ.get("ENGINE_HTTP_PORT_BASE", "7100"))
+        worker_port = engine_port_base + int(account_id)
         try:
-            # 创建临时 TDLib 实例来验证 session
+            req = urllib.request.Request(f"http://127.0.0.1:{worker_port}/health")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                import json as _json
+                health = _json.loads(resp.read().decode())
+                if health.get("status") == "ok":
+                    # Worker 正常运行，session 有效
+                    # 尝试从 health 中获取用户信息（如果有的话）
+                    return {
+                        "success": True,
+                        "user_id": health.get("userId"),
+                        "username": health.get("username", ""),
+                        "first_name": health.get("firstName", ""),
+                        "last_name": "",
+                    }
+        except (urllib.error.URLError, OSError, Exception) as e:
+            logger.info(f"[account_{account_id}] Worker 不在线 (port {worker_port})，回退到直接验证")
+
+        # 方式2：Worker 不在线，直接打开 TDLib 实例验证
+        try:
             tg = Telegram(
                 api_id=TG_API_ID,
                 api_hash=TG_API_HASH,
-                phone="+0000000000",  # 占位，不会用到
+                phone=phone or "+0000000000",
                 database_encryption_key=DB_ENCRYPTION_KEY,
                 files_directory=session_dir,
                 tdlib_verbosity=0,
@@ -420,7 +483,6 @@ def handle_test_session(body: dict) -> dict:
             state = tg.login(blocking=False)
 
             if state == AuthorizationState.READY:
-                # 获取用户信息
                 result = tg.get_me()
                 result.wait(timeout=10)
 
@@ -459,7 +521,13 @@ def handle_get_dialogs(body: dict) -> dict:
 
     - 输入: {session_string} 或 {account_id}
     - 输出: {success, dialogs: [{id, title, username, type, members_count}]}
+
+    优先通过 Worker HTTP 接口获取（避免 td.binlog 锁冲突），
+    Worker 不在线时回退到直接打开 TDLib 实例。
     """
+    import urllib.request
+    import urllib.error
+
     account_id = body.get("account_id")
     session_string = body.get("session_string", "")
 
@@ -471,10 +539,38 @@ def handle_get_dialogs(body: dict) -> dict:
     else:
         return {"success": False, "error": "缺少 account_id 参数"}
 
-    td_db = os.path.join(session_dir, "td.binlog")
+    td_db = os.path.join(session_dir, "database", "td.binlog")
     if not os.path.exists(td_db):
         return {"success": False, "error": "Session 文件不存在"}
 
+    # 方式1：优先通过 Worker HTTP 接口获取
+    engine_port_base = int(os.environ.get("ENGINE_HTTP_PORT_BASE", "7100"))
+    worker_port = engine_port_base + int(account_id)
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{worker_port}/dialogs")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            import json as _json
+            data = _json.loads(resp.read().decode())
+            worker_dialogs = data.get("dialogs", [])
+            # 转换为统一格式
+            dialogs = []
+            for d in worker_dialogs:
+                dialogs.append({
+                    'id': d.get('chatId', ''),
+                    'title': d.get('title', ''),
+                    'username': d.get('username', ''),
+                    'type': d.get('type', 'supergroup'),
+                    'members_count': d.get('memberCount'),
+                })
+            return {
+                "success": True,
+                "dialogs": dialogs,
+                "count": len(dialogs),
+            }
+    except (urllib.error.URLError, OSError, Exception) as e:
+        logger.info(f"[account_{account_id}] Worker 不在线 (port {worker_port})，回退到直接获取")
+
+    # 方式2：Worker 不在线，直接打开 TDLib 实例
     try:
         tg = Telegram(
             api_id=TG_API_ID,
@@ -493,8 +589,6 @@ def handle_get_dialogs(body: dict) -> dict:
 
         # 获取对话列表
         dialogs = []
-        offset_order = 2**63 - 1
-        offset_chat_id = 0
         limit = 100
 
         for _ in range(50):  # 最多获取 5000 个对话
@@ -521,9 +615,7 @@ def handle_get_dialogs(body: dict) -> dict:
                 chat = chat_result.update
                 chat_type = chat.get('type', {}).get('@type', '')
 
-                # 只返回群组和频道
                 if chat_type in ('chatTypeSupergroup', 'chatTypeBasicGroup'):
-                    # 获取 supergroup 信息
                     username = ""
                     members_count = None
                     if chat_type == 'chatTypeSupergroup':

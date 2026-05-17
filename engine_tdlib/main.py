@@ -343,6 +343,7 @@ class TDLibAccountWorker:
         # 对话缓存
         self._dialog_cache: Dict[int, dict] = {}
         self._dialog_cache_lock = threading.Lock()
+        self._is_loading_dialogs = False  # 防止并发加载群组详情
 
         # TDLib 数据目录（每个账号独立）
         self._data_dir = os.path.join(TDLIB_DATA_DIR, f"account_{account_id}")
@@ -363,11 +364,17 @@ class TDLibAccountWorker:
             self._init_tdlib()
             self._login()
             self._load_me_info()
-            self._load_chats()
+            # 先启动 HTTP 服务器，确保管理接口可用（对话加载可能很慢）
+            self._start_http_server()
             self._register_handlers()
             self._start_background_tasks()
-            self._start_http_server()
             self._running = True
+            # 对话加载放到最后，在后台线程中异步执行
+            threading.Thread(
+                target=self._load_chats_safe,
+                daemon=True,
+                name=f"chat-loader-{self.account_id}"
+            ).start()
             logger.info(
                 f"[ACC{self.account_id}] ✓ Worker 启动成功 "
                 f"(对话数={len(self._dialog_cache)}, version={VERSION})"
@@ -453,18 +460,22 @@ class TDLibAccountWorker:
                 f"{self._me_info.get('first_name', '')} (@{uname}) [ID: {self._me_id}]"
             )
 
-    def _load_chats(self):
-        """加载所有对话列表到缓存
+    def _load_chats_safe(self):
+        """在后台线程中安全地订阅对话（仅调用 getChats，不获取详情）"""
+        try:
+            self._subscribe_chats()
+        except Exception as e:
+            logger.error(f"[ACC{self.account_id}] 后台订阅对话失败: {e}")
 
-        TDLib 的 getChats 会触发内部 updates 订阅，
-        确保后续能收到所有已加入群组的消息。
-        这是 TDLib 的核心优势：调用一次 getChats 后，
-        所有群组的消息都会自动推送，无需额外激活。
+    def _subscribe_chats(self):
+        """订阅所有对话的消息推送（轻量级）
+
+        只调用 getChats 获取 ID 列表，触发 TDLib 内部订阅机制。
+        不逐个调用 getChat 获取详情，避免 FLOOD_WAIT 和 CPU 过载。
+        详情在前端请求 /dialogs 时按需加载。
         """
-        logger.info(f"[ACC{self.account_id}] 开始加载对话列表...")
-        loaded = 0
-        offset_order = 2**63 - 1  # 最大值
-        offset_chat_id = 0
+        logger.info(f"[ACC{self.account_id}] 开始订阅对话列表（轻量模式）...")
+        total_ids = 0
 
         while True:
             try:
@@ -485,23 +496,67 @@ class TDLibAccountWorker:
                 if not chat_ids:
                     break
 
-                for chat_id in chat_ids:
-                    info = self._fetch_chat_info(chat_id)
-                    if info:
-                        with self._dialog_cache_lock:
-                            self._dialog_cache[chat_id] = info
-                        loaded += 1
+                # 只记录 ID，不获取详情
+                with self._dialog_cache_lock:
+                    for cid in chat_ids:
+                        if cid not in self._dialog_cache:
+                            # 用 None 占位，表示已知但未加载详情
+                            self._dialog_cache[cid] = None
 
-                # TDLib 新版 getChats 不需要 offset，它自动分页
-                # 如果返回的数量少于 limit，说明已经加载完毕
+                total_ids += len(chat_ids)
+
                 if len(chat_ids) < 100:
                     break
 
+                # 每批之间短暂等待，避免 CPU 突增
+                time.sleep(0.2)
+
             except Exception as e:
-                logger.warning(f"[ACC{self.account_id}] 加载对话异常: {e}")
+                logger.warning(f"[ACC{self.account_id}] 订阅对话异常: {e}")
                 break
 
-        logger.info(f"[ACC{self.account_id}] 对话缓存加载完成: {loaded} 个群组/频道")
+        logger.info(f"[ACC{self.account_id}] ✓ 对话订阅完成: {total_ids} 个对话已注册（消息推送已激活）")
+
+    def _load_dialogs_on_demand(self) -> list:
+        """按需加载对话详情（前端请求 /dialogs 时调用）
+
+        逐个获取详情，严格限速（每秒最多 2 个），避免 FLOOD_WAIT。
+        已加载的直接返回缓存，未加载的实时获取。
+        """
+        results = []
+        to_fetch = []
+
+        with self._dialog_cache_lock:
+            for chat_id, info in self._dialog_cache.items():
+                if info is not None:
+                    results.append(info)
+                else:
+                    to_fetch.append(chat_id)
+
+        if not to_fetch:
+            return results
+
+        logger.info(f"[ACC{self.account_id}] 按需加载 {len(to_fetch)} 个对话详情...")
+        loaded = 0
+        for chat_id in to_fetch:
+            try:
+                info = self._fetch_chat_info(chat_id)
+                if info:
+                    with self._dialog_cache_lock:
+                        self._dialog_cache[chat_id] = info
+                    results.append(info)
+                    loaded += 1
+                else:
+                    # 非群组/频道，标记为已处理（空字典表示已检查但非群组）
+                    with self._dialog_cache_lock:
+                        self._dialog_cache[chat_id] = {}
+                time.sleep(0.5)  # 每秒最多 2 个，严格限速
+            except Exception as e:
+                logger.debug(f"[ACC{self.account_id}] 加载对话 {chat_id} 详情失败: {e}")
+                time.sleep(1)  # 出错时等更久
+
+        logger.info(f"[ACC{self.account_id}] 按需加载完成: 新增 {loaded} 个群组/频道")
+        return results
 
     def _fetch_chat_info(self, chat_id: int) -> Optional[dict]:
         """获取单个对话的详细信息"""
@@ -865,11 +920,26 @@ class TDLibAccountWorker:
         while True:
             try:
                 if self._running:
+                    # 计算群组统计
+                    subscribed_count = 0
+                    cached_count = 0
+                    pending_count = 0
+                    with self._dialog_cache_lock:
+                        for chat_id, info in self._dialog_cache.items():
+                            subscribed_count += 1
+                            if info is None:
+                                pending_count += 1
+                            elif info:
+                                cached_count += 1
+
                     data = {
                         "accountId": self.account_id,
                         "status": "online",
                         "version": VERSION,
-                        "dialogCount": len(self._dialog_cache),
+                        "dialogCount": cached_count,
+                        "subscribedCount": subscribed_count,
+                        "cachedCount": cached_count,
+                        "pendingCount": pending_count,
                         "msgCount": self._msg_count,
                         "hitCount": self._hit_count,
                         "errorCount": self._error_count,
@@ -877,20 +947,65 @@ class TDLibAccountWorker:
                         "engine": "tdlib",
                     }
                     api.report_heartbeat(data)
+
+                    # 如果有待加载的群组且未在加载中，自动触发后台加载
+                    if pending_count > 0 and not self._is_loading_dialogs:
+                        threading.Thread(
+                            target=self._auto_load_pending,
+                            daemon=True,
+                            name="auto-load-pending"
+                        ).start()
             except Exception as e:
                 logger.debug(f"[ACC{self.account_id}] 心跳上报失败: {e}")
             time.sleep(HEARTBEAT_INTERVAL)
 
+    def _auto_load_pending(self):
+        """自动在后台加载待获取详情的群组（心跳触发）"""
+        if self._is_loading_dialogs:
+            return
+        self._is_loading_dialogs = True
+        try:
+            to_fetch = []
+            with self._dialog_cache_lock:
+                for chat_id, info in self._dialog_cache.items():
+                    if info is None:
+                        to_fetch.append(chat_id)
+
+            if not to_fetch:
+                return
+
+            logger.info(f"[ACC{self.account_id}] 自动加载 {len(to_fetch)} 个待缓存群组...")
+            loaded = 0
+            for chat_id in to_fetch:
+                if not self._running:
+                    break
+                try:
+                    info = self._fetch_chat_info(chat_id)
+                    if info:
+                        with self._dialog_cache_lock:
+                            self._dialog_cache[chat_id] = info
+                        loaded += 1
+                    else:
+                        with self._dialog_cache_lock:
+                            self._dialog_cache[chat_id] = {}
+                    time.sleep(0.5)
+                except Exception:
+                    time.sleep(1)
+
+            logger.info(f"[ACC{self.account_id}] 自动加载完成: 新增 {loaded} 个群组")
+        finally:
+            self._is_loading_dialogs = False
+
     def _cache_refresh_loop(self):
-        """定时刷新对话缓存"""
+        """定时刷新对话订阅（轻量级，只获取新加入的群组 ID）"""
         while True:
             time.sleep(CACHE_REFRESH_INTERVAL)
             try:
                 if self._running:
-                    logger.info(f"[ACC{self.account_id}] 定时刷新对话缓存...")
-                    self._load_chats()
+                    logger.info(f"[ACC{self.account_id}] 定时刷新对话订阅...")
+                    self._subscribe_chats()
             except Exception as e:
-                logger.warning(f"[ACC{self.account_id}] 缓存刷新失败: {e}")
+                logger.warning(f"[ACC{self.account_id}] 订阅刷新失败: {e}")
 
     # ─── HTTP API 服务器（兼容 v4.x 接口）──────────────────────────
 
@@ -982,11 +1097,41 @@ class TDLibAccountWorker:
     # ─── HTTP 处理方法 ──────────────────────────────────────────
 
     def _handle_health(self) -> dict:
+        uname = ""
+        fname = ""
+        uid = self._me_id
+        if self._me_info:
+            usernames = self._me_info.get("usernames", {})
+            if usernames:
+                uname = usernames.get("editable_username", "")
+            else:
+                uname = self._me_info.get("username", "")
+            fname = self._me_info.get("first_name", "")
+
+        # 群组监控统计
+        subscribed_count = 0  # 已订阅（TDLib 已知的群组 ID 总数）
+        cached_count = 0      # 已缓存（已加载详情的群组数）
+        pending_count = 0     # 待加载（已知 ID 但未获取详情）
+        with self._dialog_cache_lock:
+            for chat_id, info in self._dialog_cache.items():
+                subscribed_count += 1
+                if info is None:
+                    pending_count += 1
+                elif info:  # 非空字典 = 有效群组
+                    cached_count += 1
+                # 空字典 {} = 已检查但非群组（私聊等），不计入
+
         return {
             "status": "ok",
             "version": VERSION,
             "accountId": self.account_id,
-            "dialogCount": len(self._dialog_cache),
+            "userId": uid,
+            "username": uname,
+            "firstName": fname,
+            "dialogCount": cached_count,
+            "subscribedCount": subscribed_count,
+            "cachedCount": cached_count,
+            "pendingCount": pending_count,
             "msgCount": self._msg_count,
             "hitCount": self._hit_count,
             "errorCount": self._error_count,
@@ -996,9 +1141,48 @@ class TDLibAccountWorker:
         }
 
     def _handle_dialogs(self) -> dict:
+        """处理 /dialogs 请求：立即返回已缓存数据，同时后台加载未获取的
+
+        设计原则：
+        - 不阻塞 HTTP 请求（避免前端超时）
+        - 立即返回已加载的群组信息
+        - 如果有未加载的，后台线程异步加载
+        - 前端可通过 pending 字段判断是否还有更多数据
+        """
+        cached_results = []
+        pending_count = 0
+
         with self._dialog_cache_lock:
-            dialogs = list(self._dialog_cache.values())
-        return {"dialogs": dialogs, "total": len(dialogs)}
+            for chat_id, info in self._dialog_cache.items():
+                if info is None:
+                    pending_count += 1
+                elif info:  # 非空字典才是有效群组
+                    cached_results.append(info)
+
+        # 如果有未加载的，启动后台线程加载（不阻塞当前请求）
+        if pending_count > 0 and not getattr(self, '_dialogs_loading', False):
+            self._dialogs_loading = True
+            threading.Thread(
+                target=self._background_load_dialogs,
+                daemon=True,
+                name=f"dialogs-loader-{self.account_id}"
+            ).start()
+
+        return {
+            "dialogs": cached_results,
+            "total": len(cached_results),
+            "pending": pending_count,
+            "loading": getattr(self, '_dialogs_loading', False),
+        }
+
+    def _background_load_dialogs(self):
+        """后台线程：逐个加载未获取详情的对话"""
+        try:
+            self._load_dialogs_on_demand()
+        except Exception as e:
+            logger.error(f"[ACC{self.account_id}] 后台加载对话详情失败: {e}")
+        finally:
+            self._dialogs_loading = False
 
     def _handle_status(self) -> dict:
         return {
@@ -1172,10 +1356,59 @@ class TDLibAccountWorker:
             return {"success": False, "error": str(e)}
 
     def _handle_check_group_health(self, body: dict) -> dict:
-        """检查群组健康状态"""
+        """检查群组健康状态（支持单个 chatId 或批量 group_ids）"""
+        # 批量模式：传入 group_ids 数组
+        group_ids = body.get("group_ids")
+        if group_ids and isinstance(group_ids, list):
+            normal = []
+            abnormal = []
+            for gid in group_ids:
+                try:
+                    # group_ids 可能是 username 或数字 ID
+                    gid_str = str(gid)
+                    # 尝试用缓存中的 chatId 查找
+                    chat_id = None
+                    with self._dialog_cache_lock:
+                        for cid, info in self._dialog_cache.items():
+                            if info.get('chatId') == gid_str or info.get('username') == gid_str:
+                                chat_id = cid
+                                break
+                    if chat_id is None:
+                        # 尝试直接解析为数字 ID
+                        try:
+                            chat_id = int(gid_str)
+                        except ValueError:
+                            # 是 username，尝试搜索
+                            try:
+                                sr = self.tg.call_method('searchPublicChat', {'username': gid_str})
+                                sr.wait(timeout=10)
+                                if sr.update:
+                                    chat_id = sr.update.get('id', 0)
+                                else:
+                                    abnormal.append({'groupId': gid_str, 'reason': '未找到群组'})
+                                    continue
+                            except Exception:
+                                abnormal.append({'groupId': gid_str, 'reason': '搜索失败'})
+                                continue
+                    # 检查群组是否可访问
+                    result = self.tg.call_method('getChat', {'chat_id': chat_id})
+                    result.wait(timeout=10)
+                    if result.error:
+                        abnormal.append({'groupId': gid_str, 'reason': str(result.error_info)})
+                    elif result.update:
+                        normal.append({'groupId': gid_str, 'title': result.update.get('title', '')})
+                    else:
+                        abnormal.append({'groupId': gid_str, 'reason': '无法访问'})
+                except Exception as e:
+                    abnormal.append({'groupId': str(gid), 'reason': str(e)})
+                # 避免触发 FLOOD_WAIT
+                time.sleep(0.3)
+            return {'success': True, 'normal': normal, 'abnormal': abnormal}
+
+        # 单个模式：传入 chatId
         chat_id = body.get("chatId")
         if not chat_id:
-            return {"success": False, "error": "缺少 chatId 参数"}
+            return {"success": False, "error": "缺少 chatId 或 group_ids 参数"}
 
         try:
             chat_id = int(chat_id)
@@ -1298,7 +1531,14 @@ class EngineMaster:
     2. 为每个活跃账号启动/维护一个 Worker 子进程
     3. 监控子进程健康，自动重启崩溃的 Worker
     4. 停止不再活跃的 Worker
+    5. 定时通过 HTTP 接口检测 Worker 健康状态，异常时发送 TG 通知
     """
+
+    # Worker 健康检测配置
+    HEALTH_CHECK_INTERVAL = 60       # 每60秒检测一次
+    HEALTH_FAIL_THRESHOLD = 2        # 连续2次失败才报警
+    ALERT_COOLDOWN = 300             # 同一账号报警间隔最少5分钟
+    DEFAULT_BOT_TOKEN = "8678159362:AAFqfg8uoL7RBQ_tWvd7YgklsoeShuEF2QU"
 
     def __init__(self):
         self._workers: Dict[int, subprocess.Popen] = {}
@@ -1307,6 +1547,12 @@ class EngineMaster:
         self._max_restarts = 5  # 短时间内最大重启次数
         self._restart_window = 300  # 5分钟内
         self._restart_times: Dict[int, List[float]] = {}
+        # 健康检测状态
+        self._health_fail_counts: Dict[int, int] = {}  # acc_id -> 连续失败次数
+        self._last_alert_time: Dict[int, float] = {}   # acc_id -> 上次报警时间
+        self._account_phones: Dict[int, str] = {}      # acc_id -> phone（缓存）
+        self._bot_token: str = self.DEFAULT_BOT_TOKEN
+        self._alert_tg_id: str = ""
 
     def start(self):
         """启动主控"""
@@ -1316,6 +1562,13 @@ class EngineMaster:
 
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
+
+        # 启动 Worker 健康检测线程
+        threading.Thread(
+            target=self._worker_health_check_loop,
+            daemon=True,
+            name="master-health-check"
+        ).start()
 
         while self._running:
             try:
@@ -1373,7 +1626,7 @@ class EngineMaster:
 
             # 检查 TDLib session 是否存在（首次需要通过登录服务完成）
             session_dir = os.path.join(TDLIB_DATA_DIR, f"account_{acc_id}")
-            td_db = os.path.join(session_dir, "td.binlog")
+            td_db = os.path.join(session_dir, "database", "td.binlog")
             if not os.path.exists(td_db):
                 # 没有 TDLib session，需要先通过管理后台登录
                 logger.info(
@@ -1408,14 +1661,19 @@ class EngineMaster:
             sys.executable, os.path.abspath(__file__),
             "--account_id", str(account_id)
         ]
+        # Worker 日志输出到文件（方便排查问题）
+        log_dir = os.path.join(_BASE_DIR, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = open(os.path.join(log_dir, f"worker_acc{account_id}.log"), "a")
         proc = subprocess.Popen(
             cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=log_file,
             cwd=_BASE_DIR,
         )
         self._workers[account_id] = proc
         logger.info(f"[Master] 启动 ACC{account_id} Worker (PID={proc.pid})")
+        # 不关闭 log_file，让子进程持续写入
 
     def _stop_worker(self, account_id: int):
         """优雅停止单个 Worker"""
@@ -1437,6 +1695,112 @@ class EngineMaster:
     def _signal_handler(self, signum, frame):
         logger.info(f"[Master] 收到信号 {signum}，准备停止...")
         self._running = False
+
+    # --- Worker 健康检测和 TG 通知 -----------------------------
+
+    def _worker_health_check_loop(self):
+        """定时检测所有 Worker 的 HTTP 健康接口，异常时发送 TG 通知"""
+        # 等待 Master 启动稳定后再开始检测
+        time.sleep(30)
+        logger.info("[Master] Worker 健康检测循环已启动")
+
+        while self._running:
+            try:
+                self._do_health_check()
+            except Exception as e:
+                logger.error(f"[Master] 健康检测循环异常: {e}")
+            time.sleep(self.HEALTH_CHECK_INTERVAL)
+
+    def _do_health_check(self):
+        """执行一轮健康检测"""
+        # 从 config 中获取通知配置
+        config = api.fetch_config()
+        if config:
+            sys_config = config.get("systemConfig", {})
+            if sys_config:
+                self._bot_token = sys_config.get("bot_token", "") or self.DEFAULT_BOT_TOKEN
+                self._alert_tg_id = sys_config.get("alert_tg_id", "") or ""
+            # 缓存账号手机号
+            for acc in config.get("accounts", []):
+                acc_id = acc.get("id")
+                if acc_id:
+                    self._account_phones[acc_id] = acc.get("phone", f"ID:{acc_id}")
+
+        # 检测每个正在运行的 Worker
+        for acc_id, proc in list(self._workers.items()):
+            if proc.poll() is not None:
+                # 进程已退出，不需要 HTTP 检测（会在 _check_and_start_workers 中处理）
+                continue
+
+            port = HTTP_PORT_BASE + acc_id
+            is_healthy = self._check_worker_http(port)
+
+            if is_healthy:
+                # 恢复正常，清除失败计数
+                if acc_id in self._health_fail_counts:
+                    if self._health_fail_counts[acc_id] >= self.HEALTH_FAIL_THRESHOLD:
+                        logger.info(f"[Master] ACC{acc_id} Worker 已恢复正常")
+                    del self._health_fail_counts[acc_id]
+            else:
+                # 检测失败，累加计数
+                fail_count = self._health_fail_counts.get(acc_id, 0) + 1
+                self._health_fail_counts[acc_id] = fail_count
+                logger.warning(
+                    f"[Master] ACC{acc_id} 健康检测失败 "
+                    f"({fail_count}/{self.HEALTH_FAIL_THRESHOLD})"
+                )
+
+                # 达到阈值，发送报警
+                if fail_count == self.HEALTH_FAIL_THRESHOLD:
+                    self._send_worker_alert(acc_id, port)
+
+    def _check_worker_http(self, port: int) -> bool:
+        """通过 HTTP 检测 Worker 是否存活"""
+        try:
+            r = requests.get(
+                f"http://127.0.0.1:{port}/health",
+                timeout=5
+            )
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    def _send_worker_alert(self, acc_id: int, port: int):
+        """发送 Worker 异常的 TG 通知"""
+        # 检查冷却时间
+        now = time.time()
+        last_alert = self._last_alert_time.get(acc_id, 0)
+        if now - last_alert < self.ALERT_COOLDOWN:
+            return
+
+        if not self._alert_tg_id:
+            logger.warning(f"[Master] 未配置 alert_tg_id，无法发送通知")
+            return
+
+        self._last_alert_time[acc_id] = now
+        phone = self._account_phones.get(acc_id, f"ID:{acc_id}")
+        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        message = (
+            "⚠️ <b>监控引擎异常</b>\n\n"
+            f"⏰ 时间：{now_str}\n"
+            f"📛 账号：{phone} (Acc{acc_id})\n"
+            f"❌ 状态：Worker 无响应 (端口 {port})\n\n"
+            "系统将自动尝试重启，如持续异常请登录管理后台检查！"
+        )
+
+        try:
+            url = f"https://api.telegram.org/bot{self._bot_token}/sendMessage"
+            payload = {
+                "chat_id": self._alert_tg_id,
+                "text": message,
+                "parse_mode": "HTML"
+            }
+            requests.post(url, json=payload, timeout=10)
+            logger.info(f"[Master] 已发送 ACC{acc_id} 异常通知到 TG")
+        except Exception as e:
+            logger.error(f"[Master] 发送 TG 通知失败: {e}")
+
 
 
 # ═══════════════════════════════════════════════════════════════
