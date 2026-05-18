@@ -1244,9 +1244,9 @@ function ExtractTab() {
                 <Label className="text-sm">扫描消息数</Label>
                 <span className="text-xs text-blue-600 font-medium">{limit}</span>
               </div>
-              <Slider value={[limit]} onValueChange={v => setLimit(v[0])} min={100} max={5000} step={100} />
+              <Slider value={[limit]} onValueChange={v => setLimit(v[0])} min={100} max={99999} step={100} />
               <div className="flex justify-between text-xs text-slate-400 mt-1">
-                <span>100</span><span>5000</span>
+                <span>100</span><span>不限</span>
               </div>
             </div>
 

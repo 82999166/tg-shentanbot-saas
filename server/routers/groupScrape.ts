@@ -981,7 +981,7 @@ export const groupScrapeRouter = router({
     .input(z.object({
       accountId: z.number().int(),
       groupUrl: z.string().min(1),
-      limit: z.number().int().min(50).max(5000).default(500),
+      limit: z.number().int().min(50).default(500),
       aiFilter: z.boolean().default(false),
       aiMinMembers: z.number().int().min(0).default(0),
     }))
