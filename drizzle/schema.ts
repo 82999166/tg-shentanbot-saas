@@ -104,6 +104,7 @@ export const tgAccounts = mysqlTable("tg_accounts", {
   notes: text("notes"),
   isActive: boolean("isActive").default(true).notNull(),
   inEngine: boolean("inEngine").default(false).notNull(),  // 是否加入监控引擎
+  enginePort: int("enginePort"),  // 引擎Worker HTTP端口（心跳自动上报）
   // 健康告警冷却（防止刷屏）
   lastAlertAt: timestamp("lastAlertAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

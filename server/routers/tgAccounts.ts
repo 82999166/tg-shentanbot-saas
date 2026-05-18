@@ -71,105 +71,57 @@ function callLoginService(path: string, body: Record<string, any>): Promise<any>
 export const tgAccountsRouter = router({
   // ─── 获取用户的所有TG账号 ─────────────────────────────────────────────────
   list: protectedProcedure.query(async ({ ctx }) => {
-    // 管理员返回所有账号（含归属用户信息），普通用户只返回自己的账号
-    if ((ctx.user as any).role === "admin") {
-      const db = await getDb();
-      if (!db) return [];
-      const rows = await db
-        .select({
-          id: tgAccounts.id,
-          userId: tgAccounts.userId,
-          phone: tgAccounts.phone,
-          tgFirstName: tgAccounts.tgFirstName,
-          tgLastName: tgAccounts.tgLastName,
-          tgUsername: tgAccounts.tgUsername,
-          accountRole: tgAccounts.accountRole,
-          sessionStatus: tgAccounts.sessionStatus,
-          isActive: tgAccounts.isActive,
-          inEngine: tgAccounts.inEngine,
-          notes: tgAccounts.notes,
-          proxyHost: tgAccounts.proxyHost,
-          proxyPort: tgAccounts.proxyPort,
-          proxyType: tgAccounts.proxyType,
-          createdAt: tgAccounts.createdAt,
-          updatedAt: tgAccounts.updatedAt,
-          healthScore: tgAccounts.healthScore,
-          healthStatus: tgAccounts.healthStatus,
-          lastActiveAt: tgAccounts.lastActiveAt,
-          dailyDmSent: tgAccounts.dailyDmSent,
-          totalMonitored: tgAccounts.totalMonitored,
-          maxGroupsLimit: tgAccounts.maxGroupsLimit,
-          ownerName: users.name,
-          ownerEmail: users.email,
-          ownerTgUsername: users.tgUsername,
-        })
-        .from(tgAccounts)
-        .leftJoin(users, eq(tgAccounts.userId, users.id))
-        .orderBy(desc(tgAccounts.createdAt));
-      // 查询每个账号的私有群组数量
-      const privateGroupCounts = await db
-        .select({ tgAccountId: monitorGroups.tgAccountId, cnt: count() })
-        .from(monitorGroups)
-        .where(eq(monitorGroups.isActive, true))
-        .groupBy(monitorGroups.tgAccountId);
-      const privateCountMap: Record<number, number> = {};
-      for (const r of privateGroupCounts) {
-        if (r.tgAccountId) privateCountMap[r.tgAccountId] = r.cnt;
-      }
-      // 查询每个账号的公共群组监控数量（subscribed = 已在监控中，兼容旧状态 joined）
-      const publicGroupCounts = await db
-        .select({ monitorAccountId: publicGroupJoinStatus.monitorAccountId, cnt: count() })
-        .from(publicGroupJoinStatus)
-        .where(inArray(publicGroupJoinStatus.status, ["subscribed", "joined"]))
-        .groupBy(publicGroupJoinStatus.monitorAccountId);
-      const publicCountMap: Record<number, number> = {};
-      for (const r of publicGroupCounts) {
-        if (r.monitorAccountId) publicCountMap[r.monitorAccountId] = r.cnt;
-      }
-      // 查询每个账号的已分配总数（所有状态）
-      const assignedCounts = await db
-        .select({ monitorAccountId: publicGroupJoinStatus.monitorAccountId, cnt: count() })
-        .from(publicGroupJoinStatus)
-        .groupBy(publicGroupJoinStatus.monitorAccountId);
-      const assignedCountMap: Record<number, number> = {};
-      for (const r of assignedCounts) {
-        if (r.monitorAccountId) assignedCountMap[r.monitorAccountId] = r.cnt;
-      }
-      // 查询每个账号的待加入数量（pending/joining/failed，不含 not_found）
-      const pendingCounts = await db
-        .select({ monitorAccountId: publicGroupJoinStatus.monitorAccountId, cnt: count() })
-        .from(publicGroupJoinStatus)
-        .where(inArray(publicGroupJoinStatus.status, ["pending", "joining", "failed"]))
-        .groupBy(publicGroupJoinStatus.monitorAccountId);
-      const pendingCountMap: Record<number, number> = {};
-      for (const r of pendingCounts) {
-        if (r.monitorAccountId) pendingCountMap[r.monitorAccountId] = r.cnt;
-      }
-      // 查询每个账号的无效群组数量（not_found = 群组已解散/不存在）
-      const notFoundCounts = await db
-        .select({ monitorAccountId: publicGroupJoinStatus.monitorAccountId, cnt: count() })
-        .from(publicGroupJoinStatus)
-        .where(eq(publicGroupJoinStatus.status, "not_found"))
-        .groupBy(publicGroupJoinStatus.monitorAccountId);
-      const notFoundCountMap: Record<number, number> = {};
-      for (const r of notFoundCounts) {
-        if (r.monitorAccountId) notFoundCountMap[r.monitorAccountId] = r.cnt;
-      }
-      // joinedGroupCount 直接使用数据库中的公共群组加入数量（避免实时调用引擎导致加载慢）
-      return rows.map(r => ({
-        ...r,
-        privateGroupCount: privateCountMap[r.id] ?? 0,
-        publicGroupCount: publicCountMap[r.id] ?? 0,
-        totalGroupCount: (privateCountMap[r.id] ?? 0) + (publicCountMap[r.id] ?? 0),
-        joinedGroupCount: publicCountMap[r.id] ?? 0,
-        assignedGroupCount: assignedCountMap[r.id] ?? 0,
-        pendingGroupCount: pendingCountMap[r.id] ?? 0,
-        notFoundGroupCount: notFoundCountMap[r.id] ?? 0,
-      }));
-    }
-    return getTgAccountsByUserId(ctx.user.id);
-  }),
+    const db = await getDb();
+    if (!db) return [];
+    
+    const isAdmin = (ctx.user).role === 'admin';
+    console.log('[DEBUG] tgAccounts.list called by', (ctx.user).email, 'isAdmin:', isAdmin);
 
+    let query = db.select({
+      id: tgAccounts.id,
+      userId: tgAccounts.userId,
+      phone: tgAccounts.phone,
+      tgFirstName: tgAccounts.tgFirstName,
+      tgLastName: tgAccounts.tgLastName,
+      tgUsername: tgAccounts.tgUsername,
+      accountRole: tgAccounts.accountRole,
+      sessionStatus: tgAccounts.sessionStatus,
+      isActive: tgAccounts.isActive,
+      inEngine: tgAccounts.inEngine,
+      notes: tgAccounts.notes,
+      proxyHost: tgAccounts.proxyHost,
+      proxyPort: tgAccounts.proxyPort,
+      proxyType: tgAccounts.proxyType,
+      createdAt: tgAccounts.createdAt,
+      updatedAt: tgAccounts.updatedAt,
+      healthScore: tgAccounts.healthScore,
+      healthStatus: tgAccounts.healthStatus,
+      lastActiveAt: tgAccounts.lastActiveAt,
+      dailyDmSent: tgAccounts.dailyDmSent,
+      totalMonitored: tgAccounts.totalMonitored,
+      maxGroupsLimit: tgAccounts.maxGroupsLimit,
+      ownerName: users.name,
+      ownerEmail: users.email,
+    }).from(tgAccounts).leftJoin(users, eq(tgAccounts.userId, users.id));
+
+    if (!isAdmin) {
+      query = query.where(eq(tgAccounts.userId, ctx.user.id));
+    }
+
+    const rows = await query.orderBy(desc(tgAccounts.createdAt));
+    console.log('[DEBUG] Found', rows.length, 'accounts');
+
+    return rows.map(r => ({
+      ...r,
+      privateGroupCount: 0,
+      publicGroupCount: 0,
+      totalGroupCount: 0,
+      joinedGroupCount: 0,
+      assignedGroupCount: 0,
+      pendingGroupCount: 0,
+      notFoundGroupCount: 0,
+    }));
+  }),
   // ─── 获取单个TG账号 ───────────────────────────────────────────────────────
   get: protectedProcedure
     .input(z.object({ id: z.number() }))

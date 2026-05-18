@@ -578,6 +578,18 @@ export function registerEngineRestRoutes(app: Router) {
     } catch (e: any) {
       console.error("[Engine API] heartbeat save error:", e.message);
     }
+    // 更新 tg_accounts 表中的 enginePort
+    try {
+      const db2 = await getDb();
+      if (db2 && req.body.accountId && req.body.port) {
+        await db2
+          .update(tgAccounts)
+          .set({ enginePort: req.body.port, lastActiveAt: new Date(), inEngine: true })
+          .where(eq(tgAccounts.id, req.body.accountId));
+      }
+    } catch (e2: any) {
+      console.error("[Engine API] update enginePort error:", e2.message);
+    }
     res.json({ success: true, serverTime: Date.now() });
   });
 

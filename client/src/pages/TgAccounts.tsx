@@ -67,7 +67,10 @@ const healthColor = (score: number) => {
   return "text-red-400";
 };
 
+import { useLocation } from "wouter";
 export default function TgAccounts() {
+  const [location] = useLocation();
+  const isAdminAccounts = location === "/admin-accounts";
   const { user } = useAuth();
   const Layout = user?.role === "admin" ? AdminLayout : AppLayout;
   const utils = trpc.useUtils();
@@ -83,7 +86,7 @@ export default function TgAccounts() {
     if (kw && !((a.tgFirstName ?? "").toLowerCase().includes(kw) || (a.phone ?? "").includes(kw) || (a.tgUsername ?? "").toLowerCase().includes(kw))) return false;
     if (filterStatus !== "all" && a.sessionStatus !== filterStatus) return false;
     if (filterRole !== "all" && (a.accountRole ?? "both") !== filterRole) return false;
-    if (filterOwner !== "all" && (a as any).ownerEmail !== filterOwner) return false;
+    if (filterOwner !== "all" && (a as any).ownerEmail !== filterOwner && (a as any).ownerName !== filterOwner) return false;
     return true;
   });
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -2227,9 +2230,3 @@ function AccountMonitorGroupsTab({ accountId }: { accountId: number }) {
     </div>
   );
 }
-
-
-
-
-
-
