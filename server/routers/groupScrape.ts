@@ -515,7 +515,15 @@ export const groupScrapeRouter = router({
       let totalSkipped = 0;
 
       for (const groupTarget of input.targetGroups) {
-        const normalizedGroup = groupTarget.startsWith("@") ? groupTarget : `@${groupTarget}`;
+        const normalizedGroup = (() => {
+          let v = groupTarget;
+          if (v.startsWith("https://t.me/")) v = v.replace("https://t.me/", "");
+          else if (v.startsWith("http://t.me/")) v = v.replace("http://t.me/", "");
+          else if (v.startsWith("t.me/")) v = v.replace("t.me/", "");
+          else if (v.startsWith("@")) v = v.slice(1);
+          v = v.replace(/^@/, "");
+          return `@${v}`;
+        })();
 
         // 采集群组/频道链接
         if (collectGroups || collectChannels) {

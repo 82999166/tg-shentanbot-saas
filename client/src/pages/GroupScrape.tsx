@@ -595,7 +595,16 @@ function TargetTab() {
   const addTarget = () => {
     const val = targetInput.trim();
     if (!val) return;
-    const normalized = val.startsWith("@") ? val : val.startsWith("t.me/") ? `@${val.replace("t.me/", "")}` : `@${val}`;
+    const normalized = (() => {
+      let v = val;
+      if (v.startsWith("https://t.me/")) v = v.replace("https://t.me/", "");
+      else if (v.startsWith("http://t.me/")) v = v.replace("http://t.me/", "");
+      else if (v.startsWith("t.me/")) v = v.replace("t.me/", "");
+      else if (v.startsWith("@")) v = v.slice(1);
+      // 再去掉可能残留的 @
+      v = v.replace(/^@/, "");
+      return `@${v}`;
+    })();
     if (!targetGroups.includes(normalized)) {
       setTargetGroups(prev => [...prev, normalized]);
     }
@@ -604,7 +613,15 @@ function TargetTab() {
 
   const addBatch = () => {
     const lines = batchInput.split("\n").map(s => s.trim()).filter(Boolean);
-    const newGroups = lines.map(l => l.startsWith("@") ? l : l.startsWith("t.me/") ? `@${l.replace("t.me/", "")}` : `@${l}`);
+    const newGroups = lines.map(l => {
+      let v = l;
+      if (v.startsWith("https://t.me/")) v = v.replace("https://t.me/", "");
+      else if (v.startsWith("http://t.me/")) v = v.replace("http://t.me/", "");
+      else if (v.startsWith("t.me/")) v = v.replace("t.me/", "");
+      else if (v.startsWith("@")) v = v.slice(1);
+      v = v.replace(/^@/, "");
+      return `@${v}`;
+    });
     const unique = [...new Set([...targetGroups, ...newGroups])];
     setTargetGroups(unique);
     setBatchInput("");
