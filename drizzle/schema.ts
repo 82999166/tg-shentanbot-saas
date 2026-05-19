@@ -624,6 +624,7 @@ export const publicMonitorGroups = mysqlTable("public_monitor_groups", {
   id: int("id").autoincrement().primaryKey(),
   groupId: varchar("groupId", { length: 128 }).notNull().unique(),   // TG 群组 ID 或 @username
   groupTitle: varchar("groupTitle", { length: 256 }),                // 群组名称
+  groupUsername: varchar("groupUsername", { length: 128 }).default(""),
   groupType: varchar("groupType", { length: 32 }).default("group"),  // group / channel
   memberCount: int("memberCount").default(0),
   healthStatus: varchar("healthStatus", { length: 32 }).default("normal"), // normal / restricted / scam / fake / unknown

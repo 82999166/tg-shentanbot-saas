@@ -847,13 +847,13 @@ export const engineRouter = router({
     }),
   // ── Bot API：标记命中记录为已处理 ─────────────────────────
   botMarkProcessed: engineProcedure
-    .input(z.object({ hitRecordId: z.number(), userId: z.number() }))
+    .input(z.object({ hitRecordId: z.number(), userId: z.number().optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) return { success: false };
       await db.update(hitRecords)
         .set({ isProcessed: true })
-        .where(and(eq(hitRecords.id, input.hitRecordId), eq(hitRecords.userId, input.userId)));
+        .where(eq(hitRecords.id, input.hitRecordId));
       return { success: true };
     }),
   // ── Bot API：屏蔽发送者（加入黑名单）────────────────────────
@@ -877,12 +877,12 @@ export const engineRouter = router({
     }),
   // ── Bot API：删除命中记录 ─────────────────────────────────
   botDeleteHit: engineProcedure
-    .input(z.object({ hitRecordId: z.number(), userId: z.number() }))
+    .input(z.object({ hitRecordId: z.number(), userId: z.number().optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) return { success: false };
       await db.delete(hitRecords)
-        .where(and(eq(hitRecords.id, input.hitRecordId), eq(hitRecords.userId, input.userId)));
+        .where(eq(hitRecords.id, input.hitRecordId));
       return { success: true };
     }),
   // ── Bot API：获取发送者历史命中记录 ───────────────────────
@@ -1537,7 +1537,7 @@ export const engineRouter = router({
       // 批量获取群组信息（从 public_monitor_groups 表查询）
       const groupIds = [...new Set(hits.map((h) => h.monitorGroupId))];
       const groupList = await db
-        .select({ id: pubGroups.id, groupId: pubGroups.groupId, groupTitle: pubGroups.groupTitle })
+        .select({ id: pubGroups.id, groupId: pubGroups.groupId, groupTitle: pubGroups.groupTitle, groupUsername: pubGroups.groupUsername })
         .from(pubGroups)
         .where(sql`${pubGroups.id} IN (${sql.join(groupIds.map((id) => sql`${id}`), sql`, `)})`);
       const groupMap = new Map(groupList.map((g) => [g.id, g]));
@@ -1604,6 +1604,7 @@ export const engineRouter = router({
           senderLastName: hit.senderLastName,
           matchedKeyword: hit.matchedKeyword,
           groupId: group?.groupId || null,
+          groupUsername: group?.groupUsername || "",
           groupTitle: group?.groupTitle || null,
           createdAt: hit.createdAt ? hit.createdAt.toISOString() : null,
           pushEnabled,
