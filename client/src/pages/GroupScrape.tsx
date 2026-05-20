@@ -5,7 +5,7 @@
  * Tab2: 指定群组采集（批次管理 + AI标签 + 全局去重）
  * Tab3: 消息提取链接（工具 + AI过滤）
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import AdminLayout from "@/components/AdminLayout";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -511,6 +511,7 @@ function TargetTab() {
   const [collectChannels, setCollectChannels] = useState(true);
   const [collectUsers, setCollectUsers] = useState(true);
   const [userLimit, setUserLimit] = useState(500);
+  const [scanLimit, setScanLimit] = useState(2000);
 
   // AI 评分配置
   const [aiEnabled, setAiEnabled] = useState(true);
@@ -533,7 +534,11 @@ function TargetTab() {
   const [userPage, setUserPage] = useState(1);
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([]);
   const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showExportGroupsDialog, setShowExportGroupsDialog] = useState(false);
+  const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [exportFormat, setExportFormat] = useState<"username" | "tgid" | "csv">("username");
+  const [exportGroupFormat, setExportGroupFormat] = useState<"username" | "tgid" | "csv" | "link">("username");
   const [tagFilter, setTagFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "group" | "channel" | "user">("all");
   const [userFilterOnlineDays, setUserFilterOnlineDays] = useState(0);
@@ -570,6 +575,14 @@ function TargetTab() {
   const { data: exportData } = trpc.groupScrape.exportCollectedUsers.useQuery(
     { batchId: selectedBatchId ?? undefined, format: exportFormat },
     { enabled: showExportDialog }
+  );
+  const { data: exportGroupsData } = trpc.groupScrape.exportCollectedGroups.useQuery(
+    { batchId: selectedBatchId ?? undefined, type: resultSubTab === "channels" ? "channel" : resultSubTab === "groups" ? "group" : "all", format: exportGroupFormat },
+    { enabled: showExportGroupsDialog }
+  );
+  const { data: detailData } = trpc.groupScrape.getCollectedGroupDetail.useQuery(
+    { id: detailId! },
+    { enabled: showDetailDialog && detailId != null }
   );
 
   const runScrape = trpc.groupScrape.runTargetScrape.useMutation({
@@ -636,6 +649,7 @@ function TargetTab() {
       targetGroups,
       collectTypes: types || "group,channel,user",
       userLimit,
+      scanLimit,
       aiScoreEnabled: aiEnabled,
       aiMinScore,
       aiMinMembers,
@@ -770,6 +784,20 @@ function TargetTab() {
                 </div>
               </div>
 
+              {/* 消息扫描数量 */}
+              {(collectGroups || collectChannels) && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium text-slate-600">消息扫描数量</span>
+                    <span className="text-xs text-blue-600 font-medium">{scanLimit}</span>
+                  </div>
+                  <Slider value={[scanLimit]} onValueChange={v => setScanLimit(v[0])} min={200} max={10000} step={200} />
+                  <div className="flex justify-between text-xs text-slate-400 mt-1">
+                    <span>200</span><span>10000</span>
+                  </div>
+                  <div className="text-xs text-slate-400 mt-0.5">扫描更多消息可发现更多群组/频道链接</div>
+                </div>
+              )}
               {/* 用户采集上限 */}
               {collectUsers && (
                 <div>
@@ -998,6 +1026,12 @@ function TargetTab() {
                     <Download className="w-3 h-3 mr-1" /> 导出用户
                   </Button>
                 )}
+                {(resultSubTab === "groups" || resultSubTab === "channels") && (
+                  <Button size="sm" variant="outline" className="h-7 text-xs text-emerald-600 border-emerald-200"
+                    onClick={() => setShowExportGroupsDialog(true)}>
+                    <Download className="w-3 h-3 mr-1" /> 导出{resultSubTab === "groups" ? "群组" : "频道"}
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -1048,12 +1082,18 @@ function TargetTab() {
                           <TableCell><TagList tags={(item as any).tags || []} /></TableCell>
                           <TableCell><StatusBadge status={item.importStatus} /></TableCell>
                           <TableCell>
-                            {item.importStatus === "pending" && (
-                              <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-500"
-                                onClick={() => importToPool.mutate({ ids: [item.id] })}>
-                                导入
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="ghost" className="h-6 text-xs text-slate-500"
+                                onClick={() => { setDetailId(item.id); setShowDetailDialog(true); }}>
+                                详情
                               </Button>
-                            )}
+                              {item.importStatus === "pending" && (
+                                <Button size="sm" variant="ghost" className="h-6 text-xs text-blue-500"
+                                  onClick={() => importToPool.mutate({ ids: [item.id] })}>
+                                  导入
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1159,6 +1199,117 @@ function TargetTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 导出群组/频道弹窗 */}
+      <Dialog open={showExportGroupsDialog} onOpenChange={setShowExportGroupsDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>导出{resultSubTab === "groups" ? "群组" : "频道"}列表</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              {(["username", "tgid", "link", "csv"] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setExportGroupFormat(f)}
+                  className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${exportGroupFormat === f ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                >
+                  {{ username: "@用户名", tgid: "TG ID", link: "t.me 链接", csv: "CSV 完整" }[f]}
+                </button>
+              ))}
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3 max-h-48 overflow-y-auto">
+              <pre className="text-xs text-slate-600 whitespace-pre-wrap">
+                {exportGroupsData?.content ? exportGroupsData.content.slice(0, 2000) : "加载中..."}
+                {(exportGroupsData?.content?.length ?? 0) > 2000 && "\n...\uff08更多内容请下载\uff09"}
+              </pre>
+            </div>
+            <div className="text-xs text-slate-500">共 {exportGroupsData?.total ?? 0} 条</div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { if (exportGroupsData?.content) navigator.clipboard.writeText(exportGroupsData.content); }}>
+              <Copy className="w-3.5 h-3.5 mr-1" /> 复制
+            </Button>
+            <Button onClick={() => {
+              if (!exportGroupsData?.content) return;
+              const ext = exportGroupFormat === "csv" ? "csv" : "txt";
+              const blob = new Blob([exportGroupsData.content], { type: "text/plain" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${resultSubTab}_export_${Date.now()}.${ext}`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}>
+              <Download className="w-3.5 h-3.5 mr-1" /> 下载
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 查看详情弹窗 */}
+      <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>群组/频道详情</DialogTitle>
+          </DialogHeader>
+          {detailData ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div>
+                  <div className="font-medium text-base text-slate-800">{detailData.title || "未命名"}</div>
+                  {detailData.username && <div className="text-sm text-blue-500">@{detailData.username}</div>}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><span className="text-slate-500">类型：</span> <Badge variant="outline">{detailData.type === "group" ? "群组" : "频道"}</Badge></div>
+                <div><span className="text-slate-500">人数：</span> {(detailData.memberCount ?? 0).toLocaleString()}</div>
+                <div><span className="text-slate-500">TG ID：</span> {detailData.tgId || "-"}</div>
+                <div><span className="text-slate-500">AI评分：</span> <AiScoreBar score={detailData.aiScore} /></div>
+              </div>
+              {detailData.description && (
+                <div>
+                  <div className="text-xs font-medium text-slate-500 mb-1">简介</div>
+                  <div className="text-sm text-slate-700 bg-slate-50 rounded p-2 max-h-24 overflow-y-auto">{detailData.description}</div>
+                </div>
+              )}
+              {detailData.tags && detailData.tags.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-slate-500 mb-1">标签</div>
+                  <div className="flex flex-wrap gap-1">
+                    {detailData.tags.map((t: string) => <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>)}
+                  </div>
+                </div>
+              )}
+              {detailData.aiScoreDetail && (
+                <div>
+                  <div className="text-xs font-medium text-slate-500 mb-1">AI评分详情</div>
+                  <div className="bg-slate-50 rounded p-2 space-y-1">
+                    {Object.entries(detailData.aiScoreDetail).map(([k, v]) => (
+                      <div key={k} className="flex justify-between text-xs">
+                        <span className="text-slate-600">{k}</span>
+                        <span className="font-medium text-slate-800">{String(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><span className="text-slate-500">来源：</span> {detailData.sourceGroupId}</div>
+                <div><span className="text-slate-500">状态：</span> <StatusBadge status={detailData.importStatus} /></div>
+              </div>
+              {detailData.username && (
+                <a href={`https://t.me/${detailData.username}`} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-blue-500 hover:underline">
+                  <Globe className="w-3.5 h-3.5" /> 在 Telegram 中打开
+                </a>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-slate-400">加载中...</div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1170,7 +1321,7 @@ function TargetTab() {
 function ExtractTab() {
   const [groupUrl, setGroupUrl] = useState("");
   const [limit, setLimit] = useState(500);
-  const [accountId, setAccountId] = useState<string>("1");
+  const [accountId, setAccountId] = useState<string>("");
   const [aiFilter, setAiFilter] = useState(false);
   const [aiMinMembers, setAiMinMembers] = useState(0);
   const [isExtracting, setIsExtracting] = useState(false);
@@ -1181,7 +1332,15 @@ function ExtractTab() {
   const [typeFilter, setTypeFilter] = useState<"all" | "group" | "channel" | "user">("all");
   const [userFilterOnlineDays, setUserFilterOnlineDays] = useState(0);
   const [userFilterPremiumOnly, setUserFilterPremiumOnly] = useState(false);
+  const [userFilterMinScore, setUserFilterMinScore] = useState(0);
+  const [userFilterLastMsgDays, setUserFilterLastMsgDays] = useState(0);
   const { data: accounts } = trpc.tgAccounts.list.useQuery();
+  // 自动选择第一个账号
+  useEffect(() => {
+    if (accounts && (accounts as any[]).length > 0 && !accountId) {
+      setAccountId(String((accounts as any[])[0].id));
+    }
+  }, [accounts]);
 
   const extractMutation = trpc.groupScrape.extractFromGroup.useMutation({
     onSuccess: (data) => {
@@ -1225,8 +1384,40 @@ function ExtractTab() {
         if (daysSinceOnline > userFilterOnlineDays) return false;
       }
     }
+    // AI 评分过滤（所有类型）
+    if (userFilterMinScore > 0 && (l.aiScore ?? 0) < userFilterMinScore) return false;
+    // 最后发言时间过滤
+    if (userFilterLastMsgDays > 0 && l.lastMsgDate) {
+      const daysSinceMsg = (Date.now() / 1000 - l.lastMsgDate) / 86400;
+      if (daysSinceMsg > userFilterLastMsgDays) return false;
+    }
     return true;
   });
+
+  // === 导出CSV功能 ===
+  const handleExportCSV = () => {
+    if (filteredLinks.length === 0) return;
+    const headers = ["标题", "链接", "类型", "人数", "AI评分", "Premium", "最后在线", "最后发言", "标签"];
+    const rows = filteredLinks.map(l => [
+      l.title || "",
+      l.url || "",
+      l.type || "",
+      l.memberCount || "",
+      l.aiScore || "",
+      l.isPremium ? "是" : "否",
+      l.lastOnline ? new Date(l.lastOnline * 1000).toLocaleDateString() : "",
+      l.lastMsgDate ? new Date(l.lastMsgDate * 1000).toLocaleDateString() : "",
+      (l.tags || []).join("/"),
+    ]);
+    const csvContent = "\uFEFF" + [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `提取结果_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   const typeCounts = {
     all: extractedLinks.length,
     group: extractedLinks.filter(l => l.type === "group").length,
@@ -1362,9 +1553,80 @@ function ExtractTab() {
                   <Upload className="w-3 h-3 mr-1" /> 导入监控池 ({selectedUrls.length})
                 </Button>
               )}
+              {filteredLinks.length > 0 && (
+                <Button size="sm" variant="outline" className="h-7 text-xs"
+                  onClick={() => {
+                    const headers = ["链接", "标题", "类型", "人数", "AI评分", "最后在线", "最后发言", "Premium", "标签"];
+                    const rows = filteredLinks.map((l: any) => [
+                      l.url,
+                      l.title || l.slug || "",
+                      l.type === "channel" ? "频道" : l.type === "user" ? "用户" : "群组",
+                      l.memberCount || "",
+                      l.aiScore || "",
+                      l.lastOnline ? new Date(l.lastOnline * 1000).toLocaleString("zh-CN") : "",
+                      l.lastMsgDate ? new Date(l.lastMsgDate * 1000).toLocaleString("zh-CN") : "",
+                      l.isPremium ? "是" : "否",
+                      (l.tags || []).join(","),
+                    ]);
+                    const csv = "\uFEFF" + [headers, ...rows].map((r: any) => r.map((c: any) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `extract_${typeFilter}_${new Date().toISOString().slice(0,10)}.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}>
+                  <Download className="w-3 h-3 mr-1" /> 导出CSV ({filteredLinks.length})
+                </Button>
+              )}
             </div>
           </div>
 
+          {/* 通用过滤面板 */}
+          {extractedLinks.length > 0 && (
+            <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/50 flex items-center gap-4 flex-wrap">
+              <span className="text-xs font-medium text-slate-700">过滤条件：</span>
+              <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                <span>AI评分≥</span>
+                <select
+                  value={userFilterMinScore}
+                  onChange={e => setUserFilterMinScore(Number(e.target.value))}
+                  className="h-6 px-1.5 text-xs border border-slate-200 rounded bg-white"
+                >
+                  <option value={0}>不限</option>
+                  <option value={30}>30分</option>
+                  <option value={40}>40分</option>
+                  <option value={50}>50分</option>
+                  <option value={60}>60分</option>
+                  <option value={70}>70分</option>
+                  <option value={80}>80分</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                <span>最近发言</span>
+                <select
+                  value={userFilterLastMsgDays}
+                  onChange={e => setUserFilterLastMsgDays(Number(e.target.value))}
+                  className="h-6 px-1.5 text-xs border border-slate-200 rounded bg-white"
+                >
+                  <option value={0}>不限</option>
+                  <option value={1}>1天内</option>
+                  <option value={3}>3天内</option>
+                  <option value={7}>7天内</option>
+                  <option value={14}>14天内</option>
+                  <option value={30}>30天内</option>
+                </select>
+              </label>
+              <span className="text-xs text-slate-400">|</span>
+              <span className="text-xs text-slate-500">已扫描 {scannedCount} 条消息，发现 {extractedLinks.length} 个结果（显示 {filteredLinks.length} 个）</span>
+              {filteredLinks.length > 0 && (
+                <Button size="sm" variant="outline" onClick={handleExportCSV} className="ml-2">
+                  <Download className="w-3 h-3 mr-1" />导出CSV
+                </Button>
+              )}
+            </div>
+          )}
           {/* 用户过滤面板 */}
           {typeFilter === "user" && extractedLinks.length > 0 && (
             <div className="px-4 py-2 border-b border-slate-100 bg-purple-50/50 flex items-center gap-4 flex-wrap">
@@ -1424,6 +1686,7 @@ function ExtractTab() {
                       <TableHead className="text-xs">类型</TableHead>
                       <TableHead className="text-xs">人数</TableHead>
                       <TableHead className="text-xs">AI评分</TableHead>
+                      <TableHead className="text-xs">最后发言</TableHead>
                       <TableHead className="text-xs">标签</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1457,6 +1720,9 @@ function ExtractTab() {
                           {link.memberCount ? link.memberCount.toLocaleString() : "-"}
                         </TableCell>
                         <TableCell><AiScoreBar score={link.aiScore} /></TableCell>
+                        <TableCell className="text-xs text-slate-500">
+                          {link.lastMsgDate ? new Date(link.lastMsgDate * 1000).toLocaleDateString("zh-CN") : "-"}
+                        </TableCell>
                         <TableCell><TagList tags={link.tags || []} /></TableCell>
                       </TableRow>
                     ))}
@@ -1470,3 +1736,4 @@ function ExtractTab() {
     </div>
   );
 }
+

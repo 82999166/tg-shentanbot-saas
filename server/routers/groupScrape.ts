@@ -214,12 +214,12 @@ async function fetchMembersFromEngine(
       headers: { "X-Engine-Secret": engineSecret, "Content-Type": "application/json" },
       body: JSON.stringify({ group, limit }),
       // @ts-ignore
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(300000),
     });
     if (!resp.ok) return [];
     const data = (await resp.json()) as any;
     return data.members ?? [];
-  } catch {
+  } catch (e) {
     return [];
   }
 }
@@ -228,7 +228,7 @@ async function fetchLinksFromEngine(
   accountId: number,
   group: string,
   limit: number
-): Promise<Array<{ tgId?: string; username?: string; title?: string; memberCount?: number; description?: string; type?: string }>> {
+): Promise<{ results: Array<{ tgId?: string; username?: string; title?: string; memberCount?: number; description?: string; type?: string; isPremium?: boolean; isBot?: boolean; lastOnline?: number; lastMsgDate?: number }>; scanned: number; senderCount: number; linkCount: number }> {
   const engineSecret = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
   const port = await getEnginePort(accountId);
   try {
@@ -237,13 +237,13 @@ async function fetchLinksFromEngine(
       headers: { "X-Engine-Secret": engineSecret, "Content-Type": "application/json" },
       body: JSON.stringify({ group, limit }),
       // @ts-ignore
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(300000),
     });
-    if (!resp.ok) return [];
+    if (!resp.ok) return { results: [], scanned: 0, senderCount: 0, linkCount: 0 };
     const data = (await resp.json()) as any;
-    return data.results ?? [];
-  } catch {
-    return [];
+    return { results: data.results ?? [], scanned: data.scanned ?? 0, senderCount: data.senderCount ?? 0, linkCount: data.linkCount ?? 0 };
+  } catch (e) {
+    return { results: [], scanned: 0, senderCount: 0, linkCount: 0 };
   }
 }
 
@@ -383,7 +383,7 @@ export const groupScrapeRouter = router({
       return {
         items: results.map(r => ({
           ...r,
-          tags: r.tags ? JSON.parse(r.tags as any) : [],
+          tags: r.tags ? typeof r.tags === "string" ? JSON.parse(r.tags) : r.tags : [],
         })),
         total: Number(countResult[0]?.count || 0),
         page: input.page,
@@ -468,6 +468,7 @@ export const groupScrapeRouter = router({
       targetGroups: z.array(z.string().min(1)).min(1).max(50),
       collectTypes: z.string().default("group,channel,user"),
       userLimit: z.number().int().min(1).max(2000).default(500),
+      scanLimit: z.number().int().min(100).default(2000),
       // AI 评分参数
       aiScoreEnabled: z.boolean().default(true),
       aiMinScore: z.number().min(0).max(100).default(60),
@@ -527,7 +528,8 @@ export const groupScrapeRouter = router({
 
         // 采集群组/频道链接
         if (collectGroups || collectChannels) {
-          const links = await fetchLinksFromEngine(accountId, normalizedGroup, 200);
+          const links = await fetchLinksFromEngine(accountId, normalizedGroup, input.scanLimit);
+          console.log("[groupScrape] fetchLinksFromEngine returned", links.length, "links for", normalizedGroup, "scanLimit:", input.scanLimit, "accountId:", accountId);
           for (const link of links) {
             const linkType = link.type || "group";
             if (linkType === "group" && !collectGroups) continue;
@@ -541,6 +543,7 @@ export const groupScrapeRouter = router({
               type: linkType,
             });
 
+            console.log("[groupScrape] link:", link.username, "type:", linkType, "score:", score, "minScore:", input.aiMinScore);
             if (input.aiScoreEnabled && score < input.aiMinScore) continue;
             if (input.aiMinMembers > 0 && (link.memberCount ?? 0) < input.aiMinMembers) continue;
             if (input.aiRequireUsername && !link.username) continue;
@@ -727,7 +730,7 @@ export const groupScrapeRouter = router({
       return {
         items: items.map(b => ({
           ...b,
-          sourceGroups: b.sourceGroups ? JSON.parse(b.sourceGroups as any) : [],
+          sourceGroups: b.sourceGroups ? (typeof b.sourceGroups === "string" ? JSON.parse(b.sourceGroups) : b.sourceGroups) : [],
         })),
         total: Number(countResult[0]?.count || 0),
         page: input.page,
@@ -759,7 +762,9 @@ export const groupScrapeRouter = router({
       pageSize: z.number().int().min(1).max(100).default(20),
     }))
     .query(async ({ input }) => {
+      console.log("[listCollectedGroups] input:", JSON.stringify(input));
       const db = await getDb();
+      console.log("[listCollectedGroups] db=", db ? "ok" : "null");
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       const conditions: any[] = [];
@@ -772,20 +777,27 @@ export const groupScrapeRouter = router({
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
       const offset = (input.page - 1) * input.pageSize;
 
-      const [items, countResult] = await Promise.all([
-        db.select().from(scrapeCollectedGroups)
-          .where(whereClause)
-          .orderBy(desc(scrapeCollectedGroups.aiScore))
-          .limit(input.pageSize)
-          .offset(offset),
-        db.select({ count: sql<number>`count(*)` }).from(scrapeCollectedGroups).where(whereClause),
-      ]);
+      let items: any[] = [], countResult: any[] = [];
+      try {
+        [items, countResult] = await Promise.all([
+          db.select().from(scrapeCollectedGroups)
+            .where(whereClause)
+            .orderBy(desc(scrapeCollectedGroups.aiScore))
+            .limit(input.pageSize)
+            .offset(offset),
+          db.select({ count: sql<number>`count(*)` }).from(scrapeCollectedGroups).where(whereClause),
+        ]);
+      } catch(e: any) {
+        console.error("[listCollectedGroups] DB ERROR:", e.message, e.stack);
+        throw e;
+      }
+      console.log("[listCollectedGroups] total=", Number(countResult[0]?.count || 0), "items=", items.length);
 
       return {
         items: items.map(item => ({
           ...item,
-          tags: item.tags ? JSON.parse(item.tags as any) : [],
-          aiScoreDetail: item.aiScoreDetail ? JSON.parse(item.aiScoreDetail) : null,
+          tags: item.tags ? (typeof item.tags === "string" ? JSON.parse(item.tags) : item.tags) : [],
+          aiScoreDetail: item.aiScoreDetail ? (typeof item.aiScoreDetail === "string" ? JSON.parse(item.aiScoreDetail) : item.aiScoreDetail) : null,
         })),
         total: Number(countResult[0]?.count || 0),
         page: input.page,
@@ -828,7 +840,7 @@ export const groupScrapeRouter = router({
       return {
         items: items.map(u => ({
           ...u,
-          tags: u.tags ? JSON.parse(u.tags as any) : [],
+          tags: u.tags ? typeof u.tags === "string" ? JSON.parse(u.tags) : u.tags : [],
         })),
         total: Number(countResult[0]?.count || 0),
         page: input.page,
@@ -880,7 +892,7 @@ export const groupScrapeRouter = router({
             .limit(1);
 
           if (existing.length === 0) {
-            const tagsArr = g.tags ? JSON.parse(g.tags as any) : [];
+            const tagsArr = g.tags ? typeof g.tags === "string" ? JSON.parse(g.tags) : g.tags : [];
             await db.insert(publicMonitorGroups).values({
               groupId: groupIdentifier,
               groupTitle: g.title || groupIdentifier,
@@ -941,7 +953,7 @@ export const groupScrapeRouter = router({
       } else if (input.format === "csv") {
         const header = "tgId,username,displayName,isBot,isPremium,aiScore,tags,messageCount,sourceGroup";
         const rows = users.map(u => {
-          const tags = u.tags ? JSON.parse(u.tags as any).join("|") : "";
+          const tags = u.tags ? (Array.isArray(u.tags) ? u.tags : (typeof u.tags === "string" ? JSON.parse(u.tags) : [])).join("|") : "";
           return `${u.tgId},${u.username || ""},${(u.displayName || "").replace(/,/g, " ")},${u.isBot ? 1 : 0},${u.isPremium ? 1 : 0},${u.aiScore || 0},"${tags}",${u.messageCount || 0},${u.sourceGroupId || ""}`;
         });
         content = [header, ...rows].join("\n");
@@ -952,8 +964,68 @@ export const groupScrapeRouter = router({
         content,
         users: users.map(u => ({
           ...u,
-          tags: u.tags ? JSON.parse(u.tags as any) : [],
+          tags: u.tags ? typeof u.tags === "string" ? JSON.parse(u.tags) : u.tags : [],
         })),
+      };
+    }),
+
+  // 导出采集到的群组/频道
+  exportCollectedGroups: adminProcedure
+    .input(z.object({
+      batchId: z.number().int().optional(),
+      type: z.enum(["all", "group", "channel"]).default("all"),
+      minScore: z.number().min(0).max(100).optional(),
+      tag: z.string().optional(),
+      format: z.enum(["username", "tgid", "csv", "link"]).default("username"),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const conditions: any[] = [];
+      if (input.batchId) conditions.push(eq(scrapeCollectedGroups.batchId, input.batchId));
+      if (input.type !== "all") conditions.push(eq(scrapeCollectedGroups.type, input.type));
+      if (input.minScore !== undefined) conditions.push(sql`${scrapeCollectedGroups.aiScore} >= ${input.minScore}`);
+      if (input.tag) conditions.push(sql`JSON_CONTAINS(${scrapeCollectedGroups.tags}, ${JSON.stringify(input.tag)})`);
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      const groups = await db.select().from(scrapeCollectedGroups)
+        .where(whereClause)
+        .orderBy(desc(scrapeCollectedGroups.aiScore))
+        .limit(10000);
+      let content = "";
+      if (input.format === "username") {
+        content = groups.filter(g => g.username).map(g => `@${g.username}`).join("\n");
+      } else if (input.format === "tgid") {
+        content = groups.map(g => g.tgId || "").filter(Boolean).join("\n");
+      } else if (input.format === "link") {
+        content = groups.filter(g => g.username).map(g => `https://t.me/${g.username}`).join("\n");
+      } else if (input.format === "csv") {
+        const header = "tgId,username,title,type,memberCount,aiScore,tags,description,importStatus";
+        const rows = groups.map(g => {
+          const tags = g.tags ? (Array.isArray(g.tags) ? g.tags : (typeof g.tags === "string" ? JSON.parse(g.tags) : [])).join("|") : "";
+          return `${g.tgId || ""},${g.username || ""},"${(g.title || "").replace(/"/g, "'")}",${g.type},${g.memberCount || 0},${g.aiScore || 0},"${tags}","${(g.description || "").replace(/"/g, "'").replace(/\n/g, " ").slice(0, 200)}",${g.importStatus}`;
+        });
+        content = [header, ...rows].join("\n");
+      }
+      return {
+        total: groups.length,
+        content,
+      };
+    }),
+
+  // 获取单个采集群组/频道的详情
+  getCollectedGroupDetail: adminProcedure
+    .input(z.object({ id: z.number().int() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const [group] = await db.select().from(scrapeCollectedGroups)
+        .where(eq(scrapeCollectedGroups.id, input.id))
+        .limit(1);
+      if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "未找到该记录" });
+      return {
+        ...group,
+        tags: group.tags ? typeof group.tags === "string" ? JSON.parse(group.tags) : group.tags : [],
+        aiScoreDetail: group.aiScoreDetail ? typeof group.aiScoreDetail === "string" ? JSON.parse(group.aiScoreDetail) : group.aiScoreDetail : null,
       };
     }),
 
@@ -1011,8 +1083,8 @@ export const groupScrapeRouter = router({
         }
 
         // 调用引擎 scrape-links 接口（使用 fetchLinksFromEngine，端口 = 7100 + accountId）
-        const rawLinks = await fetchLinksFromEngine(accountId, normalizedGroup, input.limit);
-        let links = rawLinks as Array<{ tgId?: string; username?: string; title?: string; memberCount?: number; description?: string; type?: string }>;
+        const engineResult = await fetchLinksFromEngine(accountId, normalizedGroup, input.limit);
+        let links = engineResult.results;
 
         // AI 过滤：按最低成员数
         if (input.aiFilter && input.aiMinMembers > 0) {
@@ -1023,26 +1095,32 @@ export const groupScrapeRouter = router({
         const enrichedLinks = links.map(l => {
           const username = l.username || "";
           const url = username ? `https://t.me/${username.replace(/^@/, "")}` : "";
-          const { score } = calcGroupAiScore({
-            memberCount: l.memberCount,
-            username,
-            title: l.title,
-            type: l.type,
-            description: l.description,
-          });
-          const tags = calcGroupTags({
-            memberCount: l.memberCount,
-            username,
-            type: l.type,
-            aiScore: score,
-          });
-          return { url, slug: username.replace(/^@/, ""), memberCount: l.memberCount, title: l.title, type: l.type || "group", description: l.description, aiScore: score, tags, isPremium: (l as any).isPremium, isBot: (l as any).isBot, lastOnline: (l as any).lastOnline };
+          let score = 0;
+          let tags: string[] = [];
+          if (input.aiFilter) {
+            score = calcGroupAiScore({
+              memberCount: l.memberCount,
+              username,
+              title: l.title,
+              type: l.type,
+              description: l.description,
+            }).score;
+            tags = calcGroupTags({
+              memberCount: l.memberCount,
+              username,
+              type: l.type,
+              aiScore: score,
+            });
+          }
+          return { url, slug: username.replace(/^@/, ""), memberCount: l.memberCount, title: l.title, type: l.type || "group", description: l.description, aiScore: score, tags, isPremium: (l as any).isPremium, isBot: (l as any).isBot, lastOnline: (l as any).lastOnline, lastMsgDate: (l as any).lastMsgDate };
         });
 
         return {
           success: true,
           total: enrichedLinks.length,
-          scanned: input.limit,
+          scanned: engineResult.scanned,
+          senderCount: engineResult.senderCount,
+          linkCount: engineResult.linkCount,
           links: enrichedLinks,
         };
       } catch (err: any) {
@@ -1144,7 +1222,7 @@ export const groupScrapeRouter = router({
               }
             }
           }
-        } catch { continue; }
+        } catch (e) { continue; }
       }
 
       if (dialogMap.size === 0 && chatIdMap.size === 0) {
@@ -1214,3 +1292,4 @@ export const groupScrapeRouter = router({
       };
     }),
 });
+
