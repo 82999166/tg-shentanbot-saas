@@ -204,7 +204,8 @@ async function getEnginePort(accountId: number): Promise<number> {
 async function fetchMembersFromEngine(
   accountId: number,
   group: string,
-  limit: number
+  limit: number,
+  scanMessages: number = 2000
 ): Promise<Array<{ tgId: string; username?: string; displayName?: string; isBot?: boolean; isPremium?: boolean; messageCount?: number }>> {
   const engineSecret = process.env.ENGINE_SECRET || "shentanbot-engine-secret-2026";
   const port = await getEnginePort(accountId);
@@ -212,7 +213,7 @@ async function fetchMembersFromEngine(
     const resp = await fetch(`http://127.0.0.1:${port}/scrape-members`, {
       method: "POST",
       headers: { "X-Engine-Secret": engineSecret, "Content-Type": "application/json" },
-      body: JSON.stringify({ group, limit }),
+      body: JSON.stringify({ group, limit, scanMessages }),
       // @ts-ignore
       signal: AbortSignal.timeout(300000),
     });
@@ -607,7 +608,7 @@ export const groupScrapeRouter = router({
 
         // 采集用户
         if (collectUsers) {
-          const members = await fetchMembersFromEngine(accountId, normalizedGroup, input.userLimit);
+          const members = await fetchMembersFromEngine(accountId, normalizedGroup, input.userLimit, input.scanLimit);
           for (const member of members) {
             if (input.aiFilterBots && member.isBot) continue;
             if (input.aiFilterAds && !member.username && (!member.displayName || member.displayName.trim().length === 0)) continue;
