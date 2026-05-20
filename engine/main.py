@@ -762,12 +762,44 @@ class AccountWorker:
             body = await request.json(); group_id = body.get("group", "").strip()
             user_limit = int(body.get("limit", 500)); msg_limit = int(body.get("msg_limit", 3000))
             members = []; seen_ids = set()
-            async for msg in self.client.get_chat_history(group_id, limit=msg_limit):
-                if len(members) >= user_limit: break
-                for u in [msg.from_user, msg.forward_from, msg.reply_to_message.from_user if msg.reply_to_message else None]:
-                    if u and not u.is_deleted and str(u.id) not in seen_ids:
-                        seen_ids.add(str(u.id))
-                        members.append({"tgId": str(u.id), "username": u.username or "", "displayName": f"{u.first_name or ''} {u.last_name or ''}".strip(), "isBot": bool(u.is_bot)})
+
+            def add_user(u):
+                if not u or getattr(u, 'is_deleted', False): return
+                uid = str(u.id)
+                if uid in seen_ids: return
+                seen_ids.add(uid)
+                members.append({
+                    "tgId": uid,
+                    "username": u.username or "",
+                    "displayName": f"{u.first_name or ''} {u.last_name or ''}".strip(),
+                    "isBot": bool(getattr(u, 'is_bot', False)),
+                    "isPremium": bool(getattr(u, 'is_premium', False)),
+                    "messageCount": 0
+                })
+
+            # 策略1：get_chat_members 直接拉取（适用于超级群组/普通群组）
+            try:
+                from pyrogram.enums import ChatMembersFilter
+                # RECENT 过滤器获取最近活跃成员
+                async for member in self.client.get_chat_members(group_id, filter=ChatMembersFilter.RECENT):
+                    if len(members) >= user_limit: break
+                    add_user(member.user)
+                # 如果数量不足，用字母搜索补充
+                if len(members) < user_limit:
+                    for ch in "abcdefghijklmnopqrstuvwxyz":
+                        if len(members) >= user_limit: break
+                        try:
+                            async for member in self.client.get_chat_members(group_id, filter=ChatMembersFilter.SEARCH, query=ch):
+                                if len(members) >= user_limit: break
+                                add_user(member.user)
+                        except Exception: pass
+            except Exception as e1:
+                # 策略2：降级为消息历史扫描（频道等不支持 get_chat_members 的场景）
+                async for msg in self.client.get_chat_history(group_id, limit=msg_limit):
+                    if len(members) >= user_limit: break
+                    for u in [msg.from_user, msg.forward_from, msg.reply_to_message.from_user if msg.reply_to_message else None]:
+                        add_user(u)
+
             return web.json_response({"success": True, "members": members, "total": len(members)})
         except Exception as e: return web.json_response({"success": False, "error": str(e)}, status=500)
 

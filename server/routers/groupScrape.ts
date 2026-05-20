@@ -528,7 +528,8 @@ export const groupScrapeRouter = router({
 
         // 采集群组/频道链接
         if (collectGroups || collectChannels) {
-          const links = await fetchLinksFromEngine(accountId, normalizedGroup, input.scanLimit);
+          const linksResult = await fetchLinksFromEngine(accountId, normalizedGroup, input.scanLimit);
+          const links = linksResult.results;
           console.log("[groupScrape] fetchLinksFromEngine returned", links.length, "links for", normalizedGroup, "scanLimit:", input.scanLimit, "accountId:", accountId);
           for (const link of links) {
             const linkType = link.type || "group";
