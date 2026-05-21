@@ -796,8 +796,7 @@ class TDLibAccountWorker:
 
         # 全局反垃圾检查
         max_len = anti_spam.get("globalMaxMsgLen", 0)
-        # 只在消息极长时过滤（globalMaxMsgLen 必须 >= 50 才生效，避免误配置导致漏报）
-        if max_len >= 50 and len(text) > max_len:
+        if max_len > 0 and len(text) > max_len:
             return
         if anti_spam.get("filterBot", True) and sender_is_bot:
             return
