@@ -111,16 +111,43 @@ export const tgAccountsRouter = router({
     const rows = await query.orderBy(desc(tgAccounts.createdAt));
     console.log('[DEBUG] Found', rows.length, 'accounts');
 
-    return rows.map(r => ({
-      ...r,
-      privateGroupCount: 0,
-      publicGroupCount: 0,
-      totalGroupCount: 0,
-      joinedGroupCount: 0,
-      assignedGroupCount: 0,
-      pendingGroupCount: 0,
-      notFoundGroupCount: 0,
-    }));
+    // 并发查询每个账号的引擎订阅统计（实时）
+    const statsResults = await Promise.allSettled(
+      rows.map(async (r) => {
+        if (!r.inEngine) return { subscribedCount: 0, subscribedTotal: 0 };
+        try {
+          const port = ENGINE_HTTP_PORT_BASE + r.id;
+          const data = await new Promise<any>((resolve, reject) => {
+            const req = http.get(`http://127.0.0.1:${port}/stats`, (res: any) => {
+              let body = "";
+              res.on("data", (c: any) => body += c);
+              res.on("end", () => { try { resolve(JSON.parse(body)); } catch { resolve({}); } });
+            });
+            req.on("error", reject);
+            req.setTimeout(3000, () => { req.destroy(); reject(new Error("timeout")); });
+          });
+          return { subscribedCount: data.subscribed_count ?? 0, subscribedTotal: data.subscribed_total ?? 0 };
+        } catch {
+          return { subscribedCount: 0, subscribedTotal: 0 };
+        }
+      })
+    );
+
+    return rows.map((r, i) => {
+      const stats = statsResults[i].status === "fulfilled" ? statsResults[i].value : { subscribedCount: 0, subscribedTotal: 0 };
+      return {
+        ...r,
+        privateGroupCount: 0,
+        publicGroupCount: 0,
+        totalGroupCount: 0,
+        joinedGroupCount: 0,
+        assignedGroupCount: 0,
+        pendingGroupCount: 0,
+        notFoundGroupCount: 0,
+        subscribedCount: stats.subscribedCount,   // 引擎已监控数
+        subscribedTotal: stats.subscribedTotal,   // TDLib 已加入总数
+      };
+    });
   }),
   // ─── 获取单个TG账号 ───────────────────────────────────────────────────────
   get: protectedProcedure
@@ -900,6 +927,18 @@ export const tgAccountsRouter = router({
       }
       return { success: true, deletedCount };
     }),
+
+  // ─── 重新订阅引擎（修复漏订阅）─────────────────────────────────────────────
+  resubscribe: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const account = await getTgAccountById(input.id, ctx.user.id);
+      if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
+      if (!account.inEngine) throw new TRPCError({ code: "BAD_REQUEST", message: "该账号未加入引擎" });
+      const result = await resubscribeAccount(input.id);
+      if (!result.success) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.message });
+      return { success: true, message: result.message };
+    }),
 });
 
 // ─── 保存账号到数据库（检查配额）─────────────────────────────────────────
@@ -1066,5 +1105,31 @@ async function autoSyncChatsToPublic(
   } catch (_) { /* 忽略 */ }
 }
 
-
-
+// ─── 重新订阅引擎（修复漏订阅）─────────────────────────────────────────────
+export async function resubscribeAccount(accountId: number): Promise<{ success: boolean; message: string }> {
+  const port = ENGINE_HTTP_PORT_BASE + accountId;
+  try {
+    const result = await new Promise<any>((resolve, reject) => {
+      const postData = JSON.stringify({});
+      const options = {
+        hostname: "127.0.0.1",
+        port,
+        path: "/resubscribe",
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(postData) },
+      };
+      const req = http.request(options, (res: any) => {
+        let body = "";
+        res.on("data", (c: any) => body += c);
+        res.on("end", () => { try { resolve(JSON.parse(body)); } catch { resolve({}); } });
+      });
+      req.on("error", reject);
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error("timeout")); });
+      req.write(postData);
+      req.end();
+    });
+    return { success: true, message: result.message ?? "重新订阅已启动" };
+  } catch (e: any) {
+    return { success: false, message: `重新订阅失败: ${e.message}` };
+  }
+}

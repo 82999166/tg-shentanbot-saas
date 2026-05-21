@@ -170,6 +170,7 @@ export default function TgAccounts() {
   const [healthCheckSelected, setHealthCheckSelected] = useState<Set<string>>(new Set());
   const checkGroupHealth = trpc.tgAccounts.checkGroupHealth.useMutation();
   const deleteAbnormalGroups = trpc.tgAccounts.deleteAbnormalPublicGroups.useMutation();
+  const resubscribeMut = trpc.tgAccounts.resubscribe.useMutation();
 
   const openHealthCheck = async (accountId: number) => {
     setHealthCheckAccountId(accountId);
@@ -456,7 +457,8 @@ export default function TgAccounts() {
                     <th className="text-left px-4 py-3 text-slate-500 font-medium">状态</th>
                     <th className="text-left px-4 py-3 text-slate-500 font-medium">角色</th>
                     <th className="text-center px-4 py-3 text-slate-500 font-medium"><span title="该账号监控的私有群组数">私有群组</span></th>
-                    <th className="text-center px-4 py-3 text-slate-500 font-medium"><span title="已加入的公共群组数（subscribed 状态）">已加入</span></th>
+                    <th className="text-center px-4 py-3 text-slate-500 font-medium"><span title="TDLib 实际加入的对话总数（引擎实时统计）">已加入</span></th>
+                    <th className="text-center px-4 py-3 text-slate-500 font-medium"><span title="引擎实际监控的对话数 / TDLib已加入总数">已监控/已加入</span></th>
 
                     <th className="text-center px-4 py-3 text-slate-500 font-medium"><span title="群组已解散或不存在（not_found）">无效</span></th>
                     <th className="text-center px-4 py-3 text-slate-500 font-medium">健康度</th>
@@ -480,6 +482,8 @@ export default function TgAccounts() {
                     const publicCount = (account as any).publicGroupCount ?? 0;
                     const totalCount = (account as any).totalGroupCount ?? 0;
                     const joinedCount = (account as any).joinedGroupCount;
+                    const subscribedCount = (account as any).subscribedCount ?? 0;
+                    const subscribedTotal = (account as any).subscribedTotal ?? 0;
                     const assignedCount = (account as any).assignedGroupCount ?? 0;
                     const pendingCount = (account as any).pendingGroupCount ?? 0;
                     const notFoundCount = (account as any).notFoundGroupCount ?? 0;
@@ -528,11 +532,41 @@ export default function TgAccounts() {
                         <td className="px-4 py-3 text-center">
                           <span className={`text-sm font-bold ${privateCount > 0 ? "text-blue-400" : "text-slate-600"}`}>{privateCount}</span>
                         </td>
-                        {/* 已加入公共群组数 */}
+                        {/* 已加入群组数（来自引擎 TDLib 实时统计） */}
                         <td className="px-4 py-3 text-center">
-                          <span className={`text-sm font-bold ${publicCount > 0 ? "text-green-400" : "text-slate-600"}`}>{publicCount}</span>
+                          <span className={`text-sm font-bold ${subscribedTotal > 0 ? "text-green-400" : "text-slate-600"}`}>{subscribedTotal}</span>
                         </td>
 
+                        {/* 已监控/已加入（引擎订阅统计） */}
+                        <td className="px-4 py-3 text-center">
+                          {(account as any).inEngine ? (
+                            <div className="flex flex-col items-center gap-1">
+                              <div className="flex items-center gap-1">
+                                <span className={`text-sm font-bold ${subscribedTotal > 0 && subscribedCount < subscribedTotal ? "text-orange-400" : "text-green-400"}`}>
+                                  {subscribedCount}
+                                </span>
+                                <span className="text-xs text-slate-500">/</span>
+                                <span className="text-xs text-slate-400">{subscribedTotal}</span>
+                              </div>
+                              {subscribedTotal > 0 && subscribedCount < subscribedTotal && (
+                                <button
+                                  className="text-xs px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/40 hover:bg-orange-500/40 transition-colors"
+                                  title={`引擎只监控了 ${subscribedCount} 个对话，但账号实际加入了 ${subscribedTotal} 个，点击修复`}
+                                  onClick={async () => {
+                                    try {
+                                      const r = await resubscribeMut.mutateAsync({ id: account.id });
+                                      toast.success(r.message ?? "修复订阅已启动");
+                                    } catch (e: any) {
+                                      toast.error(e.message ?? "修复失败");
+                                    }
+                                  }}
+                                >修复订阅</button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-500">—</span>
+                          )}
+                        </td>
                         {/* 无效群组数（not_found） */}
                         <td className="px-4 py-3 text-center">
                           <span className={`text-sm font-bold ${notFoundCount > 0 ? "text-red-400" : "text-slate-600"}`}>{notFoundCount}</span>
