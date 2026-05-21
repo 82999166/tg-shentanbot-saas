@@ -25,9 +25,9 @@ const adminMenuItems = [
   { icon: BarChart2, label: "公共关键词统计", path: "/admin-keyword-stats", group: "监控数据" },
 
   // 监控管理
-  { icon: Globe, label: "公共群组管理", path: "/admin-groups", group: "监控管理" },
+  { icon: Globe, label: "公共群组", path: "/admin-groups", group: "监控管理" },
   { icon: Search, label: "群组采集", path: "/admin-group-scrape", group: "监控管理" },
-  { icon: Users, label: "系统 TG 账号", path: "/admin-accounts", group: "监控管理" },
+  { icon: Users, label: "系统帐号", path: "/admin-accounts", group: "监控管理" },
   { icon: Bot, label: "Bot 配置", path: "/bot-config", group: "监控管理" },
 
   // 财务管理
@@ -40,7 +40,6 @@ const adminMenuItems = [
   { icon: Settings, label: "系统设置", path: "/system-settings", group: "系统配置" },
   { icon: Wrench, label: "系统维护", path: "/admin-maintenance", group: "系统配置" },
   { icon: KeyRound, label: "修改密码", path: "/admin-change-password", group: "系统配置" },
-  { icon: LogIn, label: "管理员登录页", path: "/admin/login", group: "系统配置" },
 ];
 
 // 分组图标颜色映射
