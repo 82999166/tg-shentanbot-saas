@@ -307,9 +307,12 @@ export function registerEngineRestRoutes(app: Router) {
         dmStatus: "pending",
         messageDate: new Date(),
       });
-
       res.json({ success: true, id: Number(result[0].insertId) });
     } catch (e: any) {
+      // 重复键冲突（同一条消息被多账号同时监控）：静默忽略，返回 200
+      if (e?.cause?.code === "ER_DUP_ENTRY" || String(e?.message || "").includes("Duplicate entry") || String(e?.cause?.sqlMessage || "").includes("Duplicate entry")) {
+        return res.json({ success: true, id: 0, duplicate: true });
+      }
       console.error("[Engine API] hit error:", e);
       res.status(500).json({ error: e.message });
     }
