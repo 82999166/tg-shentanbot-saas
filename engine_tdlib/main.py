@@ -146,11 +146,11 @@ def is_dedup(chat_id: int, message_id: int) -> bool:
     return False
 
 
-def check_rate_limit(sender_id: int, chat_id: int, window: int, limit: int) -> bool:
-    """发送者频率限制"""
+def check_rate_limit(sender_id: int, chat_id: int, window: int, limit: int, user_id: int = 0) -> bool:
+    """发送者频率限制（按用户独立计算，避免跨用户干扰）"""
     if window <= 0 or limit <= 0:
         return False
-    key = f"{sender_id}:{chat_id}"
+    key = f"{user_id}:{sender_id}:{chat_id}"
     now = time.time()
     timestamps = _rate_cache.get(key, [])
     timestamps = [ts for ts in timestamps if now - ts <= window]
@@ -342,6 +342,7 @@ class TDLibAccountWorker:
 
         # 对话缓存
         self._dialog_cache: Dict[int, dict] = {}
+        self._subscribed_total: int = 0  # 订阅的对话总数（用于前端展示）
         self._dialog_cache_lock = threading.Lock()
         self._is_loading_dialogs = False  # 防止并发加载群组详情
 
@@ -468,55 +469,115 @@ class TDLibAccountWorker:
             logger.error(f"[ACC{self.account_id}] 后台订阅对话失败: {e}")
 
     def _subscribe_chats(self):
-        """订阅所有对话的消息推送（轻量级）
+        """订阅所有对话的消息推送（最优方案：循环 loadChats 确保全量加载）
 
-        只调用 getChats 获取 ID 列表，触发 TDLib 内部订阅机制。
-        不逐个调用 getChat 获取详情，避免 FLOOD_WAIT 和 CPU 过载。
-        详情在前端请求 /dialogs 时按需加载。
+        TDLib 工作原理：
+        - loadChats 触发 TDLib 从服务器拉取对话列表到本地 SQLite 缓存
+        - 需要循环调用直到返回 "Already loading" 或无更多对话
+        - getChats 从本地缓存读取已加载的对话 ID
+        - 只要 chat_id 在 _dialog_cache 中，TDLib 就会推送该群的消息
+
+        关键：loadChats 必须循环调用，确保所有已加入群组（包括不活跃小群）
+        都被加载到 TDLib 本地缓存，否则排序靠后的小群会被遗漏。
         """
-        logger.info(f"[ACC{self.account_id}] 开始订阅对话列表（轻量模式）...")
-        total_ids = 0
+        logger.info(f"[ACC{self.account_id}] 开始订阅对话列表（全量加载模式）...")
 
-        while True:
+        # 第一步：循环调用 loadChats，直到所有对话都加载到本地缓存
+        # TDLib 按活跃度排序，每次 loadChats 加载下一批，需要循环直到完成
+        load_round = 0
+        max_load_rounds = 50  # 最多50轮，每轮100个，最多加载5000个对话
+        while load_round < max_load_rounds:
+            try:
+                result = self.tg.call_method('loadChats', {
+                    'chat_list': {'@type': 'chatListMain'},
+                    'limit': 100,
+                })
+                result.wait(timeout=15)
+                if result.error:
+                    err_msg = str(result.error_info)
+                    # "Already loading chats" 表示 TDLib 正在加载，稍等后继续
+                    if 'already' in err_msg.lower() or '400' in err_msg:
+                        time.sleep(1)
+                        load_round += 1
+                        continue
+                    # "No more chats" 表示已全部加载完毕
+                    if 'no more' in err_msg.lower() or '404' in err_msg:
+                        logger.info(f"[ACC{self.account_id}] loadChats 完成（第{load_round+1}轮，无更多对话）")
+                        break
+                    logger.warning(f"[ACC{self.account_id}] loadChats 错误: {err_msg}")
+                    break
+                load_round += 1
+                time.sleep(0.5)
+            except Exception as e:
+                err_str = str(e)
+                if 'no more' in err_str.lower() or 'already' in err_str.lower():
+                    logger.info(f"[ACC{self.account_id}] loadChats 完成（第{load_round+1}轮）")
+                    break
+                logger.warning(f"[ACC{self.account_id}] loadChats 异常: {e}")
+                break
+
+        logger.info(f"[ACC{self.account_id}] loadChats 循环完成，共执行 {load_round} 轮")
+        time.sleep(1)
+
+        # 第二步：用 getChats 分页获取所有已加入群组（从本地缓存读取）
+        total_ids = 0
+        offset_order = "9223372036854775807"
+        offset_chat_id = 0
+        page = 0
+        while page < 100:  # 最多100页，每页100个，最多10000个群组
             try:
                 result = self.tg.call_method('getChats', {
                     'chat_list': {'@type': 'chatListMain'},
                     'limit': 100,
+                    'offset_order': offset_order,
+                    'offset_chat_id': offset_chat_id,
                 })
                 result.wait(timeout=30)
-
                 if result.error:
                     logger.warning(f"[ACC{self.account_id}] getChats 错误: {result.error_info}")
                     break
-
                 if not result.update:
                     break
-
                 chat_ids = result.update.get('chat_ids', [])
                 if not chat_ids:
                     break
-
-                # 只记录 ID，不获取详情
                 with self._dialog_cache_lock:
                     for cid in chat_ids:
                         if cid not in self._dialog_cache:
-                            # 用 None 占位，表示已知但未加载详情
                             self._dialog_cache[cid] = None
-
                 total_ids += len(chat_ids)
-
+                page += 1
                 if len(chat_ids) < 100:
                     break
-
-                # 每批之间短暂等待，避免 CPU 突增
+                # 获取最后一个 chat 的 order 值用于正确分页
+                last_cid = chat_ids[-1]
+                try:
+                    chat_result = self.tg.call_method('getChat', {'chat_id': last_cid})
+                    chat_result.wait(timeout=10)
+                    if not chat_result.error and chat_result.update:
+                        positions = chat_result.update.get('positions', [])
+                        last_order = None
+                        for pos in positions:
+                            if pos.get('list', {}).get('@type') == 'chatListMain':
+                                last_order = pos.get('order', '0')
+                                break
+                        if last_order and last_order != '0':
+                            offset_order = last_order
+                            offset_chat_id = last_cid
+                        else:
+                            # 无法获取 order，停止分页
+                            break
+                    else:
+                        break
+                except Exception:
+                    break
                 time.sleep(0.2)
-
             except Exception as e:
                 logger.warning(f"[ACC{self.account_id}] 订阅对话异常: {e}")
                 break
-
-        logger.info(f"[ACC{self.account_id}] ✓ 对话订阅完成: {total_ids} 个对话已注册（消息推送已激活）")
-
+        with self._dialog_cache_lock:
+            self._subscribed_total = len(self._dialog_cache)
+        logger.info(f"[ACC{self.account_id}] ✓ 对话订阅完成: {self._subscribed_total} 个对话已注册（消息推送已激活）")
     def _load_dialogs_on_demand(self) -> list:
         """按需加载对话详情（前端请求 /dialogs 时调用）
 
@@ -606,7 +667,50 @@ class TDLibAccountWorker:
         self.tg.add_message_handler(self._on_new_message)
         # 群组成员变更处理器（自动更新缓存）
         self.tg.add_update_handler('updateChatMember', self._on_chat_member_update)
-        logger.info(f"[ACC{self.account_id}] 消息和事件处理器已注册")
+        # 【方案一】监听 updateNewChat：TDLib 加载到任何对话时自动补录到 _dialog_cache
+        # 这样无论群组活跃度高低、排序靠前靠后，只要账号加入了，就会被自动发现
+        self.tg.add_update_handler('updateNewChat', self._on_new_chat)
+        logger.info(f"[ACC{self.account_id}] 消息和事件处理器已注册（含 updateNewChat 自动发现）")
+
+    def _on_new_chat(self, update: dict):
+        """【方案一】处理 updateNewChat 事件：TDLib 加载到新对话时自动补录到 _dialog_cache
+
+        TDLib 在以下情况会触发 updateNewChat：
+        1. 引擎启动时，loadChats 加载每一个对话
+        2. 账号加入新群组时
+        3. 有人给账号发消息时（私聊）
+
+        通过监听此事件，无论群组活跃度高低，只要 TDLib 加载到它，
+        引擎就会自动把它加入 _dialog_cache，确保零漏报。
+        """
+        try:
+            chat = update.get('chat', {})
+            if not chat:
+                return
+            chat_id = chat.get('id', 0)
+            if not chat_id or chat_id >= 0:
+                return  # 只处理群组（负数 chat_id）
+            chat_type = chat.get('type', {}).get('@type', '')
+            # 只缓存群组和超级群组，忽略私聊和频道
+            if chat_type not in ('chatTypeSupergroup', 'chatTypeBasicGroup'):
+                return
+            with self._dialog_cache_lock:
+                if chat_id not in self._dialog_cache:
+                    title = chat.get('title', '')
+                    username = self._extract_username_from_chat(chat)
+                    self._dialog_cache[chat_id] = {
+                        'chatId': str(chat_id),
+                        'title': title,
+                        'username': username,
+                        'memberCount': chat.get('member_count', 0) or 0,
+                        'type': 'supergroup' if chat_type == 'chatTypeSupergroup' else 'group',
+                    }
+                    logger.info(
+                        f"[ACC{self.account_id}] [AUTO-DISCOVER] 自动发现新群组: "
+                        f"{title!r}({chat_id}), username={username!r}"
+                    )
+        except Exception as e:
+            logger.debug(f"[ACC{self.account_id}] _on_new_chat 异常: {e}")
 
     def _on_new_message(self, update: dict):
         """处理新消息事件
@@ -650,15 +754,29 @@ class TDLibAccountWorker:
             elif sender_type == 'messageSenderChat':
                 sender_id = sender.get('chat_id', 0)
 
-            # 群组信息（从缓存获取）
+            # 【方案二】群组信息（从缓存获取，缓存未命中时自动补录完整信息）
+            # 即使 _subscribe_chats 没有加载到该群，收到消息时也不会丢弃，
+            # 而是动态获取群组信息并补录到缓存，确保后续消息也能正常处理。
             chat_info = self._dialog_cache.get(chat_id)
             if chat_info:
                 chat_title = chat_info.get('title', '')
                 chat_username = chat_info.get('username', '')
             else:
-                # 缓存未命中，动态获取并缓存
-                chat_title = self._get_and_cache_chat_title(chat_id)
-                chat_username = ''
+                # 缓存未命中：动态获取完整群组信息并补录到 _dialog_cache
+                fetched_info = self._fetch_chat_info(chat_id)
+                if fetched_info:
+                    with self._dialog_cache_lock:
+                        self._dialog_cache[chat_id] = fetched_info
+                    chat_title = fetched_info.get('title', '')
+                    chat_username = fetched_info.get('username', '')
+                    logger.info(
+                        f"[ACC{self.account_id}] [AUTO-RECOVER] 缓存未命中，已自动补录: "
+                        f"{chat_title!r}({chat_id})"
+                    )
+                else:
+                    # getChat 失败（可能是私聊或已退出的群），仍然尝试处理消息
+                    chat_title = self._get_and_cache_chat_title(chat_id)
+                    chat_username = ''
 
             # 日志记录
             logger.info(
@@ -786,7 +904,7 @@ class TDLibAccountWorker:
             # 频率限制
             rate_window = anti_spam.get("globalRateWindow", 60)
             rate_limit = anti_spam.get("globalRateLimit", 5)
-            if sender_id and check_rate_limit(sender_id, chat_id, rate_window, rate_limit):
+            if sender_id and check_rate_limit(sender_id, chat_id, rate_window, rate_limit, user_id):
                 continue
 
             mode = push_settings.get("keywordMatchMode", "fuzzy")
@@ -931,6 +1049,8 @@ class TDLibAccountWorker:
                                 pending_count += 1
                             elif info:
                                 cached_count += 1
+                    # 已订阅总数（分页订阅记录的全量数）
+                    subscribed_total = getattr(self, '_subscribed_total', subscribed_count)
 
                     data = {
                         "accountId": self.account_id,
@@ -938,6 +1058,7 @@ class TDLibAccountWorker:
                         "version": VERSION,
                         "dialogCount": cached_count,
                         "subscribedCount": subscribed_count,
+                        "subscribedTotal": subscribed_total,
                         "cachedCount": cached_count,
                         "pendingCount": pending_count,
                         "msgCount": self._msg_count,
@@ -1026,6 +1147,7 @@ class TDLibAccountWorker:
                 path = urlparse(self.path).path
                 handlers = {
                     '/health': worker._handle_health,
+                    '/stats': worker._handle_stats,
                     '/dialogs': worker._handle_dialogs,
                     '/status': worker._handle_status,
                 }
@@ -1040,6 +1162,7 @@ class TDLibAccountWorker:
                 body = self._read_body()
                 handlers = {
                     '/join-group': worker._handle_join_group,
+                    '/resubscribe': lambda b: worker._handle_resubscribe(b),
                     '/leave-group': worker._handle_leave_group,
                     '/scrape-members': worker._handle_scrape_members,
                     '/scrape-links': worker._handle_scrape_links,
@@ -1139,6 +1262,39 @@ class TDLibAccountWorker:
             "pid": os.getpid(),
             "engine": "tdlib",
         }
+
+    def _handle_stats(self) -> dict:
+        """GET /stats - 返回账号订阅统计数据
+        subscribed_count: _dialog_cache 中已知对话数（实时，含未加载详情的占位）
+        subscribed_total: _subscribe_chats 完成后的去重总数；未完成时用 subscribed_count 兜底
+        """
+        with self._dialog_cache_lock:
+            subscribed_count = len(self._dialog_cache)
+        # _subscribed_total 在 _subscribe_chats 完成后才有值（且已去重）
+        # 若还未完成（值为0），用 dialog_cache 当前长度作为兜底
+        raw_total = getattr(self, '_subscribed_total', 0)
+        subscribed_total = raw_total if raw_total > 0 else subscribed_count
+        return {
+            "subscribed_count": subscribed_count,
+            "subscribed_total": subscribed_total,
+            "account_id": self.account_id,
+        }
+
+    def _handle_resubscribe(self, body: dict) -> dict:
+        """POST /resubscribe - 重新执行全量订阅，修复漏订阅问题"""
+        logger.info(f"[ACC{self.account_id}] 收到重新订阅请求，开始全量重新订阅...")
+        try:
+            # 在后台线程执行，避免阻塞 HTTP 响应
+            import threading
+            def do_resubscribe():
+                self._subscribe_chats()
+                logger.info(f"[ACC{self.account_id}] 重新订阅完成，共订阅 {self._subscribed_total} 个对话")
+            t = threading.Thread(target=do_resubscribe, daemon=True, name=f"resubscribe-{self.account_id}")
+            t.start()
+            return {"status": "ok", "message": f"重新订阅已在后台启动，当前已订阅 {getattr(self, '_subscribed_total', 0)} 个对话"}
+        except Exception as e:
+            logger.error(f"[ACC{self.account_id}] 重新订阅失败: {e}")
+            return {"status": "error", "message": str(e)}
 
     def _handle_dialogs(self) -> dict:
         """处理 /dialogs 请求：立即返回已缓存数据，同时后台加载未获取的
