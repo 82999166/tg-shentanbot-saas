@@ -480,43 +480,68 @@ class TDLibAccountWorker:
         关键：loadChats 必须循环调用，确保所有已加入群组（包括不活跃小群）
         都被加载到 TDLib 本地缓存，否则排序靠后的小群会被遗漏。
         """
-        logger.info(f"[ACC{self.account_id}] 开始订阅对话列表（全量加载模式）...")
+        logger.info(f"[ACC{self.account_id}] 开始订阅对话列表（全量加载模式，循环至 CHAT_LIST_IS_EMPTY）...")
 
-        # 第一步：循环调用 loadChats，直到所有对话都加载到本地缓存
-        # TDLib 按活跃度排序，每次 loadChats 加载下一批，需要循环直到完成
+        # 第一步：循环调用 loadChats，直到 TDLib 返回 CHAT_LIST_IS_EMPTY
+        # ---------------------------------------------------------------
+        # TDLib 官方约定：
+        #   - loadChats 成功（无错误）：本批加载完成，继续下一轮
+        #   - 返回 CHAT_LIST_IS_EMPTY（error code 404）：所有对话已全部加载完毕
+        #   - 返回 "Already loading" (error code 400)：TDLib 内部正在加载，稍等重试
+        # 不设轮次上限，确保 100% 加载所有已加入群组（包括不活跃小群）
         load_round = 0
-        max_load_rounds = 50  # 最多50轮，每轮100个，最多加载5000个对话
-        while load_round < max_load_rounds:
+        while True:
             try:
                 result = self.tg.call_method('loadChats', {
                     'chat_list': {'@type': 'chatListMain'},
                     'limit': 100,
                 })
-                result.wait(timeout=15)
+                result.wait(timeout=30)
                 if result.error:
-                    err_msg = str(result.error_info)
-                    # "Already loading chats" 表示 TDLib 正在加载，稍等后继续
-                    if 'already' in err_msg.lower() or '400' in err_msg:
-                        time.sleep(1)
-                        load_round += 1
-                        continue
-                    # "No more chats" 表示已全部加载完毕
-                    if 'no more' in err_msg.lower() or '404' in err_msg:
-                        logger.info(f"[ACC{self.account_id}] loadChats 完成（第{load_round+1}轮，无更多对话）")
+                    err_msg = str(result.error_info) if result.error_info else ''
+                    err_code = getattr(result.error_info, 'code', 0) if result.error_info else 0
+
+                    # CHAT_LIST_IS_EMPTY (404)：所有对话已全部加载完毕，正常退出
+                    if (err_code == 404
+                            or 'CHAT_LIST_IS_EMPTY' in err_msg
+                            or 'chat list is empty' in err_msg.lower()
+                            or 'no more' in err_msg.lower()):
+                        logger.info(
+                            f"[ACC{self.account_id}] ✓ loadChats 全量加载完毕 "
+                            f"（共 {load_round} 轮，TDLib 返回 CHAT_LIST_IS_EMPTY）"
+                        )
                         break
-                    logger.warning(f"[ACC{self.account_id}] loadChats 错误: {err_msg}")
+
+                    # Already loading (400)：TDLib 内部正在加载，等待后重试
+                    if (err_code == 400
+                            or 'already' in err_msg.lower()
+                            or 'loading' in err_msg.lower()):
+                        logger.debug(
+                            f"[ACC{self.account_id}] loadChats 第{load_round+1}轮：TDLib 正在加载，等待1秒..."
+                        )
+                        time.sleep(1)
+                        continue
+
+                    # 其他错误：记录并退出（避免无限循环）
+                    logger.warning(f"[ACC{self.account_id}] loadChats 未知错误: {err_msg}，停止加载")
                     break
+
+                # 成功加载一批，继续下一轮
                 load_round += 1
-                time.sleep(0.5)
+                logger.debug(f"[ACC{self.account_id}] loadChats 第{load_round}轮完成，继续...")
+                time.sleep(0.3)  # 短暂间隔，避免频率限制
+
             except Exception as e:
                 err_str = str(e)
-                if 'no more' in err_str.lower() or 'already' in err_str.lower():
-                    logger.info(f"[ACC{self.account_id}] loadChats 完成（第{load_round+1}轮）")
+                if ('chat list is empty' in err_str.lower()
+                        or 'no more' in err_str.lower()
+                        or 'CHAT_LIST_IS_EMPTY' in err_str):
+                    logger.info(f"[ACC{self.account_id}] ✓ loadChats 全量加载完毕（第{load_round}轮）")
                     break
-                logger.warning(f"[ACC{self.account_id}] loadChats 异常: {e}")
+                logger.warning(f"[ACC{self.account_id}] loadChats 异常: {e}，停止加载")
                 break
 
-        logger.info(f"[ACC{self.account_id}] loadChats 循环完成，共执行 {load_round} 轮")
+        logger.info(f"[ACC{self.account_id}] loadChats 循环结束，共执行 {load_round} 轮")
         time.sleep(1)
 
         # 第二步：用 getChats 分页获取所有已加入群组（从本地缓存读取）
