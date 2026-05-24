@@ -499,16 +499,23 @@ class TDLibAccountWorker:
                 result.wait(timeout=30)
                 if result.error:
                     err_msg = str(result.error_info) if result.error_info else ''
-                    err_code = getattr(result.error_info, 'code', 0) if result.error_info else 0
+                    # 兼容 dict 和 object 两种类型获取 error code
+                    if isinstance(result.error_info, dict):
+                        err_code = result.error_info.get('code', 0)
+                    else:
+                        err_code = getattr(result.error_info, 'code', 0) if result.error_info else 0
 
-                    # CHAT_LIST_IS_EMPTY (404)：所有对话已全部加载完毕，正常退出
+                    # CHAT_LIST_IS_EMPTY / Not Found (404)：所有对话已全部加载完毕
+                    # TDLib python-telegram 库返回 {'code': 404, 'message': 'Not Found'}
                     if (err_code == 404
                             or 'CHAT_LIST_IS_EMPTY' in err_msg
                             or 'chat list is empty' in err_msg.lower()
+                            or 'Not Found' in err_msg
+                            or 'not found' in err_msg.lower()
                             or 'no more' in err_msg.lower()):
                         logger.info(
                             f"[ACC{self.account_id}] ✓ loadChats 全量加载完毕 "
-                            f"（共 {load_round} 轮，TDLib 返回 CHAT_LIST_IS_EMPTY）"
+                            f"（共 {load_round} 轮，TDLib 返回: code={err_code}）"
                         )
                         break
 
@@ -523,7 +530,7 @@ class TDLibAccountWorker:
                         continue
 
                     # 其他错误：记录并退出（避免无限循环）
-                    logger.warning(f"[ACC{self.account_id}] loadChats 未知错误: {err_msg}，停止加载")
+                    logger.warning(f"[ACC{self.account_id}] loadChats 未知错误: code={err_code}, msg={err_msg}，停止加载")
                     break
 
                 # 成功加载一批，继续下一轮
@@ -535,7 +542,9 @@ class TDLibAccountWorker:
                 err_str = str(e)
                 if ('chat list is empty' in err_str.lower()
                         or 'no more' in err_str.lower()
-                        or 'CHAT_LIST_IS_EMPTY' in err_str):
+                        or 'not found' in err_str.lower()
+                        or 'CHAT_LIST_IS_EMPTY' in err_str
+                        or '404' in err_str):
                     logger.info(f"[ACC{self.account_id}] ✓ loadChats 全量加载完毕（第{load_round}轮）")
                     break
                 logger.warning(f"[ACC{self.account_id}] loadChats 异常: {e}，停止加载")
