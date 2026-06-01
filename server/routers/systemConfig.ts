@@ -65,6 +65,44 @@ async function pm2Restart(processName: string): Promise<{ success: boolean; mess
   return { success: false, message: `${processName} 重启失败，未找到 PM2 或进程不存在` };
 }
 
+async function pm2Stop(processName: string): Promise<{ success: boolean; message: string }> {
+  for (const pm2 of PM2_PATHS) {
+    try {
+      await execAsync(`${pm2} stop "${processName}" 2>&1`);
+      return { success: true, message: `${processName} 已停止` };
+    } catch (_) {
+      // 继续尝试下一个路径
+    }
+  }
+  return { success: false, message: `${processName} 停止失败，未找到 PM2 或进程不存在` };
+}
+
+async function pm2Start(processName: string): Promise<{ success: boolean; message: string }> {
+  for (const pm2 of PM2_PATHS) {
+    try {
+      await execAsync(`${pm2} start "${processName}" 2>&1`);
+      return { success: true, message: `${processName} 已启动` };
+    } catch (_) {
+      // 继续尝试下一个路径
+    }
+  }
+  return { success: false, message: `${processName} 启动失败，未找到 PM2 或进程不存在` };
+}
+
+async function pm2Status(processName: string): Promise<"online" | "stopped" | "unknown"> {
+  for (const pm2 of PM2_PATHS) {
+    try {
+      const { stdout } = await execAsync(`${pm2} jlist 2>/dev/null`);
+      const list = JSON.parse(stdout);
+      const proc = list.find((p: any) => p.name === processName);
+      if (proc) return proc.pm2_env?.status === "online" ? "online" : "stopped";
+    } catch (_) {
+      // 继续尝试下一个路径
+    }
+  }
+  return "unknown";
+}
+
 // 默认配置键列表
 const CONFIG_KEYS = [
   { key: "support_username", description: "客服 TG 用户名（不含@）" },
@@ -901,6 +939,128 @@ export const systemConfigRouter = router({
       const now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
       await sendTgAlert(`🔄 <b>监控引擎已重启</b>\n\n⏰ 时间：${now}\n👤 操作：管理员手动重启\n✅ 状态：${succeeded.length}/${results.length} 个进程重启成功`);
       return { success: true, message: `${succeeded.length}/${results.length} 个引擎进程重启成功` };
+    }),
+
+  // 停止监控引擎（当需要 TDLib 执行其他操作时使用）
+  stopEngine: adminProcedure
+    .mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库连接失败" });
+      const accounts = await db.select({ id: tgAccounts.id }).from(tgAccounts);
+      const engineProcesses = [
+        "神探-引擎-主控",
+        ...accounts.map(a => `神探-引擎-Acc${a.id}`),
+      ];
+      const results = await Promise.all(engineProcesses.map(name => pm2Stop(name)));
+      const succeeded = results.filter(r => r.success);
+      const now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+      await sendTgAlert(`⏸️ <b>监控引擎已停止</b>\n\n⏰ 时间：${now}\n👤 操作：管理员手动停止\n📋 状态：${succeeded.length}/${results.length} 个进程已停止`);
+      return { success: true, message: `${succeeded.length}/${results.length} 个引擎进程已停止` };
+    }),
+
+  // 启动监控引擎
+  startEngine: adminProcedure
+    .mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库连接失败" });
+      const accounts = await db.select({ id: tgAccounts.id }).from(tgAccounts);
+      const engineProcesses = [
+        "神探-引擎-主控",
+        ...accounts.map(a => `神探-引擎-Acc${a.id}`),
+      ];
+      const results = await Promise.all(engineProcesses.map(name => pm2Start(name)));
+      const succeeded = results.filter(r => r.success);
+      const now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+      await sendTgAlert(`▶️ <b>监控引擎已启动</b>\n\n⏰ 时间：${now}\n👤 操作：管理员手动启动\n✅ 状态：${succeeded.length}/${results.length} 个进程已启动`);
+      return { success: true, message: `${succeeded.length}/${results.length} 个引擎进程已启动` };
+    }),
+
+  // 获取引擎运行状态
+  getEngineStatus: adminProcedure
+    .query(async () => {
+      const status = await pm2Status("神探-引擎-主控");
+      return { status };
+    }),
+  // 获取引擎各 Worker 详细状态
+  getEngineDetails: adminProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库连接失败" });
+      // 获取所有活跃的监控账号
+      const accounts = await db.select({
+        id: tgAccounts.id,
+        phone: tgAccounts.phone,
+        tgUsername: tgAccounts.tgUsername,
+        tgFirstName: tgAccounts.tgFirstName,
+        accountRole: tgAccounts.accountRole,
+        isActive: tgAccounts.isActive,
+      }).from(tgAccounts).where(eq(tgAccounts.isActive, true));
+      const monitorAccounts = accounts.filter(a => a.accountRole === "monitor" || a.accountRole === "both");
+      // 并行请求所有 Worker 的 /health 接口
+      const workerDetails = await Promise.all(
+        monitorAccounts.map(async (acc) => {
+          const port = 7100 + acc.id;
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3000);
+            const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+              signal: controller.signal,
+            });
+            clearTimeout(timeout);
+            if (!resp.ok) {
+              return {
+                accountId: acc.id,
+                phone: acc.phone,
+                tgUsername: acc.tgUsername || "",
+                tgFirstName: acc.tgFirstName || "",
+                online: false,
+                error: `HTTP ${resp.status}`,
+              };
+            }
+            const data = await resp.json();
+            return {
+              accountId: acc.id,
+              phone: acc.phone,
+              tgUsername: acc.tgUsername || data.username || "",
+              tgFirstName: acc.tgFirstName || data.firstName || "",
+              online: data.status === "ok",
+              version: data.version || "",
+              dialogCount: data.dialogCount || 0,
+              subscribedCount: data.subscribedCount || 0,
+              cachedCount: data.cachedCount || 0,
+              pendingCount: data.pendingCount || 0,
+              msgCount: data.msgCount || 0,
+              hitCount: data.hitCount || 0,
+              errorCount: data.errorCount || 0,
+              uptime: data.uptime || 0,
+              pid: data.pid || 0,
+              connectionState: data.connectionState || "unknown",
+              connectionLostCount: data.connectionLostCount || 0,
+              lastMsgAge: data.lastMsgAge || 0,
+              openedChats: data.openedChats || 0,
+            };
+          } catch (e: any) {
+            return {
+              accountId: acc.id,
+              phone: acc.phone,
+              tgUsername: acc.tgUsername || "",
+              tgFirstName: acc.tgFirstName || "",
+              online: false,
+              error: e.name === "AbortError" ? "请求超时" : (e.message || "连接失败"),
+            };
+          }
+        })
+      );
+      // 汇总统计
+      const summary = {
+        totalWorkers: monitorAccounts.length,
+        onlineWorkers: workerDetails.filter(w => w.online).length,
+        totalDialogs: workerDetails.reduce((sum, w) => sum + ((w as any).dialogCount || 0), 0),
+        totalMessages: workerDetails.reduce((sum, w) => sum + ((w as any).msgCount || 0), 0),
+        totalHits: workerDetails.reduce((sum, w) => sum + ((w as any).hitCount || 0), 0),
+        totalErrors: workerDetails.reduce((sum, w) => sum + ((w as any).errorCount || 0), 0),
+      };
+      return { workers: workerDetails, summary };
     }),
 
   // 重启 Bot 进程
